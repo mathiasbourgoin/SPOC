@@ -16,11 +16,22 @@ type 'a buffer = {
   elem_size : int;
   device : Device.t;
   mutable mapped_ptr : unit Ctypes.ptr option; (* Persistent mapping *)
+  mapped_cached : bool;
+      (** The mapping is of HOST_CACHED memory, so the host can read it at
+          memory speed. A mapping of device memory behind the PCIe BAR is
+          write-combined and uncached: writes are fast, reads run at a few tens
+          of MB/s. *)
 }
 
 let live_allocations = Vulkan_api_release.live_allocations
 
 let inject_alloc_failure = Vulkan_api_release.inject_alloc_failure
+
+(** Test hook: while [true], {!alloc} places buffers in DEVICE_LOCAL memory that
+    is never host-mapped, even where HOST_VISIBLE device memory exists, so the
+    staged and imported copy paths of {!Vulkan_api_transfer} can be exercised on
+    a machine whose VRAM is host-visible. Production code never sets it. *)
+let force_unmapped = Atomic.make false
 
 (** Find suitable memory type *)
 let find_memory_type dev type_filter properties =
@@ -37,6 +48,16 @@ let find_memory_type dev type_filter properties =
     else find (i + 1)
   in
   find 0
+
+(** Whether memory type [index] is HOST_CACHED. *)
+let memory_type_is_cached dev index =
+  let props = dev.Device.memory_properties in
+  let flags =
+    getf
+      (CArray.get (getf props mem_props_memoryTypes) index)
+      mem_type_propertyFlags
+  in
+  Unsigned.UInt32.to_int flags land vk_memory_property_host_cached_bit <> 0
 
 (* VK_WHOLE_SIZE = ~0ULL - map entire memory range *)
 let vk_whole_size = Unsigned.UInt64.max_int
@@ -110,7 +131,16 @@ let run_single_time_command device record_fn =
       Device.with_queue_lock device (fun () ->
           check "vkQueueWaitIdle" (vkQueueWaitIdle device.Device.compute_queue)))
 
-let create_staging_buffer device size usage =
+(** Test instrumentation, not an API: staging buffers created since the library
+    was loaded. Lets a test assert that a copy took the staging-free path. *)
+let staging_buffers_created = Atomic.make 0
+
+(** A mapped HOST_VISIBLE | HOST_COHERENT buffer of [size] bytes. With
+    [~cached:true] the memory is HOST_CACHED when the device has such a type
+    (the host reads it at memory speed; uncached staging memory reads at ~0.25
+    GB/s), otherwise the plain type. *)
+let create_staging_buffer ?(cached = false) device size usage =
+  Atomic.incr staging_buffers_created ;
   let buf_info = make vk_buffer_create_info in
   setf buf_info buf_create_sType (u32 vk_structure_type_buffer_create_info) ;
   setf buf_info buf_create_size (Unsigned.UInt64.of_int size) ;
@@ -141,13 +171,23 @@ let create_staging_buffer device size usage =
       Unsigned.UInt32.to_int (getf mem_reqs mem_req_memoryTypeBits)
     in
 
-    let mem_type_idx =
-      match
+    let visible_coherent =
+      vk_memory_property_host_visible_bit
+      lor vk_memory_property_host_coherent_bit
+    in
+    let cached_type =
+      if cached then
         find_memory_type
           device
           mem_type_bits
-          (vk_memory_property_host_visible_bit
-         lor vk_memory_property_host_coherent_bit)
+          (visible_coherent lor vk_memory_property_host_cached_bit)
+      else None
+    in
+    let mem_type_idx =
+      match
+        match cached_type with
+        | Some _ -> cached_type
+        | None -> find_memory_type device mem_type_bits visible_coherent
       with
       | Some idx -> idx
       | None ->
@@ -242,12 +282,14 @@ let alloc_once device size kind =
      3. Fallback to HOST_VISIBLE + HOST_COHERENT (system RAM) *)
   let mem_type_idx, is_mappable =
     match
-      find_memory_type
-        device
-        mem_type_bits
-        (vk_memory_property_device_local_bit
-       lor vk_memory_property_host_visible_bit
-       lor vk_memory_property_host_coherent_bit)
+      if Atomic.get force_unmapped then None
+      else
+        find_memory_type
+          device
+          mem_type_bits
+          (vk_memory_property_device_local_bit
+         lor vk_memory_property_host_visible_bit
+         lor vk_memory_property_host_coherent_bit)
     with
     | Some idx -> (idx, true) (* Best case: fast + mappable *)
     | None -> (
@@ -327,7 +369,15 @@ let alloc_once device size kind =
     in
 
     Atomic.incr live_allocations ;
-    {buffer = !@buffer; memory = !@memory; size; elem_size; device; mapped_ptr}
+    {
+      buffer = !@buffer;
+      memory = !@memory;
+      size;
+      elem_size;
+      device;
+      mapped_ptr;
+      mapped_cached = is_mappable && memory_type_is_cached device mem_type_idx;
+    }
   with e ->
     cleanup () ;
     raise e
@@ -430,6 +480,7 @@ let alloc_custom_once device ~size ~elem_size =
       elem_size;
       device;
       mapped_ptr = Some !@data_ptr;
+      mapped_cached = memory_type_is_cached device mem_type_idx;
     }
   with e ->
     cleanup () ;

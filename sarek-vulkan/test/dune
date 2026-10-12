@@ -91,13 +91,21 @@
  (names
   test_vulkan_async_launches
   test_vulkan_async_robustness
-  test_vulkan_async_release)
+  test_vulkan_async_release
+  test_vulkan_ranged_copies)
  (modules
   test_vulkan_async_launches
   test_vulkan_async_robustness
   test_vulkan_async_release
+  test_vulkan_ranged_copies
   vulkan_async_support)
- (libraries sarek_vulkan spoc_framework sarek_backend_error alcotest)
+ (libraries
+  sarek_vulkan
+  spoc_framework
+  sarek_backend_error
+  alcotest
+  unix
+  ctypes)
  (action
   (setenv
    SPOC_VULKAN_FENCE_TIMEOUT_S
@@ -116,3 +124,11 @@
   (pps sarek_ppx))
  (flags
   (:standard -w -32-33-34-69)))
+
+; Ranged-copy bandwidth by path on Vulkan: mapped memcpy, staged, pinned import
+; (specs/vulkan-async-api.md). Information only.
+
+(executable
+ (name bench_vulkan_pinned_copy)
+ (modules bench_vulkan_pinned_copy)
+ (libraries sarek_vulkan spoc_core unix ctypes))
