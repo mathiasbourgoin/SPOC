@@ -262,10 +262,28 @@ module CommandQueue = struct
   let device queue = queue.device
 end
 
+(** Without the conformant compile options the device compiler runs in Metal's
+    fast-math mode, which may reassociate: a fused epilogue kernel is then no
+    longer guaranteed to equal the unfused pair. Mark Metal inexact so epilogue
+    fusion stays off (docs/fp-contraction-policy.md section 14,
+    {!Spoc_framework_registry.Fp_exactness}). *)
+let mark_fast_math_fallback () =
+  Spoc_framework_registry.Fp_exactness.mark_inexact
+    ~backend:"Metal"
+    ~reason:"MTLCompileOptions (non-fast math) unavailable"
+
+(** Build the conformant options once at start-up, so a fallback is known before
+    the first launch decides whether to fuse an epilogue. *)
+let probe_conformant_options () =
+  match mtl_compile_options_conformant () with
+  | Some o -> release o
+  | None -> mark_fast_math_fallback ()
+
 (** Force every lazily built FFI stub on the launch, copy and release paths (see
     {!Metal_bindings.force_all}). *)
 let force_all () =
   Metal_bindings.force_all () ;
+  probe_conformant_options () ;
   memcpy
     ~dst:(to_voidp (allocate char 'a'))
     ~src:(to_voidp (allocate char 'b'))
@@ -727,6 +745,7 @@ module Library = struct
            < 15). Contraction is handled separately, by the #pragma METAL fp \
            contract(off) in the generated source."
     | None ->
+        mark_fast_math_fallback () ;
         Spoc_core.Log.warnf
           Spoc_core.Log.Kernel
           "Metal: could not build MTLCompileOptions, falling back to Metal's \

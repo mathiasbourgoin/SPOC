@@ -22,16 +22,14 @@
  * #pragma METAL fp contract(off)) fused == unfused AND fused == Interpreter
  * (which rounds every operation as written) are ASSERTED bit for bit, and the
  * fusion must have happened (1 launch instead of 2). Positive controls: the
- * inputs must separate fma from mul-then-add, the Interpreter must differ from
- * the fma reference, and the fused forwarding result must differ from it too.
- * Codegen checks (no device): the fused Metal source starts with the
- * fp-contract pragma, the same check fails on a source without it, and Metal
- * refuses the f16 producer (so the f16 pair is not run there).
+ * inputs separate fma from mul-then-add, and the Interpreter and the fused
+ * forwarding result both differ from the fma reference. The fp-contract pragma in the fused Metal sources is checked without a
+ * device by test_epilogue_metal_pragma; Metal refuses the f16 producer there,
+ * so the f16 pair is not run on Metal.
  * On every other deferred device the epilogue is forced on; launch counts are
- * still asserted everywhere, but bit equality is only RECORDED ("DEVIATION RECORDED n/N" when fused differs from unfused, which
- * is a precision grant the caller makes by opting in); nothing is asserted.
- * Informational: [a*b + c] in ONE kernel against the rounded and the fma result,
- * to record whether the device contracts inside a kernel.
+ * asserted, bit equality only RECORDED ("DEVIATION RECORDED": a precision
+ * grant the caller makes by opting in). Informational: [a*b + c] in ONE kernel
+ * against the rounded and the fma result (does the device contract?).
  *
  * What it cannot detect: a deviation on inputs or shapes not listed above, a
  * backend whose compiler contracts in some other pattern, or anything on a
@@ -375,7 +373,7 @@ let observe_contraction (dev : Device.t) inputs ~rounded ~contracted =
     (count_diff o (bits_of_array contracted))
 
 (* Metal refuses float16 kernels in its code generator
-   ([Sarek_ir_metal.reject_float16_kernel], checked in [codegen_checks]), so
+   ([Sarek_ir_metal.reject_float16_kernel], checked in test_epilogue_metal_pragma), so
    the f16 pair has nothing to run there. OpenCL and Vulkan refuse it by
    policy: a skip there, a failure on a default backend. *)
 let run_half_pair dev refs inputs =
@@ -443,63 +441,17 @@ let on_device refs inputs ~rounded ~contracted (dev : Device.t) =
     guarded dev (fun () -> observe_contraction dev inputs ~rounded ~contracted)
   end
 
-(* Substring search; the generated sources are a few KB. *)
-let find_sub ~sub src =
-  let n = String.length sub and m = String.length src in
-  let rec go i =
-    if i + n > m then None
-    else if String.sub src i n = sub then Some i
-    else go (i + 1)
-  in
-  go 0
-
-(* The fp-contract pragma is file scoped, so it must precede the first kernel.
-   Run on every host: compiler output only, no device. *)
-let pragma_before_kernel src =
-  match
-    ( find_sub ~sub:"#pragma METAL fp contract(off)" src,
-      find_sub ~sub:"kernel void" src )
-  with
-  | Some p, Some k -> p < k
-  | _ -> false
-
-let strip_pragma src =
-  match find_sub ~sub:"#pragma METAL fp contract(off)" src with
-  | None -> src
-  | Some p ->
-      String.sub src 0 p ^ String.sub src (p + 30) (String.length src - p - 30)
-
-(* Metal's fused epilogue kernel must carry the pragma that makes it exact by
-   construction (docs/fp-contraction-policy.md section 10 and 14). Compiler
-   output on this host; executed evidence needs a Metal device. *)
-let codegen_checks () =
-  let module M = Sarek_codegen.Sarek_ir_metal in
-  let fused =
-    Sarek_execute.Fusion_epilogue.fuse
-      ~name:"epi_pragma"
-      ~producer:(ir_of producer)
-      ~p_array:"t"
-      ~consumer:(ir_of consumer)
-      ~shared:[("t", "t")]
-  in
-  let src = M.generate fused in
-  let refuses_f16 =
-    match M.generate (ir_of producer_f16) with
-    | _ -> false
-    | exception _ -> true
-  in
-  [
-    ("fused MSL: fp contract(off) before the kernel", pragma_before_kernel src);
-    ( "fused MSL: pragma is M.metal_fp_contract_pragma",
-      find_sub ~sub:M.metal_fp_contract_pragma src <> None );
-    ( "control: source without the pragma fails the check",
-      not (pragma_before_kernel (strip_pragma src)) );
-    ("Metal refuses the f16 producer", refuses_f16);
-  ]
-
 let interpreter_references inputs ~contracted =
   let run pair = snd (run_pair launch_interp pair inputs) in
-  let half = try Some (run Half) with _ -> None in
+  let half =
+    match run Half with
+    | bits -> Some bits
+    | exception e ->
+        Printf.printf
+          "  Interpreter f16 reference: SKIP (%s)\n%!"
+          (Printexc.to_string e) ;
+        None
+  in
   let _, _, chain = run_chain launch_interp inputs (chain_scale ()) in
   {
     forwarding = run Forwarding;
@@ -542,18 +494,5 @@ let () =
     failures := "Interpreter != rounded reference" :: !failures ;
   if not interp_control then
     failures := "Interpreter == fma reference" :: !failures ;
-  Printf.printf
-    "  Interpreter forwarding == rounded: %b; != fma: %b\n%!"
-    interp_ok
-    interp_control ;
-  List.iter
-    (fun (label, ok) ->
-      Printf.printf
-        "  %-8s %-62s %s\n%!"
-        "Codegen"
-        label
-        (if ok then "PASS" else "FAIL") ;
-      if not ok then failures := label :: !failures)
-    (codegen_checks ()) ;
   Array.iter (on_device refs inputs ~rounded ~contracted) (Device.init ()) ;
   report_and_exit ()
