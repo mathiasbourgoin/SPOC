@@ -263,8 +263,9 @@
   matrix extension. Spec `specs/coopmat-metal-simdgroup.md`; tests
   `test_metal_coopmat_golden`, `test_metal_coopmat_probe`,
   `test_coopmat_metal_e2e` (Apple GPU), bench `bench_metal_coopmat_gemm`.
-  Executed on Apple M4 (ladon, macOS 15): pending ladon run (tech lead) for
-  the final numbers; `test_metal_f16_narrowing_e2e` runs the Sarek-generated
+  Executed on Apple M4 (ladon, macOS 15, 2026-10-12): `test_coopmat_metal_e2e`
+  PASS (all controls rejected) and `test_metal_f16_narrowing_e2e` PASS (0/63488
+  against the interpreter and the model on both shapes); `test_metal_f16_narrowing_e2e` runs the Sarek-generated
   scalar f16 kernel over all 63488 finite binary16 values (both swept shapes,
   bit-equal to the interpreter and an independent model, with controls).
 
