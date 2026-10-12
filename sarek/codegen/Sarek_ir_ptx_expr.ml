@@ -1717,6 +1717,20 @@ and intr_atomic_incdec buf alloc env intr ~global_only ~op args =
 (* Thread/block/grid indices, derived global indices, and the block
    barrier. All are pure special-register moves plus arithmetic. *)
 and index_intrinsic_handlers () : (string list * intrinsic_handler) list =
+  (* tid + ctaid * ntid on one axis, in the u32 registers the x form uses. *)
+  let global_idx_axis axis buf alloc _env _path _name _args =
+    let r_tid = new_u32 alloc in
+    emit buf "mov.u32 %s, %%tid.%s;" r_tid axis ;
+    let r_bid = new_u32 alloc in
+    emit buf "mov.u32 %s, %%ctaid.%s;" r_bid axis ;
+    let r_bdim = new_u32 alloc in
+    emit buf "mov.u32 %s, %%ntid.%s;" r_bdim axis ;
+    let r_off = new_u32 alloc in
+    emit buf "mul.lo.u32 %s, %s, %s;" r_off r_bid r_bdim ;
+    let r_gid = new_u32 alloc in
+    emit buf "add.u32 %s, %s, %s;" r_gid r_tid r_off ;
+    Some r_gid
+  in
   [
     ( ["thread_id_x"; "thread_idx_x"],
       fun buf alloc _env _path _name _args ->
@@ -1791,19 +1805,8 @@ and index_intrinsic_handlers () : (string list * intrinsic_handler) list =
         let r_gid = new_u32 alloc in
         emit buf "add.u32 %s, %s, %s;" r_gid r_tid r_off ;
         Some r_gid );
-    ( ["global_idx_y"],
-      fun buf alloc _env _path _name _args ->
-        let r_tid = new_u32 alloc in
-        emit buf "mov.u32 %s, %%tid.y;" r_tid ;
-        let r_bid = new_u32 alloc in
-        emit buf "mov.u32 %s, %%ctaid.y;" r_bid ;
-        let r_bdim = new_u32 alloc in
-        emit buf "mov.u32 %s, %%ntid.y;" r_bdim ;
-        let r_off = new_u32 alloc in
-        emit buf "mul.lo.u32 %s, %s, %s;" r_off r_bid r_bdim ;
-        let r_gid = new_u32 alloc in
-        emit buf "add.u32 %s, %s, %s;" r_gid r_tid r_off ;
-        Some r_gid );
+    (["global_idx_y"], global_idx_axis "y");
+    (["global_idx_z"], global_idx_axis "z");
     ( ["global_size"],
       fun buf alloc _env _path _name _args ->
         let r_bdim = new_u32 alloc in
