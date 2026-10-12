@@ -37,11 +37,6 @@ module Device = Spoc_core.Device
 module Vector = Spoc_core.Vector
 module Transfer = Spoc_core.Transfer
 
-(* Test setup: delete this line once Metal's unexecuted-lowering opt-in is gone. *)
-let () =
-  Sarek_codegen.Sarek_ir_metal.accept_unexecuted_lowering
-    ~reason:"test_matrix_rewrite_metal executes the lowering"
-
 let fl32 x = Int32.float_of_bits (Int32.bits_of_float x)
 
 let round16 x = Sarek_float16.to_float16 x

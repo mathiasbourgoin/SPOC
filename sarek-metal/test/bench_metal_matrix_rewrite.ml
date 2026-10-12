@@ -30,11 +30,6 @@ module Transfer = Spoc_core.Transfer
 
 let () = Sarek_metal.Metal_plugin.init ()
 
-(* Test setup: delete this line once Metal's unexecuted-lowering opt-in is gone. *)
-let () =
-  Sarek_metal.Sarek_ir_metal.accept_unexecuted_lowering
-    ~reason:"benchmark of the lowering under evaluation"
-
 let arg i default =
   if Array.length Sys.argv > i then int_of_string Sys.argv.(i) else default
 

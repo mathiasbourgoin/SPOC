@@ -28,7 +28,7 @@ The `int32` rewrite is bit-identical to the original kernel and needs no opt-in,
 | Native | not a rewrite backend: the automatic rewrite declines it |
 | Interpreter | executes, as the reference implementation |
 
-Sources: `Hip_coopmat.ml:43-54` (configurations), `Hip_coopmat.ml:57-58` (gfx11 and wave32 rule), `Cuda_coopmat.ml` (CUDA/C probe; CUDA/PTX keeps `coopmat = None` in `Cuda_plugin_base.ml`), `Sarek_ir_metal_coopmat.ml` (Metal lowering and refusals), `Metal_coopmat.ml` (probe), `Sarek_ir_opencl.ml:616`, `Sarek_ir_wgsl.ml:1207`, `Sarek_ir_ptx_stmt.ml:254` (refusals), `Sarek_ir_glsl.ml:1395` (Vulkan lowering), `Sarek_ir_cuda.ml:574` (CUDA/C), `Matrix_specialise.ml:356-363` (Native). The CUDA lowering has been compiled but never run on hardware; the Metal lowering is specified in [`specs/coopmat-metal-simdgroup.md`](https://github.com/mathiasbourgoin/Sarek/blob/main/specs/coopmat-metal-simdgroup.md); the HIP lowering is validated on an RX 7900 XTX (gfx1100) in [`specs/coopmat-hip-wmma.md`](https://github.com/mathiasbourgoin/Sarek/blob/main/specs/coopmat-hip-wmma.md). Per-backend defaults of the HIP plugin are in the [sarek-hip README](https://github.com/mathiasbourgoin/Sarek/blob/main/sarek-hip/README.md).
+Sources: `Hip_coopmat.ml:43-54` (configurations), `Hip_coopmat.ml:57-58` (gfx11 and wave32 rule), `Cuda_coopmat.ml` (CUDA/C probe; CUDA/PTX keeps `coopmat = None` in `Cuda_plugin_base.ml`), `Sarek_ir_metal_coopmat.ml` (Metal lowering and refusals), `Metal_coopmat.ml` (probe), `Sarek_ir_opencl.ml:616`, `Sarek_ir_wgsl.ml:1207`, `Sarek_ir_ptx_stmt.ml:254` (refusals), `Sarek_ir_glsl.ml:1395` (Vulkan lowering), `Sarek_ir_cuda.ml:574` (CUDA/C), `Matrix_specialise.ml:452-464` (Native). The CUDA lowering has been compiled but never run on hardware; the Metal lowering is specified in [`specs/coopmat-metal-simdgroup.md`](https://github.com/mathiasbourgoin/Sarek/blob/main/specs/coopmat-metal-simdgroup.md); the HIP lowering is validated on an RX 7900 XTX (gfx1100) in [`specs/coopmat-hip-wmma.md`](https://github.com/mathiasbourgoin/Sarek/blob/main/specs/coopmat-hip-wmma.md). Per-backend defaults of the HIP plugin are in the [sarek-hip README](https://github.com/mathiasbourgoin/Sarek/blob/main/sarek-hip/README.md).
 
 ## Compile-time advice
 
@@ -103,13 +103,13 @@ Accepted values of the variable, case-insensitively and ignoring surrounding spa
 let () = Sarek_matrix.set_mode Sarek_matrix.Off
 ```
 
-The mode also applies to `Sarek_matrix.run`: `Off` never rewrites and `Exact` rewrites only `int32` (`Matrix_specialise.ml:237-252`, and `:333-335` where `off` is checked first).
+The mode also applies to `Sarek_matrix.run`: `Off` never rewrites and `Exact` rewrites only `int32` (`Matrix_specialise.ml:237-253`, and `:467-468` where `off` is checked first).
 
 ### Which kernels are rewritten
 
 A kernel qualifies when all of these hold; otherwise the original runs and the reason is reported (see [Reporting](#reporting-and-cache)).
 
-- The kernel body is one GEMM nest: `acc := acc + A[...] * B[...]` over a `for` loop with bounds that are the same for every thread, operands read from global vectors, and a single store to `C` (optionally with an epilogue such as `alpha * acc + beta * C[...]`). The kernel writes nothing else (no other array write, no atomics) and has exactly one such nest (`only_write_is`, `Matrix_specialise.ml:110-129`).
+- The kernel body is one GEMM nest: `acc := acc + A[...] * B[...]` over a `for` loop with bounds that are the same for every thread, operands read from global vectors, and a single store to `C` (optionally with an epilogue such as `alpha * acc + beta * C[...]`). The kernel writes nothing else (no other array write, no atomics) and has exactly one such nest (`only_write_is`, `Matrix_specialise.ml:107-126`).
 - Row, column and at most one batch index are affine in the loop variables and thread indices; each operand has a unit stride in one dimension (row-major or column-major). Guards are conjunctions of comparisons with a bound that is the same for every thread.
 - No bound, initial value or epilogue reads `block_dim_*` or `grid_dim_*`, and no index involves `int64`.
 - The element types have a configuration, below.
@@ -118,17 +118,17 @@ A kernel qualifies when all of these hold; otherwise the original runs and the r
 | A and B | Accumulator, C | Result of the rewrite |
 |---|---|---|
 | `int32` | `int32` | bit-identical (each operand is split into four byte planes, 10 products per tile, 32-bit wrapping sum) |
-| `float16` | `float32` (C `float32` or `float16`) | within a derived bound of the exact value, not bit-identical: the hardware chooses the addition order. On Metal the order is a closed form (accumulator, then the products in index order, all in binary32), so with an initial value of zero the result is meant to be bit-identical to the unrewritten kernel (asserted by `test_matrix_rewrite_metal`, pending its Apple-hardware run); with a non-zero initial value the rewrite adds it after the sum, so it differs from the original, which starts the sum from it |
+| `float16` | `float32` (C `float32` or `float16`) | within a derived bound of the exact value, not bit-identical: the hardware chooses the addition order. On Metal the order is a closed form (accumulator, then the products in index order, all in binary32), so with an initial value of zero the result is meant to be bit-identical to the unrewritten kernel (asserted by `test_matrix_rewrite_metal`, executed on the Apple M4); with a non-zero initial value the rewrite adds it after the sum, so it differs from the original, which starts the sum from it |
 | `float32` | `float32` | operands are first rounded to `float16`, `bfloat16`, or a three-term `bfloat16` split; a larger deviation than the previous row |
 | `int64`, `float64`, mixed | | not rewritten |
 
-Sources: element cases `Sarek_matrix_advice.ml:43-48`; preconditions and the full list of rejected shapes in [`specs/matrix-pattern-advice.md`](https://github.com/mathiasbourgoin/Sarek/blob/main/specs/matrix-pattern-advice.md) and [`specs/matrix-pattern-rewrite.md`](https://github.com/mathiasbourgoin/Sarek/blob/main/specs/matrix-pattern-rewrite.md); bounds, initial value or epilogue reading `block_dim_*`/`grid_dim_*` (`uses_launch_dims`, `Sarek_matrix_scheme.ml:294`); grid size against `max_grid_dims` (`fits_device`, `Matrix_specialise.ml:288-299`); backend rule `Matrix_specialise.ml:268-285`.
+Sources: element cases `Sarek_matrix_advice.ml:43-48`; preconditions and the full list of rejected shapes in [`specs/matrix-pattern-advice.md`](https://github.com/mathiasbourgoin/Sarek/blob/main/specs/matrix-pattern-advice.md) and [`specs/matrix-pattern-rewrite.md`](https://github.com/mathiasbourgoin/Sarek/blob/main/specs/matrix-pattern-rewrite.md); bounds, initial value or epilogue reading `block_dim_*`/`grid_dim_*` (`uses_launch_dims`, `Sarek_matrix_scheme.ml:294`); grid size against `max_grid_dims` (`fits_device`, `Matrix_specialise.ml:394-430`); backend rule `Matrix_specialise.ml:276-390`.
 
-An exception while analysing the kernel gives the original kernel, never a failed launch (`Matrix_specialise.ml:158-159` for the analysis, `:401-405` for building the rewritten kernel).
+An exception while analysing the kernel gives the original kernel, never a failed launch (`Matrix_specialise.ml:149-156` for the analysis, `:540-555` for building the rewritten kernel).
 
 ### Size classes
 
-At each launch the region the original launch covers is computed from the scalar arguments and the grid; the kernel is then one of two shapes (`Matrix_specialise.ml:305-322`, `Sarek_matrix_direct.ml:40-55`):
+At each launch the region the original launch covers is computed from the scalar arguments and the grid; the kernel is then one of two shapes (`Matrix_specialise.ml:429-449`, `Sarek_matrix_direct.ml:40-55`):
 
 | Class | When | Behaviour |
 |---|---|---|
@@ -160,7 +160,7 @@ let () =
 
 The two accuracy opt-ins alone admit matrix-unit configurations for code that asks for them (`Sarek_gemm.Coopmat`, `Sarek_matrix.run`); they do not enable the automatic rewrite. Without `accept_automatic_float_rewrite`, a float launch through `Execute.run_vectors` runs the original kernel and the report names the missing call (`automatic_float_optin` in `Matrix_specialise.ml`). The `int32` rewrite needs none of them.
 
-Precision of a `float32` product: if the program asks for one (`~precision` on `Sarek_matrix.run` or `Execute.run_vectors_outcome`), that precision must have been accepted. Otherwise `float16` is used when accepted, else `bfloat16`. The `bfloat16x3` split reaches near-float32 accuracy but was measured no faster than the scalar kernel, so it is used only on request (`Matrix_specialise.ml:205-224`). Bounds measured on gfx1100 for each precision are in the Results of [`specs/matrix-pattern-rewrite.md`](https://github.com/mathiasbourgoin/Sarek/blob/main/specs/matrix-pattern-rewrite.md); they assume finite operands within the narrower type's range (`float16` overflows above 65504).
+Precision of a `float32` product: if the program asks for one (`~precision` on `Sarek_matrix.run` or `Execute.run_vectors_outcome`), that precision must have been accepted. Otherwise `float16` is used when accepted, else `bfloat16`. The `bfloat16x3` split reaches near-float32 accuracy but was measured no faster than the scalar kernel, so it is used only on request (`Matrix_specialise.ml:205-226`). Bounds measured on gfx1100 for each precision are in the Results of [`specs/matrix-pattern-rewrite.md`](https://github.com/mathiasbourgoin/Sarek/blob/main/specs/matrix-pattern-rewrite.md); they assume finite operands within the narrower type's range (`float16` overflows above 65504).
 
 The bound each configuration is tested against, in units of `sum(abs(a*b))` over the reduction, with `gamma_K = K*u / (1 - K*u)`, `u = 2^-24` and `K` the number of products added:
 
@@ -175,7 +175,7 @@ The measurements are from [`specs/matrix-pattern-rewrite.md`](https://github.com
 
 ### The interpreter
 
-By default the interpreter is never rewritten: it stays the independent reference that differential tests compare against, and the rewrite is slower there. It is rewritten only on an explicit request (`Sarek_matrix.run`, or `Execute.run_vectors_outcome ~explicit:true`), and not for a launch on a stream. Every other backend is declined before any analysis (`Matrix_specialise.ml:324-331`).
+By default the interpreter is never rewritten: it stays the independent reference that differential tests compare against, and the rewrite is slower there. It is rewritten only on an explicit request (`Sarek_matrix.run`, or `Execute.run_vectors_outcome ~explicit:true`), and not for a launch on a stream. Every other backend is declined before any analysis (`Matrix_specialise.ml:452-464`).
 
 ### Reporting and cache
 
@@ -196,7 +196,7 @@ let launch_and_say ~device ~ir ~args ~block ~grid =
 [sarek matrix] <kernel> on <device>: original kernel: <reason>
 ```
 
-Kernels that are not matrix products, devices that can never rewrite, and mode `off` are not reported (`Matrix_specialise.ml:375-388`, `:390-393`).
+Kernels that are not matrix products, devices that can never rewrite, and mode `off` are not reported (`Matrix_specialise.ml:535-538`, `:549-553`).
 
 The analysis result and the rewritten kernels are cached per kernel IR (by physical identity), per lowering and size class, so repeated launches of one kernel analyse it once. Mode, opt-ins and device are checked at every launch. A kernel whose IR is rebuilt for each launch is analysed each time, as it also misses the launch memo.
 

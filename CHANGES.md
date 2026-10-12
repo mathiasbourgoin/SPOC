@@ -19,10 +19,13 @@
   unchanged); interpreter at fragment 8 and 16 executed
   (`test_matrix_fragment`: bit-identical to the original kernel and the host
   chain over k, with a positive control); Metal codegen: compiler-output
-  (`test_metal_matrix_rewrite`, MSL digest); Apple M4: pending the ladon run of
-  `test_matrix_rewrite_metal` (alias `e2e-metal`) and
-  `bench_metal_matrix_rewrite` (`e2e-metal-bench`). Like the other Metal paths
-  it needs `Sarek_ir_metal.accept_unexecuted_lowering` until that run.
+  (`test_metal_matrix_rewrite`, MSL digest); executed on Apple M4,
+  macOS 15 (2026-10-12): `test_matrix_rewrite_metal` (alias `e2e-metal`) passes,
+  bit-identical to the original kernel, the interpreter and the host chain, with
+  controls rejected; `bench_metal_matrix_rewrite` (9 interleaved pairs, batch 5,
+  load 2.6): off 910 / 6802 / 53785 us against on 189 / 966 / 7294 us at
+  n = 512 / 1024 / 2048, 4.81x / 7.04x / 7.37x (raw:
+  `spoc-pipeline-logs/pkgH/H4b-ladon-bench.txt`).
 
 - Vulkan supports the memory API that HIP, CUDA and Metal had
   (H7 slice 1, `specs/vulkan-async-api.md`): device-only vectors, ranged
