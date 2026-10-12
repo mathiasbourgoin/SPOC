@@ -40,6 +40,10 @@ type slot = {
           is running. *)
 }
 
+(** An event a stream has been told to wait for ([stream_wait_event]): its fence
+    and the lock that serialises waits on it. *)
+type awaited_event = {event_lock : Mutex.t; event_fence : tracked_fence}
+
 type stream = {
   command_pool : vk_command_pool;
   slots : slot array;
@@ -48,6 +52,12 @@ type stream = {
   mutable deferred : (string * string) option;
       (** Kernels and reason of a submission that failed while launching; raised
           by the next wait of this stream. *)
+  mutable awaited : awaited_event list;
+      (** Events this stream waits for, newest first, guarded by [batch_lock].
+          Later work on the stream is ordered after them by the single queue and
+          the barrier before every dispatch; the host-side effect is that
+          {!Vulkan_api_batch.synchronize} also waits for them. Emptied by that
+          wait. *)
   device : Device.t;
 }
 
@@ -106,6 +116,7 @@ let create_stream device =
     active = 0;
     destroyed = Atomic.make false;
     deferred = None;
+    awaited = [];
     device;
   }
 

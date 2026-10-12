@@ -35,6 +35,8 @@ let flush_device = Vulkan_api_batch.flush_device
 
 let synchronize = Vulkan_api_batch.synchronize
 
+let add_awaited = Vulkan_api_batch.add_awaited
+
 let pending_launches = Vulkan_api_batch.pending_launches
 
 let create device =
