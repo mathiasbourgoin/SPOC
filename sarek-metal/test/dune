@@ -156,7 +156,7 @@
 (test
  (name test_metal_wait_binding)
  (modules test_metal_wait_binding)
- (deps ../Metal_bindings.ml)
+ (deps ../Metal_bindings.ml ../Metal_api.ml)
  (libraries alcotest str))
 
 ; Behavioural check on a Metal device (alias e2e-metal, run by hand on a Mac):
