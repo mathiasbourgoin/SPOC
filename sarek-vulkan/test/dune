@@ -147,7 +147,8 @@
   sarek_backend_error
   alcotest
   unix
-  ctypes)
+  ctypes
+  ctypes.foreign)
  (action
   (setenv
    SPOC_VULKAN_FENCE_TIMEOUT_S

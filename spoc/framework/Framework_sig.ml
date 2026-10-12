@@ -304,7 +304,10 @@ module type ASYNC = sig
   val event_query : event -> bool
 
   (** Page-locked host memory of [byte_size] bytes, returned as a raw address.
-      Released only by {!free_pinned}. *)
+      Released by {!free_pinned}. A backend whose pinned memory belongs to the
+      device (Vulkan: a driver mapping) unmaps it when the device is destroyed;
+      the address is then invalid and only {!free_pinned} may still be called on
+      it. *)
   val alloc_pinned : device -> byte_size:int -> nativeint
 
   val free_pinned : device -> nativeint -> unit

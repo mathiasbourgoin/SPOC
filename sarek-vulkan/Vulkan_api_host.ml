@@ -297,33 +297,31 @@ let unregister (device : Device.t) addr =
       invalid_arg "Vulkan.Async.unregister_host: not a registered range"
   | None -> invalid_arg "Vulkan.Async.unregister_host: not a registered range"
 
-(** The first memory type of [bits] that is HOST_VISIBLE | HOST_COHERENT, with
-    [extra] flags, and not DEVICE_LOCAL: on a discrete GPU the DEVICE_LOCAL
-    host-visible type is the BAR window onto VRAM, write-combined and read at
-    0.03 GB/s. A UMA device has only DEVICE_LOCAL types; those are the last
-    resort. *)
-let find_host_memory_type (device : Device.t) bits ~extra =
-  let required =
+(* VK_MEMORY_PROPERTY_DEVICE_COHERENT_BIT_AMD and DEVICE_UNCACHED_BIT_AMD: using
+   those types needs the deviceCoherentMemory feature, which is not enabled. *)
+let amd_device_memory_bits = 0x40 lor 0x80
+
+(** The memory type for a pinned block, best first: HOST_VISIBLE | HOST_COHERENT
+    | HOST_CACHED, then without HOST_CACHED, both not DEVICE_LOCAL; only then
+    the DEVICE_LOCAL ones. On a discrete GPU the DEVICE_LOCAL host-visible type
+    is the BAR window onto VRAM, write-combined and read at 0.03 GB/s; a UMA
+    device has only DEVICE_LOCAL types. *)
+let pinned_memory_type (device : Device.t) bits =
+  let base =
     vk_memory_property_host_visible_bit lor vk_memory_property_host_coherent_bit
-    lor extra
   in
-  match
+  let search ~extra ~excluded =
     Vulkan_api_memory.find_memory_type_excluding
       device
       bits
-      ~required
-      ~excluded:vk_memory_property_device_local_bit
-  with
-  | Some _ as found -> found
-  | None -> Vulkan_api_memory.find_memory_type device bits required
-
-let pinned_memory_type device bits =
-  let cached =
-    find_host_memory_type device bits ~extra:vk_memory_property_host_cached_bit
+      ~required:(base lor extra)
+      ~excluded:(excluded lor amd_device_memory_bits)
   in
-  match cached with
-  | Some _ -> cached
-  | None -> find_host_memory_type device bits ~extra:0
+  let cached = vk_memory_property_host_cached_bit in
+  let not_local = vk_memory_property_device_local_bit in
+  List.find_map
+    (fun (extra, excluded) -> search ~extra ~excluded)
+    [(cached, not_local); (0, not_local); (cached, 0); (0, 0)]
 
 let create_pinned_buffer (device : Device.t) byte_size =
   let info = make vk_buffer_create_info in
@@ -414,7 +412,10 @@ let alloc_pinned (device : Device.t) ~byte_size =
   import.base
 
 (** Releases the block's buffer and memory, which unmaps it. A block whose
-    device was destroyed has nothing left to release. *)
+    device was destroyed has nothing left to release. The table is keyed by
+    address, as core's is: if the address was handed out again after the device
+    was destroyed, a late free of the old block cannot be told from a free of
+    the new one. Free every block before destroying its device. *)
 let free_pinned (_device : Device.t) addr =
   let owned =
     Mutex.protect lock (fun () ->
