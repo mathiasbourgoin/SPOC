@@ -227,3 +227,26 @@
  (libraries sarek_ir sarek_codegen alcotest)
  (instrumentation
   (backend bisect_ppx)))
+
+; Behaviour-preservation golden for the optimisation policy
+; (specs/optimisation-policy.md, M1): generated sources, coopmat verdicts and
+; grant readers in four process states, compared with a checked-in file.
+
+(executable
+ (name test_policy_golden)
+ (modules test_policy_golden)
+ ; -linkall: Sarek_stdlib registers the [float] intrinsic at initialisation.
+ (link_flags (-linkall))
+ (libraries sarek.stdlib sarek_ir sarek_codegen unix))
+
+(rule
+ (targets test_policy_golden.actual)
+ (action
+  (with-stdout-to
+   test_policy_golden.actual
+   (run %{dep:test_policy_golden.exe}))))
+
+(rule
+ (alias runtest)
+ (action
+  (diff test_policy_golden.expected test_policy_golden.actual)))
