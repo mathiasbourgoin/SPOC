@@ -15,10 +15,17 @@ open Foreign
 open Metal_types
 open Metal_bindings
 
-(** memcpy from libc for memory transfers *)
+(** memcpy from libc for memory transfers, with the OCaml runtime lock released
+    (a large copy would otherwise stop every other domain's minor collections).
+    Both arguments are raw addresses, which the call does not root: the caller
+    keeps the memory behind them allocated until [memcpy] returns (bigarrays end
+    with [ignore (Sys.opaque_identity ba)]; MTLBuffer [contents] stays valid
+    while the buffer is retained). See {!Metal_bindings.msg_void_blocking_lazy}.
+*)
 let memcpy_lazy =
   lazy
     (foreign
+       ~release_runtime_lock:true
        "memcpy"
        (ptr void @-> ptr void @-> size_t @-> returning (ptr void)))
 

@@ -102,8 +102,10 @@
   `test_launch_window` into 2 launches (the test derives the expected count
   from the window's own slot accounting).
 
-- Metal `waitUntilCompleted` releases the OCaml runtime lock (R-24, audit items
-  16/17), as the other backends did: `Metal_bindings` gains a second typed
+- Metal `waitUntilCompleted`, the two compiles (`newLibraryWithSource`,
+  `newComputePipelineState`) and the libc `memcpy` behind host/device copies
+  release the OCaml runtime lock (R-24, audit items 16/17), as the other
+  backends did: `Metal_bindings` gains a second typed
   `objc_msgSend` stub (`msg_void_blocking_lazy`,
   `~release_runtime_lock:true`) used only for blocking messages, so a domain
   waiting on a command buffer no longer stops every other domain's minor
@@ -111,19 +113,19 @@
   heap pointer is passed, and the caller keeps the command buffer retained
   across the wait (`Metal_api.Pending` and `Event.synchronize` do). Other
   messages stay on the plain stub. Tests: `test_metal_wait_binding`
-  (structural, runs anywhere; failed before the change) and the shared
+  (structural, runs anywhere; failed before the change; also checks the compiles and `memcpy`) and the shared
   `test_blocking_ffi_releases_lock` on alias `e2e-metal`. Bench `bench_metal_compile` (alias `e2e-metal-bench`): library
   and pipeline-state compile time of three decode-shaped kernels, cold vs warm,
   each in a new process. Measured on Apple M4 (macOS 15, 5 rounds), the macOS shader
   cache already brings a new process to at most 0.45 ms library + 0.72 ms
   pipeline per kernel (first sight of a source: 22.4 / 3.1 / 2.3 ms library for
   matvec / RMS norm / RoPE), so Metal gets no disk compile cache of ours (not
-  needed; `MTLBinaryArchive` could win about 1 ms per kernel).
+  needed; `MTLBinaryArchive` could win about 1 ms per kernel; raw: `docs/measurements/metal-runtime-lock-2026-10-12/compile-bench-v1.txt`).
 
   | Backend | Before | After | Evidence |
   |---|---|---|---|
   | HIP, CUDA, OpenCL, Vulkan | lock released (R-24) | unchanged | executed (RX 7900 XTX; CUDA via ZLUDA) |
-  | Metal | lock held during `waitUntilCompleted` | released | structural test on tartarus; behaviour executed on Apple M4, macOS 15 (ladon, 2026-10-12): the other domain completed 1000 minor GCs during a 199 ms wait, against 1 on origin/main 1808a9a5 |
+  | Metal | lock held during `waitUntilCompleted` | released | structural test on tartarus; behaviour executed on Apple M4, macOS 15 (ladon, 2026-10-12): the other domain completed 1000 minor GCs during a 199 ms wait, against 1 on origin/main 1808a9a5 (raw: `docs/measurements/metal-runtime-lock-2026-10-12/r24-ladon.txt`) |
   | Native, Interpreter | no blocking driver call | unchanged | by-construction |
 
 - CUDA kernel launches marshal all arguments into one 8-byte-slot block plus one

@@ -14,8 +14,11 @@
  * source. A cache of ours only pays if the second process is still slow.
  *
  * The parent spawns this executable as a child three times per round with the
- * same nonce, a comment appended to every source so that a nonce the machine
- * has never seen cannot hit the macOS cache:
+ * same nonce, a volatile store of the nonce injected at the top of every
+ * kernel body so that a nonce the machine has never seen cannot hit the macOS
+ * cache (the compiled code differs, not only the text). A throwaway kernel is
+ * compiled first and the kernel order rotates each round, so a once-per-process
+ * cost is not attributed to one kernel. Times use CLOCK_UPTIME_RAW:
  *   cold   first process with this nonce (sources new to the OS cache)
  *   warm1  second process, same nonce
  *   warm2  third process, same nonce
@@ -122,10 +125,11 @@ let ir_of (_, kirc) =
   | Some ir -> ir
   | None -> failwith "no IR"
 
+(* Monotonic clock (CLOCK_UPTIME_RAW), not the wall clock. *)
 let ms f =
-  let t0 = Unix.gettimeofday () in
+  let t0 = Sarek_metal.Metal_bindings.uptime_raw_seconds () in
   let r = f () in
-  (r, (Unix.gettimeofday () -. t0) *. 1000.)
+  (r, (Sarek_metal.Metal_bindings.uptime_raw_seconds () -. t0) *. 1000.)
 
 (* The entry point is the first [kernel void NAME(] of the source. *)
 let entry_name source =
@@ -134,9 +138,42 @@ let entry_name source =
   let from = start + String.length marker in
   String.sub source from (String.index_from source from '(' - from)
 
-(* ---- child: one process, one nonce ---- *)
+(* A nonce that changes the compiled code, not just the text: a volatile store
+   of the nonce at the top of the kernel body. A comment would change the source
+   hash but leave the compiled library, and so a pipeline cache keyed on it,
+   identical. *)
+let with_nonce source ~nonce =
+  let entry_start =
+    Str.search_forward (Str.regexp_string "kernel void ") source 0
+  in
+  let body = String.index_from source entry_start '{' + 1 in
+  String.sub source 0 body
+  ^ Printf.sprintf " volatile uint nonce_k = %du; (void)nonce_k; " nonce
+  ^ String.sub source body (String.length source - body)
 
-let child ~nonce =
+(* A throwaway kernel timed by nobody: it pays the once-per-process cost of
+   the first Metal compile, so it is not attributed to the first kernel. *)
+let warm_up_source ~nonce =
+  with_nonce
+    "kernel void warm_up(device float* o [[buffer(0)]], uint t \
+     [[thread_position_in_grid]]) { o[t] = 1.0f; }"
+    ~nonce
+
+let rotate k xs =
+  let n = List.length xs in
+  List.init n (fun i -> List.nth xs ((i + k) mod n))
+
+let compile_timed mdev source =
+  let library, lib_ms =
+    ms (fun () -> Api.Library.create_from_source mdev source)
+  in
+  let func = Api.Library.get_function library (entry_name source) in
+  let _, pso_ms = ms (fun () -> Api.ComputePipeline.create mdev func) in
+  (lib_ms, pso_ms)
+
+(* ---- child: one process, one nonce, kernels in a rotated order ---- *)
+
+let child ~nonce ~rotation =
   let devices = Device.init () in
   match
     Array.to_list devices
@@ -145,31 +182,34 @@ let child ~nonce =
   | None -> print_endline "SKIP"
   | Some dev ->
       let mdev = Api.Device.get dev.Device.backend_id in
+      ignore (compile_timed mdev (warm_up_source ~nonce)) ;
       List.iter
         (fun (label, k) ->
           let ir = ir_of k in
           let source =
-            Sarek_metal.Sarek_ir_metal.generate_with_types
-              ~types:ir.kern_types
-              ir
-            ^ "\n// nonce " ^ nonce ^ "\n"
+            with_nonce
+              (Sarek_metal.Sarek_ir_metal.generate_with_types
+                 ~types:ir.kern_types
+                 ir)
+              ~nonce
           in
-          let library, lib_ms =
-            ms (fun () -> Api.Library.create_from_source mdev source)
-          in
-          let func = Api.Library.get_function library (entry_name source) in
-          let _, pso_ms = ms (fun () -> Api.ComputePipeline.create mdev func) in
+          let lib_ms, pso_ms = compile_timed mdev source in
           Printf.printf "RESULT %s library %.3f\n" label lib_ms ;
           Printf.printf "RESULT %s pipeline %.3f\n%!" label pso_ms)
-        kernels
+        (rotate rotation kernels)
 
 (* ---- parent ---- *)
 
-let run_child nonce =
+let run_child ~nonce ~rotation =
   let ic =
     Unix.open_process_args_in
       Sys.executable_name
-      [|Sys.executable_name; "--child"; nonce|]
+      [|
+        Sys.executable_name;
+        "--child";
+        string_of_int nonce;
+        string_of_int rotation;
+      |]
   in
   let rec lines acc =
     match input_line ic with
@@ -182,7 +222,7 @@ let run_child nonce =
   | _ ->
       failwith
         (Printf.sprintf
-           "bench_metal_compile: child (nonce %s) failed; its output:\n%s"
+           "bench_metal_compile: child (nonce %d) failed; its output:\n%s"
            nonce
            (String.concat "\n" out))) ;
   out
@@ -234,12 +274,11 @@ let parent () =
   let samples = Hashtbl.create 64 in
   let skipped = ref false in
   for round = 1 to rounds do
-    let nonce =
-      Printf.sprintf "%d-%d-%f" (Unix.getpid ()) round (Unix.gettimeofday ())
-    in
+    let nonce = (int_of_float (Unix.gettimeofday ()) + round) land 0x3fffffff in
+    let rotation = round - 1 in
     List.iter
       (fun phase ->
-        let out = run_child nonce in
+        let out = run_child ~nonce ~rotation in
         if List.mem "SKIP" out then skipped := true ;
         record samples phase out)
       phases
@@ -260,5 +299,6 @@ let parent () =
 
 let () =
   match Array.to_list Sys.argv with
-  | [_; "--child"; nonce] -> child ~nonce
+  | [_; "--child"; nonce; rotation] ->
+      child ~nonce:(int_of_string nonce) ~rotation:(int_of_string rotation)
   | _ -> parent ()

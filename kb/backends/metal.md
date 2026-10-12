@@ -40,14 +40,17 @@
   memoised.
 - Blocking waits release the OCaml runtime lock (R-24): `waitUntilCompleted`
   goes through `Metal_bindings.send_void_blocking`
-  (`objc_msgSend` bound with `~release_runtime_lock:true`); every other message
-  uses the plain stubs. Safety: no OCaml heap pointer is passed (receiver and
+  (`objc_msgSend` bound with `~release_runtime_lock:true`), as do the two
+  compiles (`newLibraryWithSource:options:error:`,
+  `newComputePipelineStateWithFunction:error:`) and the libc `memcpy` behind
+  host/device copies (`Metal_api.memcpy`); every other message uses the plain
+  stubs. Safety: no OCaml heap pointer is passed (receiver and
   selector are C pointers) and the caller keeps the command buffer retained
-  until the wait returns. The general argument is the note on
+  until the call returns (for `memcpy`, which takes raw addresses, the caller keeps the memory allocated: bigarrays end with `Sys.opaque_identity`). The general argument is the note on
   `Hip_bindings.foreign_hip_blocking_lazy`. Test:
   `sarek-metal/test/test_metal_wait_binding.ml` (structural) and alias
-  `e2e-metal` (behavioural, needs a Mac; Apple M4: 1000 minor GCs during a 199 ms wait, 1 before).
-- No on-disk compile cache, by decision (2026-10-12): the macOS shader cache already serves a new process. `bench_metal_compile` (alias `e2e-metal-bench`), Apple M4, 5 rounds, ms median, first process for a source vs later processes: Q8_0 matvec library 22.4 -> 0.45, pipeline 0.86 -> 0.72; RMS norm 3.1 -> 0.03 and 0.08 -> 0.05; RoPE 2.3 -> 0.02 and 0.06 -> 0.04. An `MTLBinaryArchive` cache (about 250 lines) could save about 1 ms per kernel at most. Raw: `H11-ladon-compile-bench.txt`.
+  `e2e-metal` (behavioural, needs a Mac; Apple M4: 1000 minor GCs during a 199 ms wait, 1 before; raw: `docs/measurements/metal-runtime-lock-2026-10-12/r24-ladon.txt`).
+- No on-disk compile cache, by decision (2026-10-12): the macOS shader cache already serves a new process. `bench_metal_compile` (alias `e2e-metal-bench`), Apple M4, 5 rounds, ms median, first process for a source vs later processes: Q8_0 matvec library 22.4 -> 0.45, pipeline 0.86 -> 0.72; RMS norm 3.1 -> 0.03 and 0.08 -> 0.05; RoPE 2.3 -> 0.02 and 0.06 -> 0.04. An `MTLBinaryArchive` cache (about 250 lines) could save about 1 ms per kernel at most. Raw: `docs/measurements/metal-runtime-lock-2026-10-12/compile-bench-v1.txt` (first methodology: comment nonce, fixed kernel order, wall clock).
 - `Framework_sig.ASYNC` (spec `specs/metal-ranged-copies.md`): device-only
   vectors are shared-storage MTLBuffers with no host mirror; ranged copies are
   a bounds-checked `memcpy` at `contents + offset` that first waits for the

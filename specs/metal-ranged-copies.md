@@ -235,8 +235,12 @@ As a SPOC user on OpenCL/Vulkan/WebGPU, I want the existing capability refusals 
 ## Runtime lock during waits (R-24)
 
 Every blocking wait on a Metal command buffer (`waitUntilCompleted`, from
-`Pending.wait_cmd`, `Event.synchronize` and the batch flush) calls
-`objc_msgSend` with the OCaml runtime lock released, so a domain waiting on the
+`Pending.wait_cmd`, `Event.synchronize` and the flush, which reaches the wait
+through `wait_all` / `wait_selected`) calls `objc_msgSend` with the OCaml
+runtime lock released, as do the two compiles (`newLibraryWithSource`,
+`newComputePipelineState`) and the libc `memcpy` of host/device copies
+(`Metal_api.memcpy`; its raw-address arguments are not rooted by the call, so
+the caller keeps the memory allocated, as on the other backends), so a domain waiting on the
 GPU does not stop the other domains' minor collections. Invariants: the
 arguments are C pointers only (no OCaml heap pointer), and the command buffer is
 retained by the waiter for the duration of the call. Short messages keep the
@@ -245,4 +249,4 @@ Acceptance: `test_metal_wait_binding` (structural) and, on a Metal device,
 `test_blocking_ffi_releases_lock` on alias `e2e-metal` (at least 10 minor
 collections by an allocating domain during a ~200 ms `Device.synchronize`).
 
-Measured on Apple M4, macOS 15 (2026-10-12, load 2.7): 199 ms wait, 1000 minor GCs on the other domain with the change, 1 without (origin/main 1808a9a5).
+Measured on Apple M4, macOS 15 (2026-10-12, load 2.7): 199 ms wait, 1000 minor GCs on the other domain with the change, 1 without (origin/main 1808a9a5). Raw: `docs/measurements/metal-runtime-lock-2026-10-12/r24-ladon.txt`.

@@ -1,0 +1,20 @@
+Testing `metal_wait_binding'.
+  [OK]          runtime lock          2   wait.
+Full test results in `~/spoc-parity/H11/_build/default/sarek-metal/test/_build/_tests/metal_wait_binding'.
+## exit=0
+## 2026-10-12T06:02:22Z 23:02  up 55 days, 20:21, 0 users, load averages: 2.73 3.45 3.14
+   (co-running: a curl download, process line elided)
+## co-running: Flash-MoE download under ~/flashmoe-bench (coordinator)
+## cmd: ./_build/default/sarek/tests/e2e/test_blocking_ffi_releases_lock.exe
+Blocking FFI releases the runtime lock (2 GPU devices)
+  [OpenCL] Apple M4: wait 194 ms (spin 13312286), 983 minor GCs and 14802k allocating iterations on the other domain during the wait
+    ok   the other domain kept collecting
+  [Metal] Apple M4 (Metal): wait 199 ms (spin 13634711), 1000 minor GCs and 15065k allocating iterations on the other domain during the wait
+    ok   the other domain kept collecting
+## exit=0
+## exit=0
+## the next run is the same test on origin/main 1808a9a5 (without the change)
+    ok   the other domain kept collecting
+  [Metal] Apple M4 (Metal): wait 199 ms (spin 13626684), 1 minor GCs and 14k allocating iterations on the other domain during the wait
+    FAIL the other domain stalled (fewer than 10 minor GCs)
+## exit=1
