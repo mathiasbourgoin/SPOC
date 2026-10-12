@@ -58,8 +58,8 @@ let matvec_q8 =
             let idx = (row * cols) + (b * 32l) + j in
             let q = wq.(idx / 4l) in
             let byte = (q lsr (8l * (idx land 3l))) land 255l in
-            let signed = if byte > 127l then byte - 256l else byte in
-            part := part +. (float signed *. x.((b * 32l) + j)) ;
+            let sval = if byte > 127l then byte - 256l else byte in
+            part := part +. (float sval *. x.((b * 32l) + j)) ;
             j := j + 1l
           done ;
           acc := acc +. (s *. part) ;
@@ -177,7 +177,14 @@ let run_child nonce =
     | exception End_of_file -> List.rev acc
   in
   let out = lines [] in
-  ignore (Unix.close_process_in ic) ;
+  (match Unix.close_process_in ic with
+  | Unix.WEXITED 0 -> ()
+  | _ ->
+      failwith
+        (Printf.sprintf
+           "bench_metal_compile: child (nonce %s) failed; its output:\n%s"
+           nonce
+           (String.concat "\n" out))) ;
   out
 
 let parse_result l =

@@ -244,3 +244,5 @@ plain stub: releasing and reacquiring the lock costs more than they take.
 Acceptance: `test_metal_wait_binding` (structural) and, on a Metal device,
 `test_blocking_ffi_releases_lock` on alias `e2e-metal` (at least 10 minor
 collections by an allocating domain during a ~200 ms `Device.synchronize`).
+
+Measured on Apple M4, macOS 15 (2026-10-12, load 2.7): 199 ms wait, 1000 minor GCs on the other domain with the change, 1 without (origin/main 1808a9a5).
