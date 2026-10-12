@@ -155,10 +155,11 @@ let queue_submit dev count submits fence =
       | None -> vkQueueSubmit dev.compute_queue count submits fence)
 
 (** Completes every launch recorded on [dev] and not yet finished: submits open
-    batches and waits for their fences. Installed by {!Vulkan_api_stream} (which
-    depends on this module); until then no batch can exist. Every host access to
-    device memory, every buffer release and every device-wide wait goes through
-    it. *)
+    batches, waits for their fences and runs the queued buffer releases.
+    Installed by {!Vulkan_api_batch} (which depends on this module); until then
+    no batch can exist. Every host access to device memory, kernel eviction and
+    every device-wide wait goes through it; a buffer free does not (see
+    {!try_release_idle}). *)
 let drain_pending : (t -> unit) ref = ref (fun _ -> ())
 
 (** Queue [release] to run once no launch recorded so far can still use the
@@ -1239,10 +1240,14 @@ let destroy_live dev =
     | () -> None
     | exception e -> Some e
   in
-  (* Releases queued since the drain (finaliser frees) precede the device. *)
-  (try List.iter (fun release -> release ()) (take_deferred dev) with _ -> ()) ;
-  vkDestroyCommandPool dev.device dev.command_pool null ;
-  vkDestroyDevice dev.device null ;
+  (* Releases queued since the drain (finaliser frees) precede the device. The
+     batch lock is held from the last release to the destruction, so a free
+     cannot run Vulkan calls on the device while it is being destroyed. *)
+  Mutex.protect dev.batch_lock (fun () ->
+      (try List.iter (fun release -> release ()) (take_deferred dev)
+       with _ -> ()) ;
+      vkDestroyCommandPool dev.device dev.command_pool null ;
+      vkDestroyDevice dev.device null) ;
   Option.iter
     raise
     (match drain_exn with Some _ -> drain_exn | None -> listener_exn)

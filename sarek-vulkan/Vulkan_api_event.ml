@@ -35,14 +35,14 @@ let destroy event =
     record still pending is waited for first, since a pending fence cannot be
     reset. *)
 let record event (stream : Stream.t) =
-  if stream.Stream.device.Device.id <> event.device.Device.id then
+  if (Stream.device stream).Device.id <> event.device.Device.id then
     Vulkan_error.raise_error
       (Vulkan_error.context_error
          "Event.record"
          (Printf.sprintf
             "event belongs to device %d, stream to device %d"
             event.device.Device.id
-            stream.Stream.device.Device.id)) ;
+            (Stream.device stream).Device.id)) ;
   let vk_device = event.device.Device.device in
   (* The event covers the launches recorded before it: submit them (no wait). *)
   Stream.flush_device event.device ;
