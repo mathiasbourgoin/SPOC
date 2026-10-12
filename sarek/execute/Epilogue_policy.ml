@@ -18,19 +18,22 @@
     concerned with [Cross_kernel_contraction] ({!Sarek_policy.requires}).
 
     What this module adds to that decision is a per-backend switch that only
-    restricts: every backend is on by default, [SAREK_LAUNCH_EPILOGUE=0] and
-    {!set_backend_enabled}[ false] switch it off, and [true] only undoes a
-    switch-off; it never grants anything. *)
+    restricts: every backend is on by default, {!set_backend_enabled}[ false]
+    switches one off and [true] only undoes that; [SAREK_LAUNCH_EPILOGUE=0]
+    restricts epilogue fusion for the whole process, for good. Neither grants
+    anything. *)
 
-(* The backends {!Sarek_policy.requires} offers epilogue fusion on;
-   [SAREK_LAUNCH_EPILOGUE=0] switches all of them off at start-up. *)
-let offered = ["HIP"; "Metal"; "CUDA/PTX"; "CUDA/C"; "CUDA"; "OpenCL"; "Vulkan"]
+(* Backends switched off with {!set_backend_enabled}; only a switch-off made
+   there is undone by [true]. [SAREK_LAUNCH_EPILOGUE=0] is not in this list: it
+   is a process restriction of {!Sarek_policy.Epilogue_fusion} (one-way, like
+   [SAREK_OPT_DISABLE=epilogue] in M3), so no later [true] brings fusion back. *)
+let switched_off : string list Atomic.t = Atomic.make []
 
-let switched_off : string list Atomic.t =
-  Atomic.make
-    (match Sys.getenv_opt "SAREK_LAUNCH_EPILOGUE" with
-    | Some ("0" | "false" | "off" | "no") -> offered
-    | _ -> [])
+let () =
+  match Sys.getenv_opt "SAREK_LAUNCH_EPILOGUE" with
+  | Some ("0" | "false" | "off" | "no") ->
+      Sarek_policy.restrict Sarek_policy.Epilogue_fusion
+  | _ -> ()
 
 (* A backend stays off once its plugin reported that it lost the exactness the
    fusion relies on ({!Spoc_framework_registry.Fp_exactness}: Metal without
