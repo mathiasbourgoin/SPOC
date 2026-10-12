@@ -141,10 +141,17 @@ let wait_fence (ctx : string) device fence =
   loop 0L ;
   ignore (Sys.opaque_identity fence_ptr)
 
+(** Test hook: while [Some r], every fence status query returns [r]. *)
+let inject_status_failure : vk_result option ref = ref None
+
 (** Whether [fence] has signalled, without blocking. Raises the canonical error
     of {!check} on a device error. *)
 let fence_signalled (ctx : string) device fence =
-  match Vulkan_bindings.vkGetFenceStatus device fence with
+  match
+    match !inject_status_failure with
+    | Some result -> result
+    | None -> Vulkan_bindings.vkGetFenceStatus device fence
+  with
   | VK_SUCCESS -> true
   | VK_NOT_READY -> false
   | result ->

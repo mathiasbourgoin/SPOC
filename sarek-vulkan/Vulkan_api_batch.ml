@@ -51,10 +51,30 @@ let failure_of_error = function
       (kernel_name, reason)
   | e -> ("", BE.to_string e)
 
-(** Abandon a slot whose fence can no longer signal. *)
+(** The slot's fields back to idle; allocation-free, so no asynchronous
+    exception can interrupt it. Pool counters may be stale afterwards. *)
+let force_idle slot =
+  slot.fence.pending <- false ;
+  slot.kernels <- [] ;
+  slot.dispatches <- 0 ;
+  slot.recording <- false ;
+  slot.armed <- false ;
+  slot.ended <- false
+
+(** {!retire}, retried when an exception interrupts it (asynchronous ones can
+    land at any allocation); after [attempts] failures only the fields are
+    reset. *)
+let rec retire_robust attempts stream slot =
+  match retire stream slot with
+  | () -> ()
+  | exception _ ->
+      if attempts > 0 then retire_robust (attempts - 1) stream slot
+      else force_idle slot
+
+(** Abandon a slot whose work is over or can never be observed. *)
 let abandon stream slot =
   slot.fence.pending <- false ;
-  try retire stream slot with _ -> slot.recording <- false
+  retire_robust 100 stream slot
 
 (** Wait for the slot's submission, if any, and retire it. A failing wait raises
     the batch error naming its kernels. Only a lost device ends the slot's work:
@@ -72,10 +92,12 @@ let await_slot stream slot =
     with
     | () -> retire stream slot
     | exception Vulkan_error.Vulkan_error e ->
-        let kernels = kernel_names slot in
+        let kernels = slot.kernels in
         if is_device_lost e then abandon stream slot ;
         Vulkan_error.raise_error
-          (Vulkan_error.kernel_launch_failed kernels (BE.to_string e))
+          (Vulkan_error.kernel_launch_failed
+             (names_of_kernels kernels)
+             (BE.to_string e))
   end
 
 let raise_deferred stream =
@@ -113,6 +135,7 @@ let submit_info_of slot =
 let submit_slot stream slot =
   let device = stream.device in
   Vulkan_api_barrier.end_of_batch slot.command_buffer ;
+  slot.ended <- true ;
   check "vkEndCommandBuffer" (vkEndCommandBuffer slot.command_buffer) ;
   reset_fence
     "vkResetFences (launch batch)"
@@ -129,20 +152,30 @@ let submit_slot stream slot =
   ignore (Sys.opaque_identity cmd_buf_ptr) ;
   ignore (Sys.opaque_identity submit_info)
 
+let wait_queue_idle device =
+  Device.with_queue_lock device (fun () ->
+      ignore (vkQueueWaitIdle device.Device.compute_queue))
+
 (** An exception that is not a Vulkan failure (an asynchronous one: [Sys.Break],
     [Out_of_memory], a raising finaliser or memprof callback) escaped
-    {!submit_slot}. If it came after the fence was armed the queue may be
-    running the batch, so wait for the queue before the slot's pools are reset.
-    The slot is then retired and the exception is the caller's to re-raise as it
-    is. *)
-let recover_from_exception stream slot =
-  let device = stream.device in
-  (if slot.armed then
-     try
-       Device.with_queue_lock device (fun () ->
-           check "vkQueueWaitIdle" (vkQueueWaitIdle device.Device.compute_queue))
-     with _ -> ()) ;
-  abandon stream slot
+    {!submit_slot}. Before [vkEndCommandBuffer] the batch is intact and stays
+    open. After it, the batch may or may not have been accepted by the queue: if
+    the fence was armed, wait for the queue to be idle before the slot's pools
+    are reset, then abandon the slot (its launches may or may not have run).
+    Another exception can land in this recovery itself, so every step is
+    retried, nothing is allocated outside the protected region, and [attempts]
+    bounds the retries. The caller re-raises the original exception as it is. *)
+let rec recover_from_exception attempts stream slot =
+  match
+    if slot.ended then begin
+      if slot.armed then wait_queue_idle stream.device ;
+      abandon stream slot
+    end
+  with
+  | () -> ()
+  | exception _ ->
+      if attempts > 0 then recover_from_exception (attempts - 1) stream slot
+      else force_idle slot
 
 (** Submit the open batch of [stream], without waiting for it. A Vulkan failure
     retires the batch; it is raised now when [defer] is false, and otherwise
@@ -154,15 +187,16 @@ let submit_open ~defer stream =
     match submit_slot stream slot with
     | () -> stream.active <- (stream.active + 1) mod Array.length stream.slots
     | exception Vulkan_error.Vulkan_error e ->
-        let kernels = kernel_names slot in
+        let kernels = slot.kernels in
         abandon stream slot ;
+        let kernels = names_of_kernels kernels in
         if not defer then
           Vulkan_error.raise_error
             (Vulkan_error.kernel_launch_failed kernels (BE.to_string e))
         else if stream.deferred = None then
           stream.deferred <- Some (kernels, BE.to_string e)
     | exception e ->
-        recover_from_exception stream slot ;
+        recover_from_exception 1000 stream slot ;
         raise e
   end
 
@@ -234,9 +268,10 @@ let reap stream slot =
     | false -> ()
     | exception Vulkan_error.Vulkan_error e ->
         if is_device_lost e then begin
+          let kernels = slot.kernels in
+          abandon stream slot ;
           if stream.deferred = None then
-            stream.deferred <- Some (kernel_names slot, BE.to_string e) ;
-          abandon stream slot
+            stream.deferred <- Some (names_of_kernels kernels, BE.to_string e)
         end
 
 let reap_all device =

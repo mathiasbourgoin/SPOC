@@ -210,24 +210,64 @@ let test_other_wait_error_keeps_slot device =
     (Stream.pending_launches device) ;
   Memory.free buf
 
-(** An exception that is not a Vulkan failure (here [Exit], raised from a
-    memprof callback at the k-th allocation of [Stream.synchronize]) must reach
-    the caller unchanged, whichever point of the submission it hits, and leave
-    no slot retired while the queue runs it. *)
-let test_async_exception_in_submit device =
+(** A status query that reports a lost device, seen by the free path: the error
+    is kept once as the stream's deferred error, the slot is abandoned, and the
+    next wait raises it exactly once. *)
+let test_reap_lost_device device =
+  let kernel = incr_kernel device "async_reap_lost" in
+  let buf = upload device [|0.0|] in
+  launch_incr kernel buf ;
+  Stream.flush_device device ;
+  wait_queue_idle device ;
+  let victim = Memory.alloc device 16 Bigarray.float32 in
+  Vulkan_api_base.inject_status_failure :=
+    Some Vulkan_types.VK_ERROR_DEVICE_LOST ;
+  Fun.protect
+    ~finally:(fun () -> Vulkan_api_base.inject_status_failure := None)
+    (fun () -> Memory.free victim) ;
+  Alcotest.(check int)
+    "the slot was abandoned by the free path"
+    0
+    (Stream.pending_launches device) ;
+  expect_named_failure "kept status error" "async_reap_lost" (fun () ->
+      Stream.synchronize (Stream.default device)) ;
+  Stream.synchronize (Stream.default device) ;
+  Memory.free buf
+
+(** Sweep an asynchronous exception ([Exit], raised from a memprof callback at
+    the k-th allocation of [Stream.synchronize] and at the next [burst]
+    allocations) over every point of a submission of [batch] launches. Whatever
+    the point: only [Exit] reaches the caller; no slot is retired while the
+    queue still runs its batch (fence not signalled right away, signalled after
+    a queue wait); the batch ran entirely or not at all; and a batch the
+    exception left open (it came before the command buffer was ended) is not
+    lost. The sweep must see both kinds of round. *)
+let async_exception_sweep ~burst device =
+  let batch = 20 in
   let kernel = incr_kernel device "async_memprof" in
   let buf = upload device [|0.0|] in
   let stream = Stream.default device in
+  let slots () = stream.Vulkan_api_slot.slots in
+  let status (sl : Vulkan_api_slot.slot) =
+    Vulkan_api_base.fence_signalled "test" device.Device.device sl.fence.handle
+  in
   let previous = ref 0.0 in
   let k = ref 0 and fired = ref true in
-  while !fired && !k < 600 do
+  let kept_open = ref 0 and lost_or_ran = ref 0 in
+  while !fired && !k < 800 do
     incr k ;
-    launch_incr kernel buf ;
+    for _ = 1 to batch do
+      launch_incr kernel buf
+    done ;
     let count = ref 0 in
+    let ended_at_fire = ref true in
     fired := false ;
     let callback _ =
       incr count ;
-      if !count = !k then begin
+      if !count >= !k && !count <= !k + burst then begin
+        if not !fired then
+          ended_at_fire :=
+            (slots ()).(stream.Vulkan_api_slot.active).Vulkan_api_slot.ended ;
         fired := true ;
         raise Exit
       end ;
@@ -252,40 +292,76 @@ let test_async_exception_in_submit device =
     | `Other what ->
         Alcotest.failf "k=%d: an exception other than Exit escaped: %s" !k what
     | `Ok | `Exit -> ()) ;
-    let slots = stream.Vulkan_api_slot.slots in
-    let retired_in_flight =
-      Array.exists
-        (fun (sl : Vulkan_api_slot.slot) ->
-          sl.fence.pending && sl.dispatches = 0 && not sl.recording)
-        slots
+    let before =
+      Array.map
+        (fun sl -> (sl.Vulkan_api_slot.fence.pending, status sl))
+        (slots ())
     in
-    Alcotest.(check bool)
-      (Printf.sprintf "k=%d: no slot retired while in flight" !k)
-      false
-      retired_in_flight ;
+    let still_open =
+      Array.exists
+        (fun (sl : Vulkan_api_slot.slot) -> sl.recording && sl.dispatches > 0)
+        (slots ())
+    in
+    wait_queue_idle device ;
+    Array.iteri
+      (fun i (pending, signalled_before) ->
+        if (not pending) && (not signalled_before) && status (slots ()).(i) then
+          Alcotest.failf
+            "k=%d burst=%d: a slot was retired while the queue ran its batch"
+            !k
+            burst)
+      before ;
     Stream.synchronize stream ;
     Alcotest.(check int) "nothing pending" 0 (Stream.pending_launches device) ;
     let value = (download buf).(0) in
+    let fb = float batch in
     Alcotest.(check bool)
       (Printf.sprintf
-         "k=%d: the launch ran at most once (%.0f -> %.0f)"
+         "k=%d: all or none of the batch ran (%.0f -> %.0f)"
          !k
          !previous
          value)
       true
-      (value = !previous || value = !previous +. 1.0) ;
+      (value = !previous || value = !previous +. fb) ;
     if outcome = `Ok then
       Alcotest.(check (float 0.0))
         "an unfired round ran"
-        (!previous +. 1.0)
+        (!previous +. fb)
         value ;
+    if outcome = `Exit && not !ended_at_fire then
+      Alcotest.(check (float 0.0))
+        (Printf.sprintf
+           "k=%d: an exception before the command buffer ended loses nothing"
+           !k)
+        (!previous +. fb)
+        value ;
+    if still_open then begin
+      incr kept_open ;
+      Alcotest.(check (float 0.0))
+        (Printf.sprintf "k=%d: a batch left open was not lost" !k)
+        (!previous +. fb)
+        value
+    end
+    else if outcome = `Exit then incr lost_or_ran ;
     previous := value
   done ;
   Alcotest.(check bool)
     "the sweep passed the end of the submission"
     false
     !fired ;
+  Alcotest.(check bool)
+    "some exception left the batch open"
+    true
+    (!kept_open > 0) ;
+  Alcotest.(check bool)
+    "some exception hit after the command buffer ended"
+    true
+    (!lost_or_ran > 0) ;
   Memory.free buf
+
+let test_async_exception_in_submit = async_exception_sweep ~burst:0
+
+let test_async_exception_burst = async_exception_sweep ~burst:3
 
 (** Runs last: destroys the device. A second destroy and a destroy through a
     stale handle do nothing, a free of a buffer of the destroyed device runs no
@@ -343,6 +419,10 @@ let () =
             `Quick
             (with_device test_signalled_slot_is_reaped);
           Alcotest.test_case
+            "a lost device seen by the free path is kept once"
+            `Quick
+            (with_device test_reap_lost_device);
+          Alcotest.test_case
             "a lost-device wait raises once"
             `Quick
             (with_device test_lost_wait_raises_once);
@@ -354,6 +434,10 @@ let () =
             "an asynchronous exception during submission"
             `Quick
             (with_device test_async_exception_in_submit);
+          Alcotest.test_case
+            "a burst of asynchronous exceptions during submission"
+            `Quick
+            (with_device test_async_exception_burst);
         ] );
       ( "teardown",
         [
