@@ -72,7 +72,6 @@ let run dev ir =
   (outcome, Spoc_core.Vector.get c 0)
 
 let () =
-  Sarek_execute.Matrix_specialise.(set_mode Auto) ;
   let dev =
     match
       List.find_opt

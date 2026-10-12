@@ -477,34 +477,29 @@ let test_one_ir_hash_per_matrix_decision () =
   let hip = {(device ()) with framework = "HIP"} in
   let a = kernel ~name:"plan_a" Sarek_ir_types.TInt32
   and b = kernel ~name:"plan_b" Sarek_ir_types.TInt32 in
-  let mode = Sarek_execute.Matrix_specialise.mode () in
-  Sarek_execute.Matrix_specialise.set_mode Sarek_execute.Matrix_specialise.Auto ;
-  Fun.protect
-    ~finally:(fun () -> Sarek_execute.Matrix_specialise.set_mode mode)
-    (fun () ->
-      let decide ir =
-        match
-          Sarek_execute.Matrix_specialise.choose
-            ~device:hip
-            ~ir
-            ~launch:(fun () -> None)
-            ()
-        with
-        | Sarek_execute.Matrix_specialise.Original _ -> ()
-        | Specialised _ -> fail "a scalar kernel has no matrix product"
-      in
-      decide a ;
-      decide b ;
-      let before = Sarek_execute.Ir_memo.hash_count () in
-      for _ = 1 to 5 do
-        decide a ;
-        decide b
-      done ;
-      check
-        int
-        "IR hashes for 10 alternating decisions"
-        10
-        (Sarek_execute.Ir_memo.hash_count () - before))
+  let decide ir =
+    match
+      Sarek_execute.Matrix_specialise.choose
+        ~device:hip
+        ~ir
+        ~launch:(fun () -> None)
+        ()
+    with
+    | Sarek_execute.Matrix_specialise.Original _ -> ()
+    | Specialised _ -> fail "a scalar kernel has no matrix product"
+  in
+  decide a ;
+  decide b ;
+  let before = Sarek_execute.Ir_memo.hash_count () in
+  for _ = 1 to 5 do
+    decide a ;
+    decide b
+  done ;
+  check
+    int
+    "IR hashes for 10 alternating decisions"
+    10
+    (Sarek_execute.Ir_memo.hash_count () - before)
 
 (* Replacing a backend under the same name (Framework_registry uses
    Hashtbl.replace) must not hand the replacement its predecessor's source. *)

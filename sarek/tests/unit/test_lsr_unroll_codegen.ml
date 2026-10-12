@@ -10,7 +10,7 @@
  * 1. Every backend spells [lsr] as its native unsigned shift, and none of
  *    them still contains the old arithmetic-shift/xor emulation.
  * 2. The unroll rule: constant bounds, trip count 1..16, nest expansion <= 64,
- *    explicit pragmas win, SAREK_AUTO_UNROLL=0 turns it off.
+ *    explicit pragmas win (SAREK_OPT_DISABLE=unroll: sarek/tests/policy_env).
  * 3. The hint as each backend prints it (#pragma unroll, [[unroll]]).
  * 4. The emitted source is accepted by glslangValidator, naga and clang (as
  *    OpenCL C) when they are on PATH.
@@ -279,24 +279,6 @@ let check_rule () =
     (SWhile (EConst (CBool true), loop 1 (i32 0) (i32 3) leaf))
     [4]
 
-let with_env value f =
-  let old = Sys.getenv_opt "SAREK_AUTO_UNROLL" in
-  Unix.putenv "SAREK_AUTO_UNROLL" value ;
-  Fun.protect
-    ~finally:(fun () ->
-      Unix.putenv "SAREK_AUTO_UNROLL" (Option.value old ~default:""))
-    f
-
-let check_env_off () =
-  let s = loop 1 (i32 0) (i32 7) leaf in
-  with_env "0" (fun () ->
-      Alcotest.(check (list int)) "SAREK_AUTO_UNROLL=0" [] (hinted (annotate s))) ;
-  with_env "1" (fun () ->
-      Alcotest.(check (list int))
-        "SAREK_AUTO_UNROLL=1"
-        [8]
-        (hinted (annotate s)))
-
 (******************************************************************************
  * 3. The hint in each backend
  ******************************************************************************)
@@ -336,19 +318,7 @@ let check_backend_hints () =
         (backend ^ ": no unroll spelling")
         false
         (contains (gen backend k) "unroll"))
-    ["WGSL"; "PTX"] ;
-  with_env "0" (fun () ->
-      List.iter
-        (fun backend ->
-          Alcotest.(check int)
-            (backend ^ " with SAREK_AUTO_UNROLL=0")
-            0
-            (count (gen backend k) "#pragma unroll\n"))
-        ["CUDA"; "OpenCL"; "Metal"] ;
-      Alcotest.(check bool)
-        "GLSL with SAREK_AUTO_UNROLL=0"
-        false
-        (contains (gen "GLSL" k) "[[unroll]]"))
+    ["WGSL"; "PTX"]
 
 (******************************************************************************
  * 4. Validators
@@ -458,7 +428,6 @@ let () =
       ( "unroll",
         [
           Alcotest.test_case "rule" `Quick check_rule;
-          Alcotest.test_case "SAREK_AUTO_UNROLL" `Quick check_env_off;
           Alcotest.test_case "backends" `Quick check_backend_hints;
         ] );
       ( "validators",

@@ -147,7 +147,6 @@ let launch ~m ~n ~k : unit -> Sarek_ir_eval_int.launch option =
 let choose ?(explicit = true) ?(device = metal ()) ?(dims = (100, 37, 129))
     ?precision ir =
   let m, n, k = dims in
-  Spec.set_mode Spec.Auto ;
   Spec.choose ?precision ~explicit ~device ~ir ~launch:(launch ~m ~n ~k) ()
 
 (* A device of another framework whose probe advertises 8x8x8 fragments only:

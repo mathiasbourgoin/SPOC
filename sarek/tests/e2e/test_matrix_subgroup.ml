@@ -30,13 +30,26 @@ let shapes = [(1, 1, 1); (17, 33, 5); (64, 64, 64); (40, 24, 20); (33, 65, 17)]
 
 let last_block = ref None
 
-let () =
-  Spec.set_reporter
-    (Some
-       (fun r ->
-         match r.Spec.outcome with
-         | Spec.Specialised s -> last_block := Some s.Spec.block
-         | Spec.Original _ -> last_block := None))
+(* The rewritten launch, with the block the outcome laid it out for. *)
+let launch_observed ~rewrite dev ir ~args ~block ~grid =
+  if rewrite then (
+    match
+      Execute.run_vectors_outcome
+        ~explicit:true
+        ~device:dev
+        ~ir
+        ~args
+        ~block
+        ~grid
+        ()
+    with
+    | Spec.Specialised s ->
+        last_block := Some s.Spec.block ;
+        Sarek_matrix.Rewritten {lowering = s.lowering; config = s.config}
+    | Spec.Original why ->
+        last_block := None ;
+        Sarek_matrix.Original why)
+  else launch ~rewrite dev ir ~args ~block ~grid
 
 type inputs = {
   a : int32 array;
@@ -72,7 +85,7 @@ let launch_once dev case inp (m, n, k) ~rewrite =
     @ if case.batched then [i inp.nb; Execute.Int32 inp.alpha] else []
   in
   last_block := None ;
-  let outcome = launch ~rewrite dev case.kernel ~args ~block ~grid in
+  let outcome = launch_observed ~rewrite dev case.kernel ~args ~block ~grid in
   Transfer.flush dev ;
   (Vector.to_array cv, outcome)
 

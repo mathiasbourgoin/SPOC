@@ -7,6 +7,7 @@
  codegen_golden
  downstream
  matrix_pattern
+ policy_env
  doc_snippets)
 
 (alias
@@ -26,5 +27,7 @@
    (alias doc_snippets/runtest))
   (:matrix_pattern
    (alias matrix_pattern/runtest))
+  (:policy_env
+   (alias policy_env/runtest))
   (:core
    (alias ../core/test/runtest))))

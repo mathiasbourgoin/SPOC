@@ -66,13 +66,11 @@ let int_run ?(explicit = false) dev ~m ~n ~k =
   let got, outcome = go false in
   (original, got, outcome)
 
-let check_mode ?(explicit = false) dev ~mode ~expect =
-  Spec.set_mode mode ;
+let check_default ?(explicit = false) dev ~expect =
   let original, got, outcome = int_run ~explicit dev ~m:40 ~n:24 ~k:20 in
   let what =
     Printf.sprintf
-      "int32, mode %s%s, on %s"
-      (Spec.mode_name mode)
+      "int32%s, on %s"
       (if explicit then ", explicit" else "")
       dev.Device.name
   in
@@ -185,7 +183,6 @@ let auto_rewrites dev =
 
 (* Two launches of one kernel on one device reuse the rewritten IR. *)
 let check_cache dev =
-  Spec.set_mode Spec.Auto ;
   let explicit = not (auto_rewrites dev) in
   let _, _, o1 = int_run ~explicit dev ~m:17 ~n:33 ~k:5 in
   let _, _, o2 = int_run ~explicit dev ~m:17 ~n:33 ~k:5 in
@@ -194,15 +191,29 @@ let check_cache dev =
       ok "cache on %s: one rewritten IR for both launches" dev.Device.name
   | _ -> fail "cache on %s: rewritten IR not reused" dev.Device.name
 
-let check_report dev =
+(* The matrix decisions the explain report carries, newest first. *)
+let matrix_decisions f =
   let seen = ref [] in
-  Spec.set_reporter (Some (fun r -> seen := r :: !seen)) ;
-  let _ = int_run ~explicit:(not (auto_rewrites dev)) dev ~m:8 ~n:8 ~k:8 in
-  Spec.set_reporter None ;
-  match !seen with
-  | {Spec.outcome = Spec.Specialised _; _} :: _ ->
-      ok "report on %s: the rewrite was reported" dev.Device.name
-  | _ -> fail "report on %s: no rewrite reported" dev.Device.name
+  Sarek_policy.set_reporter
+    (Some
+       (function
+       | Sarek_policy.Decision
+           {optimisation = Sarek_policy.Matrix_rewrite; decision; _} ->
+           seen := decision :: !seen
+       | Sarek_policy.Decision _ | Sarek_policy.Ignored_grant _ -> ())) ;
+  f () ;
+  Sarek_policy.set_reporter None ;
+  !seen
+
+let check_report dev =
+  let seen =
+    matrix_decisions (fun () ->
+        ignore (int_run ~explicit:(not (auto_rewrites dev)) dev ~m:8 ~n:8 ~k:8))
+  in
+  match seen with
+  | Sarek_policy.Applied _ :: _ ->
+      ok "explain on %s: the rewrite was reported" dev.Device.name
+  | _ -> fail "explain on %s: no rewrite reported" dev.Device.name
 
 (* ---- Review regressions ----------------------------------------------- *)
 
@@ -334,18 +345,18 @@ let k_not_a_gemm =
       if i < n then a.(i) <- a.(i) + 1l]
 
 let check_not_reported dev =
-  let seen = ref 0 in
-  Spec.set_reporter (Some (fun _ -> incr seen)) ;
-  Execute.run_vectors
-    ~device:dev
-    ~ir:(ir_of k_not_a_gemm)
-    ~args:[Execute.Vec (vec (Array.make 64 1l)); Execute.Int32 64l]
-    ~block:(Execute.dims1d 64)
-    ~grid:(Execute.dims1d 1)
-    () ;
-  Transfer.flush dev ;
-  Spec.set_reporter None ;
-  if !seen = 0 then ok "non-matrix kernel on %s: not reported" dev.Device.name
+  let seen =
+    matrix_decisions (fun () ->
+        Execute.run_vectors
+          ~device:dev
+          ~ir:(ir_of k_not_a_gemm)
+          ~args:[Execute.Vec (vec (Array.make 64 1l)); Execute.Int32 64l]
+          ~block:(Execute.dims1d 64)
+          ~grid:(Execute.dims1d 1)
+          () ;
+        Transfer.flush dev)
+  in
+  if seen = [] then ok "non-matrix kernel on %s: not reported" dev.Device.name
   else fail "non-matrix kernel on %s: reported" dev.Device.name
 
 (* f32 without ~precision after accepting f16 and bf16x3 rounding: float16
@@ -378,39 +389,13 @@ let check_auto_precision dev =
 let int_phase dev =
   let rewrites = offers_int dev in
   let interp = not (auto_rewrites dev) in
-  check_mode dev ~mode:Spec.Auto ~expect:(rewrites && not interp) ;
-  check_mode dev ~mode:Spec.Exact ~expect:(rewrites && not interp) ;
-  check_mode dev ~mode:Spec.Off ~expect:false ;
-  check_mode ~explicit:true dev ~mode:Spec.Auto ~expect:rewrites ;
-  check_mode ~explicit:true dev ~mode:Spec.Off ~expect:false ;
-  Spec.set_mode Spec.Auto ;
+  check_default dev ~expect:(rewrites && not interp) ;
+  check_default ~explicit:true dev ~expect:rewrites ;
   if rewrites then (
     check_cache dev ;
     check_report dev)
 
-(* Mode exact leaves float16 alone even after the opt-in (explicit request,
-   so the interpreter is asked too). *)
-let check_exact_f16 dev =
-  Spec.set_mode Spec.Exact ;
-  let outcome =
-    Execute.run_vectors_outcome
-      ~explicit:true
-      ~device:dev
-      ~ir:(ir_of k_f16)
-      ~args:(small_f16_args ~m:4 ~n:4 ~k:4 [4; 4; 4])
-      ~block:(Execute.dims3d 16 16 1)
-      ~grid:(Execute.dims3d 1 1 1)
-      ()
-  in
-  Spec.set_mode Spec.Auto ;
-  match outcome with
-  | Spec.Original why ->
-      ok "f16 in mode exact on %s: original (%s)" dev.Device.name why
-  | Spec.Specialised _ ->
-      fail "f16 rewritten in mode exact on %s" dev.Device.name
-
 let float_phase dev =
-  check_exact_f16 dev ;
   check_size_class dev ~m:64 ~n:64 ~k:64 ~expect_direct:true ;
   check_size_class dev ~m:40 ~n:24 ~k:20 ~expect_direct:false ;
   (* Aligned but accumulating into C: staged (see Sarek_matrix_direct). *)

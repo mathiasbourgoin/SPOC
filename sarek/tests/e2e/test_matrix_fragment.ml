@@ -55,17 +55,6 @@ let chain ~m ~n ~k ~init a b =
       done ;
       !acc)
 
-let last_shape = ref None
-
-let () =
-  Spec.set_reporter
-    (Some
-       (fun r ->
-         match r.Spec.outcome with
-         | Spec.Specialised s ->
-             last_shape := Some s.Spec.config.Sarek_coopmat.cfg_shape
-         | Spec.Original _ -> last_shape := None))
-
 let launch_once dev kernel ~c0 a b (m, n, k) ~rewrite =
   let block, grid = geo_2d ~m ~n ~nb:1 in
   let cv = vec_f32 c0 in
@@ -80,19 +69,18 @@ let launch_once dev kernel ~c0 a b (m, n, k) ~rewrite =
       i k;
     ]
   in
-  last_shape := None ;
   let outcome = launch ~rewrite dev kernel ~args ~block ~grid in
   Transfer.flush dev ;
   (Vector.to_array cv, outcome)
 
 let check_shape what ~frag outcome =
-  match (outcome, !last_shape) with
-  | Sarek_matrix.Rewritten _, Some s
+  match outcome with
+  | Sarek_matrix.Rewritten {config = {Sarek_coopmat.cfg_shape = s; _}; _}
     when s.Sarek_coopmat.m = frag && s.n = frag && s.k = frag ->
       ()
-  | Sarek_matrix.Rewritten _, _ ->
+  | Sarek_matrix.Rewritten _ ->
       fail "%s: not laid out for %dx%dx%d fragments" what frag frag frag
-  | Sarek_matrix.Original why, _ -> fail "%s: not rewritten (%s)" what why
+  | Sarek_matrix.Original why -> fail "%s: not rewritten (%s)" what why
 
 let operands (m, n, k) =
   let f16 () = round16 (Random.float 2.0 -. 1.0) in

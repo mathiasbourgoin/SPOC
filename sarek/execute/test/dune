@@ -32,7 +32,7 @@
   alcotest))
 
 ; Policy of the launch-time matrix rewrite (specs/matrix-pattern-dynamic.md):
-; the SAREK_MATRIX_REWRITE parser and the opt-ins of the automatic float
+; the opt-ins of the automatic float
 ; rewrite. No device.
 
 (test
