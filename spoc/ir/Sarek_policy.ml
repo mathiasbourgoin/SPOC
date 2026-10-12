@@ -392,22 +392,25 @@ let emit ~key ~event kernel =
       in
       List.iter sink events
 
+(* Without a sink: one atomic read, before any key or text is built. *)
 let report r =
-  emit
-    ~key:
-      ( r.kernel,
-        r.target,
-        optimisation_name r.optimisation,
-        Sarek_policy_env.decision_text r.decision )
-    ~event:(Decision r)
-    r.kernel
+  if reporting () then
+    emit
+      ~key:
+        ( r.kernel,
+          r.target,
+          optimisation_name r.optimisation,
+          Sarek_policy_env.decision_text r.decision )
+      ~event:(Decision r)
+      r.kernel
 
 let report_gate ~kernel ~target decision =
-  emit
-    ~key:
-      (kernel, target, "coopmat-gate", Sarek_policy_env.decision_text decision)
-    ~event:(Gate {kernel; target; decision})
-    kernel
+  if reporting () then
+    emit
+      ~key:
+        (kernel, target, "coopmat-gate", Sarek_policy_env.decision_text decision)
+      ~event:(Gate {kernel; target; decision})
+      kernel
 
 let refusal_message = function
   | Blank_reason ->

@@ -3,7 +3,8 @@
 (* SPDX-FileCopyrightText: 2026 Mathias Bourgoin <mathias.bourgoin@gmail.com> *)
 (******************************************************************************)
 
-(* Whether the launch window defers a launch (specs/launch-window.md): the
+(* INTERNAL: use Launch_window, which re-exports it. Whether the launch
+   window defers a launch (specs/launch-window.md): the
    switches, and the one function every caller derives its answer from, so that
    the launch path, [Execute.Window.defers_device] and the explain report
    cannot drift apart. Re-exported by {!Launch_window}. *)

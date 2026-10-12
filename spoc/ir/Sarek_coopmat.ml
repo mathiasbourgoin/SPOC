@@ -202,12 +202,16 @@ let rounding_not_accepted cfg =
         "%s rounds float32 operands to bfloat16 on load, which changes results \
          beyond the accumulation order, and %s"
         (config_name cfg)
-        (if
-           List.exists
+        (match
+           List.filter
              Sarek_policy.revoked
              [rounding_grant Operands_bf16; rounding_grant Operands_bf16x3]
-         then "operand-rounding-bf16 or -bf16x3 is revoked by SAREK_OPT_DISABLE"
-         else "the program has not accepted that");
+         with
+        | [] -> "the program has not accepted that"
+        | [g] -> Sarek_policy.grant_name g ^ " is revoked by SAREK_OPT_DISABLE"
+        | gs ->
+            String.concat " and " (List.map Sarek_policy.grant_name gs)
+            ^ " are revoked by SAREK_OPT_DISABLE");
     cap_evidence =
       Sarek_capability.Quoted
         "specs/matrix-pattern-rewrite.md (operand rounding is its own opt-in)";

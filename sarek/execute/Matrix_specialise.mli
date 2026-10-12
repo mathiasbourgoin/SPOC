@@ -106,6 +106,20 @@ val choose :
     device name, and [Applied evidence] or [Refused why]); not for other kernels
     or devices that can never rewrite. [SAREK_EXPLAIN=1] prints them. *)
 
+(** INTERNAL (exposed for tests): the evidence of a rewrite. int32 is a [Proof]
+    (bit-identical modulo 2^32); a float lowering is [Granted] with the grants
+    it was admitted under (the automatic-rewrite consent only unless [explicit],
+    the accumulation order, the operand rounding), the program's reasons once
+    each, and [lowering = Some "<lowering>, <variant>, <config>"]. *)
+val evidence_for :
+  budget:Sarek_policy.Budget.t ->
+  explicit:bool ->
+  case:Sarek_matrix_advice.element_case ->
+  Sarek_matrix_rewrite.lowering ->
+  variant ->
+  Sarek_coopmat.config ->
+  Sarek_policy.evidence
+
 (** Test hook: while [true], the analysis of a kernel not yet cached raises, as
     a defect in it would. Launches must still succeed ([Original]). *)
 val fail_analysis_for_tests : bool -> unit

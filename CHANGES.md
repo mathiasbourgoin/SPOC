@@ -60,7 +60,7 @@
   kernel fail at launch, with a refusal that says it is revoked by `SAREK_OPT_DISABLE`.
   Real lines from a run on an AMD RX 7900 XTX (HIP, `SAREK_EXPLAIN=1`; raw capture:
   `spoc-pipeline-logs/policy-impl/m3-r2-explain-sample-hip.txt` on the owner machine; the
-  CUDA/PTX line is from ZLUDA on the same card):
+  CUDA/PTX line is from ZLUDA on the same card, `m3-r2-e2e-zluda.txt`):
 
   ```text
   sarek-explain sarek_kern HIP:0 window applied exact
