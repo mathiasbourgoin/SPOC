@@ -2700,7 +2700,7 @@ that backend compiles *every* kernel without contraction:
 | backend | every kernel uncontracted? | epilogue default |
 |---|---|---|
 | HIP | yes, `-ffp-contract=off` forced last (§2) | **on**; executed fused == unfused, both pairs, RX 7900 XTX gfx1100 |
-| Metal | yes, `#pragma METAL fp contract(off)` (§10), by construction | **on** (package H9); pragma effect executed on Apple M4 (§10), fused == unfused == Interpreter on a Metal device: pending ladon run (tech lead) |
+| Metal | yes, `#pragma METAL fp contract(off)` (§10), by construction | **on** (package H9); pragma effect executed on Apple M4 (§10), fused == unfused == Interpreter executed on Apple M4 / macOS 15 (0 of 4099 differ, forwarding, shared, chain; control fused != fma 1109 of 4099) |
 | CUDA/PTX, CUDA/C | no: nvrtc `--fmad=true` | off (opt-in); executed via ZLUDA on gfx1100 (not NVIDIA hardware) shows no deviation, but ZLUDA is not ptxas |
 | OpenCL | no: executed 2026-10-12, rusticl/radeonsi contracts `o[i] <- a[i]*b[i] + c[i]` (1109 of 1109 sensitive elements equal `fma`) | off (opt-in); the two pairs showed no deviation on rusticl |
 | Vulkan | no: executed 2026-10-12, RADV contracts the same kernel (1109 of 1109) | off (opt-in); the shared pair deviates, 4099 of 4099 |
