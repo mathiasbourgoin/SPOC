@@ -2,6 +2,35 @@
 
 ### Added
 
+- `Sarek_policy` (`spoc/ir/Sarek_policy.mli`, `specs/optimisation-policy.md`,
+  milestone M1): one typed store for every precision grant and consent. A
+  `grant` is a `Deviation` (`Accumulation_order`, `Operand_rounding` per
+  precision, `Single_rounding`, `Cross_kernel_contraction`) or a
+  `Consent Automatic_float_rewrite`; `Sarek_policy.grant scope g ~reason`
+  records it for the process or for one kernel (`Kernel "sarek_kern"` and a blank
+  reason are refused), `reason ?kernel` reads it (the kernel's own grant first,
+  then the process one), and `budget ~kernels` returns the `Budget.t` of a launch
+  built from several kernels, the meet of theirs (`Budget` has `exact`, `add`,
+  `permits`, `meet`, `leq`, `grants`, `digest`). **No behaviour change.**
+  `Sarek_coopmat.accept_relaxed_accumulation`, `accept_operand_rounding`,
+  `accept_automatic_float_rewrite` and `Sarek_f16_policy.accept_single_rounding`
+  are now wrappers of `grant`, with the same refusals and the same messages;
+  `Sarek_coopmat.operand_precision` is an equal type re-exporting
+  `Sarek_policy.operand_precision`, and `Sarek_f16_policy.refusal` is
+  `Sarek_policy.refusal`. In M1 only the f32 to f16 narrowing reads a
+  kernel-scoped grant; a `Kernel`-scoped coopmat grant is recorded and read from
+  M2, as is `Cross_kernel_contraction`. No environment variable is added or
+  changed. Coverage: no GPU needed. A golden captured on `main` before the change
+  (`sarek/tests/codegen_golden/test_policy_golden.expected`) holds the source of
+  the CUDA-C (the generator HIP and CUDA/C share), OpenCL, Metal, GLSL, WGSL and
+  PTX generators for nine named kernels (a generator that refuses a kernel is
+  recorded as its refusal), the coopmat policy verdicts, the grant readers and
+  the refusal messages, in five process states; it is byte-identical after the
+  change. The laws of `Budget` are checked over all 128 subsets of the seven
+  atoms (`spoc/ir/test/test_sarek_policy.ml`). Native and Interpreter read the
+  same store through the same `Sarek_coopmat.policy_verdict`; the grants
+  themselves are host-side and were not run on a device.
+
 - The float matrix-product rewrite runs on Metal (H4b,
   `specs/matrix-pattern-rewrite.md`, "Fragment shape and Metal"). The rewrite
   templates take the fragment edge (`Sarek_matrix_rewrite.kernel ?frag`,

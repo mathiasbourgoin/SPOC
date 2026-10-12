@@ -93,3 +93,4 @@ docs/optimization/l15b-mma-probe.md::af8a3b1	commit of the ZLUDA repository (git
 specs/zluda-mma-nvrtc13.md::af8a3b1	commit of the ZLUDA repository (v7-preview.3 build under test), not of this repository
 gh-pages/docs/getting_started.md::../spoc_docs/index.html	odoc output built by docs.yml and copied into the published site; gh-pages/spoc_docs/ is deliberately not tracked
 gh-pages/examples/index.md::../spoc_docs/index.html	same: odoc output built by docs.yml, not tracked
+specs/optimisation-policy.md::bdbce6c	Katra commit (the Katra repository, not this one) that table 1.2 of the specification is taken at
