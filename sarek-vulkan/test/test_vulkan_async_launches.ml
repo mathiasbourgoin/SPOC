@@ -270,7 +270,7 @@ let () =
           Alcotest.test_case
             "SPOC_VULKAN_BATCH=1 waits at every launch"
             `Quick
-            (with_batching_device test_batch_of_one_waits_each);
+            (with_device test_batch_of_one_waits_each);
           Alcotest.test_case
             "descriptor sets beyond one pool in one batch"
             `Quick
@@ -312,7 +312,7 @@ let () =
           Alcotest.test_case
             "SPOC_VULKAN_BATCH=1 raises at the launch"
             `Quick
-            (with_batching_device test_batch_of_one_raises_at_launch);
+            (with_device test_batch_of_one_raises_at_launch);
         ] );
       ( "teardown",
         [

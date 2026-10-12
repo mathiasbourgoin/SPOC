@@ -305,11 +305,11 @@ let () =
           Alcotest.test_case
             "an explicit free releases at once"
             `Quick
-            (with_batching_device test_explicit_free_is_prompt);
+            (with_device test_explicit_free_is_prompt);
           Alcotest.test_case
             "an allocation retries after queued releases"
             `Quick
-            (with_batching_device test_alloc_retries_after_release);
+            (with_device test_alloc_retries_after_release);
           Alcotest.test_case
             "past 64 queued releases a launch runs them"
             `Quick

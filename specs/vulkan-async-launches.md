@@ -17,7 +17,7 @@ waited for its fence: every launch blocked the host for the full
 submit-and-complete round trip. Now a launch appends its dispatch to an open
 command buffer and returns. The change is semantics-preserving (results and
 their order are unchanged, only the point where the host blocks moves), so it
-is on by default.
+is nevertheless opt-in (default batch size 1, Sarek #504).
 
 ## Clarifications
 

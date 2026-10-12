@@ -10,6 +10,7 @@ GATE=scripts/gpu-kernel-log-gate.sh
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 fail=0
+export GPU_LOG_GATE_SETTLE=0
 
 # fake log reader: prints $work/log-before for the pre-scan window (10 minutes
 # ago) and $work/log-after for any other window.
@@ -40,6 +41,9 @@ expect "page fault after a passing run fails" 1 -- true
 
 echo 'amdgpu 0000:03:00.0: ring gfx_0.0.0 timeout, signaled seq=1, emitted seq=2' >"$work/log-after"
 expect "ring timeout after a passing run fails" 1 -- true
+
+echo 'blocked for more than 120 seconds' >"$work/log-after"
+expect "hung task fails" 1 -- true
 
 echo 'Oops: Oops: 0000 [#1] SMP NOPTI' >"$work/log-after"
 expect "oops fails" 1 -- true
