@@ -24,8 +24,7 @@
  * fusion must have happened (1 launch instead of 2). Positive controls: the
  * inputs separate fma from mul-then-add, and the Interpreter and the fused
  * forwarding result both differ from the fma reference. The fp-contract pragma in the fused Metal sources is checked without a
- * device by test_epilogue_metal_pragma; Metal refuses the f16 producer there,
- * so the f16 pair is not run on Metal.
+ * device by test_epilogue_metal_pragma.
  * On every other deferred device the epilogue is forced on; launch counts are
  * asserted, bit equality only RECORDED ("DEVIATION RECORDED": a precision
  * grant the caller makes by opting in). Informational: [a*b + c] in ONE kernel
@@ -372,22 +371,17 @@ let observe_contraction (dev : Device.t) inputs ~rounded ~contracted =
     (count_diff o (bits_of_array rounded))
     (count_diff o (bits_of_array contracted))
 
-(* Metal refuses float16 kernels in its code generator
-   ([Sarek_ir_metal.reject_float16_kernel], checked in test_epilogue_metal_pragma), so
-   the f16 pair has nothing to run there. OpenCL and Vulkan refuse it by
-   policy: a skip there, a failure on a default backend. *)
+(* OpenCL and Vulkan refuse float16 kernels by policy: a skip there, a failure
+   on a default backend (HIP, Metal), where the pair is asserted. *)
 let run_half_pair dev refs inputs =
-  if dev.Device.framework = "Metal" then
-    Printf.printf "  %-8s f16: SKIP (refused by the code generator)\n%!" "Metal"
-  else
-    match run_pair_device dev refs Half "f16" inputs with
-    | _ -> ()
-    | exception e when not (gated dev) ->
-        Printf.printf
-          "  %-8s f16: SKIP (%s)\n%!"
-          dev.framework
-          (let m = Printexc.to_string e in
-           String.sub m 0 (min 60 (String.length m)))
+  match run_pair_device dev refs Half "f16" inputs with
+  | _ -> ()
+  | exception e when not (gated dev) ->
+      Printf.printf
+        "  %-8s f16: SKIP (%s)\n%!"
+        dev.framework
+        (let m = Printexc.to_string e in
+         String.sub m 0 (min 60 (String.length m)))
 
 (* Positive control: the comparison must be able to go red. On a default
    backend the fused forwarding result must DIFFER from the fma-contracted

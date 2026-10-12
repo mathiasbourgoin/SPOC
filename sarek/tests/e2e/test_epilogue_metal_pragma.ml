@@ -12,8 +12,9 @@
  *   - a horizontally fused kernel built from an epilogue-fused kernel and an
  *     independent one,
  * that the pragma precedes the first kernel (it is file scoped), that the same
- * check fails on a source without it (positive control), and that Metal refuses
- * the f16 producer (so test_epilogue_exact has no f16 pair to run there).
+ * check fails on a source without it (positive control), and that the fused
+ * float16-intermediate pair is lowered (its source mentions [half]) with the
+ * pragma in front of the kernel, so test_epilogue_exact asserts it on Metal.
  ******************************************************************************)
 
 [@@@warning "-33"]
@@ -53,6 +54,15 @@ let producer_f16 =
         (n : int32) ->
       let i = global_thread_id in
       if i < n then t.(i) <- float16_of_float32 (a.(i) *. b.(i))]
+
+let consumer_f16 =
+  [%kernel
+    fun (o : float32 vector)
+        (t : float16 vector)
+        (c : float32 vector)
+        (n : int32) ->
+      let i = global_thread_id in
+      if i < n then o.(i) <- float32_of_float16 t.(i) +. c.(i)]
 
 let ir_of kern =
   let _, kirc = kern in
@@ -101,10 +111,14 @@ let checks () =
          ~name:"epi_then_horizontal"
          [epi; ir_of independent])
   in
-  let refuses_f16 =
-    match M.generate (ir_of producer_f16) with
-    | _ -> false
-    | exception e -> find_sub ~sub:"f16" (Printexc.to_string e) <> None
+  let f16_src =
+    M.generate
+      (Sarek_execute.Fusion_epilogue.fuse
+         ~name:"epi_pragma_f16"
+         ~producer:(ir_of producer_f16)
+         ~p_array:"t"
+         ~consumer:(ir_of consumer_f16)
+         ~shared:[("t", "t")])
   in
   [
     ( "epilogue-fused MSL: pragma before the kernel",
@@ -115,7 +129,8 @@ let checks () =
       not (pragma_before_kernel (strip_pragma epi_src)) );
     ( "control: horizontal source without the pragma fails",
       not (pragma_before_kernel (strip_pragma horizontal_src)) );
-    ("Metal refuses the f16 producer", refuses_f16);
+    ( "f16 epilogue-fused MSL: lowered to half, pragma before the kernel",
+      find_sub ~sub:"half" f16_src <> None && pragma_before_kernel f16_src );
   ]
 
 let () =
