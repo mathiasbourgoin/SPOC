@@ -342,7 +342,7 @@
   </tbody>
 </table>
 
-<p>Mesa keeps its own cache, so on rusticl the gain is small by default. Metal has no disk cache of ours: not needed, the OS shader cache already serves a new process (measured on Apple M4, macOS 15, 5 rounds, ms median, for a Q8_0 matvec / RMS norm / RoPE kernel: a source new to the machine costs 2.6-3.6 ms library plus 3.6-9.5 ms pipeline, a later process at most 0.04 ms for either). The results are the same bits as a build from source. See <a href="environment.html#compile-cache">Compile cache</a> for the key, the fallback and <code class="language-plaintext highlighter-rouge">SAREK_DISK_CACHE=0</code>.</p>
+<p>Mesa keeps its own cache, so on rusticl the gain is small by default. Metal has no disk cache of ours: not needed, the OS shader cache already serves a new process (measured on Apple M4, macOS 15, 5 rounds, ms median, for a Q8_0 matvec / RMS norm / RoPE kernel: a source new to the machine costs 2.6-3.6 ms for the library plus 3.6-9.5 ms for the pipeline (about 7.0-12.2 ms per kernel in total), a later process at most 0.04 ms for either). The results are the same bits as a build from source. See <a href="environment.html#compile-cache">Compile cache</a> for the key, the fallback and <code class="language-plaintext highlighter-rouge">SAREK_DISK_CACHE=0</code>.</p>
 
 <h2 id="see-also">See also</h2>
 
