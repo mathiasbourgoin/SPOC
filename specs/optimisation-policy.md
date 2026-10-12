@@ -279,7 +279,10 @@ atoms changes the decision for that kernel and for no other (tests:
    over the members, recursively. A `Kernel` grant on the fused kernel's own
    generated name is **not** counted: names are content digests or counters, not
    a statement of the program. Registering a name again adds members (the name
-   is then covered only by what all of them allow); a cycle contributes
+   is then covered only by what all of them allow: content-hash names merge only
+   identical fusions, whose members then agree; the fallback names of a fusion
+   that cannot be hashed come from one process-wide counter and are never
+   shared); a cycle contributes
    nothing. A kernel produced by a rewrite that renames it (the matrix rewrite,
    `<name>_sarek_mm`) is registered with `register_derived ~name ~from`: it has
    exactly its source's budget. The static fusion passes of `Sarek_fusion`

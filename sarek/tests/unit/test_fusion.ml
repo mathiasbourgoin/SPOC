@@ -23,6 +23,16 @@ let mk_kernel name body =
 
 let kernel_names kernels = List.map (fun k -> k.kern_name) kernels
 
+let single = Sarek_policy.Deviation Sarek_policy.Single_rounding
+
+let grant_kernel name =
+  match Sarek_policy.grant (Sarek_policy.Kernel name) single ~reason:"test" with
+  | Ok () -> ()
+  | Error _ -> assert false
+
+let permits name =
+  Sarek_policy.Budget.permits (Sarek_policy.budget ~kernels:[name]) single
+
 (** Test: analyze simple kernel with OneToOne access pattern *)
 let test_analyze_one_to_one () =
   (* output[thread_idx_x] = input[thread_idx_x] * 2 *)
@@ -1293,11 +1303,16 @@ let test_auto_fuse_preserves_length_user () =
     claim to enforce did not hold, and the only alternative to raising is
     handing back the kernel that produced those five vendor diagnostics. *)
 let test_fuse_rejects_surviving_intermediate () =
-  match fuse len_producer len_consumer "temp" with
+  let consumer = {len_consumer with kern_name = "rej_consumer"} in
+  (* A registered fused name ignores its own Kernel grants, an unregistered one
+     reads them: a rejected fusion must leave nothing registered. *)
+  grant_kernel "rej_consumer_fused" ;
+  match fuse len_producer consumer "temp" with
   | exception
       Sarek.Fusion_error.Fusion_error
         (Sarek.Fusion_error.Invalid_fusion {kernel; reason}) ->
-      assert (kernel = "consumer_fused") ;
+      assert (kernel = "rej_consumer_fused") ;
+      assert (permits "rej_consumer_fused") ;
       (* The message must name the parameter, or it cannot be acted on. *)
       assert (
         let re = Str.regexp_string "'temp'" in
@@ -1372,16 +1387,6 @@ let test_no_backend_names_eliminated_length () =
     is the meet over its members (Sarek_policy.register_fused): generated names
     are not statements of the program. Each shape: both members granted gives
     the grant, one member alone does not. *)
-let single = Sarek_policy.Deviation Sarek_policy.Single_rounding
-
-let grant_kernel name =
-  match Sarek_policy.grant (Sarek_policy.Kernel name) single ~reason:"test" with
-  | Ok () -> ()
-  | Error _ -> assert false
-
-let permits name =
-  Sarek_policy.Budget.permits (Sarek_policy.budget ~kernels:[name]) single
-
 let copy_kernel name =
   mk_kernel
     name

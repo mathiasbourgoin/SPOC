@@ -304,7 +304,8 @@ let ulp_distance x y = abs (ordered x - ordered y)
 type bound =
   | Ulps of int
   | Contraction of float array * float array
-  | Chained of float array * float array * float array * int32 array
+  | Chained of
+      float array * float array * float array * int32 array * int32 array
 
 let ulp x =
   if x = 0.0 then Float.ldexp 1.0 (-149)
@@ -326,9 +327,13 @@ let measure bound fused unfused =
         match bound with
         | Ulps k -> float_of_int k *. ulp r
         | Contraction (a, b) -> (ulp (a.(i) *. b.(i)) /. 2.0) +. ulp r
-        | Chained (a, b, d, o) ->
-            Float.abs d.(i)
-            *. ((ulp (a.(i) *. b.(i)) /. 2.0) +. ulp (value o.(i)))
+        | Chained (a, b, d, o_fused, o_unfused) ->
+            let o =
+              Float.max
+                (Float.abs (value o_fused.(i)))
+                (Float.abs (value o_unfused.(i)))
+            in
+            (Float.abs d.(i) *. ((ulp (a.(i) *. b.(i)) /. 2.0) +. ulp o))
             +. ulp r
       in
       worst := Float.max !worst (delta /. allowed))
@@ -345,7 +350,7 @@ let check_bound dev label bound ~fused ~unfused =
     (label ^ ": within one contraction")
     (worst <= 1.0)
     (Printf.sprintf
-       " (%d of %d differ, max %d ulp, %.3g of the bound)"
+       " (%d of %d differ, max %d ulp, %.6g of the bound)"
        (count_diff fused unfused)
        n
        (Array.fold_left
@@ -456,7 +461,12 @@ let run_chain_device (dev : Device.t) refs inputs =
   let _, o_off, _ = off and _, o_on, _ = on in
   let a, b, _ = inputs in
   check_bound dev "chain o" (Contraction (a, b)) ~fused:o_on ~unfused:o_off ;
-  check_bound dev "chain r" (Chained (a, b, d, o_on)) ~fused:r_on ~unfused:r_off ;
+  check_bound
+    dev
+    "chain r"
+    (Chained (a, b, d, o_on, o_off))
+    ~fused:r_on
+    ~unfused:r_off ;
   verdict dev "chain: fused == Interpreter" (r_on = refs.chain) "" ;
   verdict
     dev

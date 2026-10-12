@@ -299,6 +299,15 @@ let refuse w key =
   Hashtbl.replace w.refused key () ;
   bump w.c_refused
 
+(* Names of fused kernels whose IR cannot be content-hashed (inline native
+   code): one process-wide counter, so two distinct fused kernels never share a
+   name (and never accumulate each other's members, Sarek_policy.register_fused).
+   Content-hashed names merge only identical fusions' members: a safe direction,
+   the budget being the meet over all of them. *)
+let fallback_names = Atomic.make 0
+
+let next_fallback_name () = Atomic.fetch_and_add fallback_names 1
+
 let fused_kernel w key members =
   match Hashtbl.find_opt w.cache key with
   | Some k -> Some k
@@ -313,7 +322,7 @@ let fused_kernel w key members =
             {
               k with
               kern_name =
-                Printf.sprintf "sarek_hfused_%d" (Atomic.get w.c_built);
+                Printf.sprintf "sarek_hfused_%d" (next_fallback_name ());
             }
       with
       | k ->
