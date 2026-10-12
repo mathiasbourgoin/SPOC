@@ -469,8 +469,15 @@ let run_device (dev : Device.t) =
       ~limit:(Sarek_execute.Launch_window.arg_slot_limit dev.Device.framework)
   in
   scenario "independent" independent ~fused_launches:independent_groups ;
-  (* matvec -> residual add is an epilogue where it is on (HIP). *)
-  let epi = Execute.Window.epilogue_on dev.Device.framework in
+  (* matvec -> residual add is an epilogue where it is exact without a grant
+     (HIP, Metal; the kernels hold none here) and not switched off. *)
+  let epi =
+    Execute.Window.epilogue_on dev.Device.framework
+    && Sarek_policy.requires
+         Sarek_policy.Epilogue_fusion
+         ~backend:dev.Device.framework
+       = Some []
+  in
   scenario "dependent" dependent ~fused_launches:(if epi then 2 else 3) ;
   scenario "uncovered consumer" uncovered ~fused_launches:2 ;
   scenario "grid_dim_x member" not_fusable ~fused_launches:2 ;

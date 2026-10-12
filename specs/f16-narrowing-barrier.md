@@ -165,10 +165,12 @@ A blank reason (`Blank_reason`) and `Kernel "sarek_kern"`
 (`Default_kernel_name`: the name of every unnamed `[%kernel]`, library
 kernels included) are refused and record nothing. Process-wide, one-way, thread-safe, like the `Sarek_coopmat` opt-ins, and
 separate from them. `Kernel name` matches `kern_name`; unnamed `[%kernel]`
-kernels are all `"sarek_kern"`; a fused kernel has the fused name. The policy
-is read when the source is generated: a kernel generated and memoised before
-the call keeps its barriers. The source of a covered kernel says so in a
-comment.
+kernels are all `"sarek_kern"`; a fused kernel is covered when every one of
+its parts is (`Sarek_policy.register_fused`; a grant on the generated fused
+name counts for nothing). The policy is read when the source is generated and
+the launch memo is keyed on it: a kernel generated before the call is
+regenerated, without barriers, by its next launch (M2). The source of a covered
+kernel says so in a comment.
 
 What changes, per narrowing, when the compiler fuses:
 

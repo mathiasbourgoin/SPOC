@@ -79,7 +79,7 @@ Decision points and caches (at 5bcb3a8e):
   (`sarek/execute/Launch_window.ml:300-328`).
 - **Epilogue.** `Launch_window.submit` reads `w.epilogue`
   (`sarek/execute/Launch_window.ml:420`), installed by `Launch_epilogue.install`
-  (`sarek/execute/Launch_epilogue.ml:471-476`). The join checks
+  (`sarek/execute/Launch_epilogue.ml:455-460`). The join checks
   `enabled c.backend` (`sarek/execute/Launch_epilogue.ml:433-434`);
   `enabled b = List.mem b backends && Fp_exactness.is_exact b`
   (`sarek/execute/Launch_epilogue.ml:58-60`). Its fused, coverage and shape
@@ -93,9 +93,9 @@ Decision points and caches (at 5bcb3a8e):
 - **Narrowing proof.** The CUDA-C generator reads
   `Sarek_f16_policy.single_rounding_reason ~kernel:kern_name`
   (`sarek/codegen/Sarek_ir_cuda.ml:71-81`). The source memo
-  (`sarek/execute/Execute.ml:1006-1020`) is keyed by IR identity, generator,
+  (`sarek/execute/Execute.ml:1006-1020`) was keyed by IR identity, generator,
   block and SoA parameters, with no policy in the key: a kernel generated before
-  a grant keeps its barriers.
+  a grant kept its barriers (fixed in M2: the entries carry a `Policy_stamp`).
 - **Unroll.** `Sarek_ir_unroll.enabled ()` at every annotate
   (`sarek/codegen/Sarek_ir_cuda.ml:1049`, `sarek/codegen/Sarek_ir_metal.ml:1208`,
   `sarek/codegen/Sarek_ir_opencl.ml:1179`, `sarek/codegen/Sarek_ir_glsl.ml:2169`).

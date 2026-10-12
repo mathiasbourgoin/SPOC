@@ -34,6 +34,12 @@ that need the original. `Sarek_matrix.run` keeps its PR 2 signature on top.
 
 ## Mode
 
+The opt-ins below (`accept_automatic_float_rewrite`, `accept_relaxed_accumulation`,
+`accept_operand_rounding`) are read from the budget of the kernel being decided
+(`Sarek_policy.budget ~kernels:[kern_name]`, M2): a `Kernel`-scoped grant
+rewrites that kernel only, and `Sarek_policy.restrict Matrix_rewrite` acts as
+mode `Off`.
+
 `Matrix_specialise.mode = Off | Exact | Auto`, from `SAREK_MATRIX_REWRITE`
 (see Opt-ins and parsing below; default `auto`), changeable with `set_mode`
 (`Sarek_matrix.set_mode`):
