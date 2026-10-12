@@ -385,14 +385,48 @@ let record_dispatch stream ~kernel ~layout ~descriptors ~record =
       else if slot.dispatches >= !batch_limit then
         submit_open ~defer:true stream)
 
-(** Complete everything launched on [stream]; also reap the other streams, so a
-    device that is now idle runs its queued releases. *)
+(** Record that [stream] waits for [event]. The event is not added twice. *)
+let add_awaited stream event =
+  Mutex.protect stream.device.Device.batch_lock (fun () ->
+      if
+        not
+          (List.exists
+             (fun a -> a.event_fence == event.event_fence)
+             stream.awaited)
+      then stream.awaited <- event :: stream.awaited)
+
+(** Wait for the events [stream] awaits, then forget them. Every wait is
+    attempted; the first failure is re-raised after the others. Takes the
+    events' locks, so it runs without [batch_lock] ([Vulkan_api_event.record]
+    takes an event's lock after releasing it, never the reverse). *)
+let await_events stream events =
+  let first_error = ref None in
+  List.iter
+    (fun ev ->
+      try
+        Mutex.protect ev.event_lock (fun () ->
+            await_fence
+              "vkWaitForFences (stream wait on event)"
+              stream.device.Device.device
+              ev.event_fence)
+      with e -> if !first_error = None then first_error := Some e)
+    events ;
+  Option.iter raise !first_error
+
+(** Complete everything launched on [stream] and the events it awaits; also reap
+    the other streams, so a device that is now idle runs its queued releases. *)
 let synchronize stream =
   let device = stream.device in
-  Mutex.protect device.Device.batch_lock (fun () ->
-      drain_stream stream ;
-      reap_all device ;
-      if all_idle device then release_deferred device)
+  let events =
+    Mutex.protect device.Device.batch_lock (fun () ->
+        drain_stream stream ;
+        reap_all device ;
+        if all_idle device then release_deferred device ;
+        let events = stream.awaited in
+        stream.awaited <- [] ;
+        events)
+  in
+  await_events stream events
 
 (** Launches recorded on [device] that have not completed: open batches and
     batches in flight. Zero after any synchronisation point. *)

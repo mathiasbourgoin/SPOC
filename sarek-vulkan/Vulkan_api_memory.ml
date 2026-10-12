@@ -62,20 +62,39 @@ let memory_type_is_cached dev index =
 (* VK_WHOLE_SIZE = ~0ULL - map entire memory range *)
 let vk_whole_size = Unsigned.UInt64.max_int
 
-(* Helper to allocate a command buffer, record commands, and submit *)
-let run_single_time_command device record_fn =
-  (* Pending launches must have completed: this command buffer is not ordered
-     after them in memory. *)
-  !Device.drain_pending device ;
+(** A command pool private to one call: [vkCmdXxx], [vkBeginCommandBuffer] and
+    allocation need external synchronisation of their pool, and these copies run
+    on whichever domain the caller is, so sharing [device.command_pool] would
+    need a lock held across the recording. A transient pool per call needs none
+    and adds no lock to the order [batch_lock] -> [queue_lock]. *)
+let create_transient_pool device =
+  let pool_info = make vk_command_pool_create_info in
+  setf
+    pool_info
+    cmd_pool_create_sType
+    (u32 vk_structure_type_command_pool_create_info) ;
+  setf pool_info cmd_pool_create_pNext null ;
+  setf pool_info cmd_pool_create_flags (u32 0x01) ;
+  (* VK_COMMAND_POOL_CREATE_TRANSIENT_BIT *)
+  setf
+    pool_info
+    cmd_pool_create_queueFamilyIndex
+    (u32 device.Device.queue_family) ;
+  let pool = allocate vk_command_pool vk_null_handle in
+  check
+    "vkCreateCommandPool (copy)"
+    (vkCreateCommandPool device.Device.device (addr pool_info) null pool) ;
+  !@pool
+
+let allocate_copy_command_buffer device pool =
   let alloc_info = make vk_command_buffer_allocate_info in
   setf
     alloc_info
     cmd_buf_alloc_sType
     (u32 vk_structure_type_command_buffer_allocate_info) ;
   setf alloc_info cmd_buf_alloc_level (u32 vk_command_buffer_level_primary) ;
-  setf alloc_info cmd_buf_alloc_commandPool device.Device.command_pool ;
-  setf alloc_info cmd_buf_alloc_commandBufferCount (Unsigned.UInt32.of_int 1) ;
-
+  setf alloc_info cmd_buf_alloc_commandPool pool ;
+  setf alloc_info cmd_buf_alloc_commandBufferCount (u32 1) ;
   let cmd_buf_ptr =
     allocate vk_command_buffer_ptr (from_voidp vk_command_buffer null)
   in
@@ -85,51 +104,48 @@ let run_single_time_command device record_fn =
        device.Device.device
        (addr alloc_info)
        cmd_buf_ptr) ;
-  let cmd_buf = !@cmd_buf_ptr in
+  cmd_buf_ptr
 
-  let free_cmd_buf () =
-    vkFreeCommandBuffers
-      device.Device.device
-      device.Device.command_pool
-      (Unsigned.UInt32.of_int 1)
-      cmd_buf_ptr
-  in
+let begin_one_time cmd_buf =
+  let begin_info = make vk_command_buffer_begin_info in
+  setf
+    begin_info
+    cmd_buf_begin_sType
+    (u32 vk_structure_type_command_buffer_begin_info) ;
+  setf
+    begin_info
+    cmd_buf_begin_flags
+    (u32 vk_command_buffer_usage_one_time_submit_bit) ;
+  check "vkBeginCommandBuffer" (vkBeginCommandBuffer cmd_buf (addr begin_info))
 
-  Fun.protect ~finally:free_cmd_buf (fun () ->
-      let begin_info = make vk_command_buffer_begin_info in
-      setf
-        begin_info
-        cmd_buf_begin_sType
-        (u32 vk_structure_type_command_buffer_begin_info) ;
-      setf
-        begin_info
-        cmd_buf_begin_flags
-        (Unsigned.UInt32.of_int vk_command_buffer_usage_one_time_submit_bit) ;
+let submit_and_wait device cmd_buf_ptr =
+  let submit_info = make vk_submit_info in
+  setf submit_info submit_sType (u32 vk_structure_type_submit_info) ;
+  setf submit_info submit_commandBufferCount (u32 1) ;
+  setf submit_info submit_pCommandBuffers cmd_buf_ptr ;
+  check
+    "vkQueueSubmit"
+    (Device.queue_submit device (u32 1) (addr submit_info) vk_null_handle) ;
+  Device.with_queue_lock device (fun () ->
+      check "vkQueueWaitIdle" (vkQueueWaitIdle device.Device.compute_queue))
 
-      check
-        "vkBeginCommandBuffer"
-        (vkBeginCommandBuffer cmd_buf (addr begin_info)) ;
-
+(** Record [record_fn] into a one-time command buffer, submit it and wait. *)
+let run_single_time_command device record_fn =
+  (* Pending launches must have completed: this command buffer is not ordered
+     after them in memory. *)
+  !Device.drain_pending device ;
+  let pool = create_transient_pool device in
+  Fun.protect
+    ~finally:(fun () -> vkDestroyCommandPool device.Device.device pool null)
+    (fun () ->
+      let cmd_buf_ptr = allocate_copy_command_buffer device pool in
+      let cmd_buf = !@cmd_buf_ptr in
+      begin_one_time cmd_buf ;
       Vulkan_api_barrier.before_copy cmd_buf ;
       record_fn cmd_buf ;
       Vulkan_api_barrier.after_copy cmd_buf ;
-
       check "vkEndCommandBuffer" (vkEndCommandBuffer cmd_buf) ;
-
-      let submit_info = make vk_submit_info in
-      setf submit_info submit_sType (u32 vk_structure_type_submit_info) ;
-      setf submit_info submit_commandBufferCount (Unsigned.UInt32.of_int 1) ;
-      setf submit_info submit_pCommandBuffers cmd_buf_ptr ;
-
-      check
-        "vkQueueSubmit"
-        (Device.queue_submit
-           device
-           (Unsigned.UInt32.of_int 1)
-           (addr submit_info)
-           vk_null_handle) ;
-      Device.with_queue_lock device (fun () ->
-          check "vkQueueWaitIdle" (vkQueueWaitIdle device.Device.compute_queue)))
+      submit_and_wait device cmd_buf_ptr)
 
 (** Test instrumentation, not an API: staging buffers created since the library
     was loaded. Lets a test assert that a copy took the staging-free path. *)

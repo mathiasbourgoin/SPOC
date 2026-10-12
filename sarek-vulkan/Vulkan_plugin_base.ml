@@ -231,11 +231,12 @@ module Vulkan = struct
      on every stream, and the [stream] argument changes nothing. Overlap of
      copies with compute is not offered.
 
-     [stream_wait_event] adds nothing: all streams of a device share one queue
-     and a launch first submits the open batches of the device's other streams,
-     so everything an event covers was submitted before any later launch, and
-     the barrier before each dispatch orders the later launch after it in
-     memory ([Vulkan_api_barrier]).
+     [stream_wait_event] records the event on the stream: later work on the
+     stream is ordered after the event's work by the single queue (a launch
+     first submits the open batches of the device's other streams) and the
+     barrier before each dispatch ([Vulkan_api_barrier]); synchronising the
+     stream also waits for the event, which is what core's transitive release
+     of keep-alive entries relies on.
 
      Pinned and registered memory are host ranges imported into the driver
      ([VK_EXT_external_memory_host]); a device without the extension refuses
@@ -258,7 +259,7 @@ module Vulkan = struct
     let device_to_host ~src ~src_offset ~dst_ptr ~byte_size ~stream:_ =
       Vulkan_api.Transfer.device_to_host ~src ~src_offset ~dst_ptr ~byte_size
 
-    let stream_wait_event _stream _event = ()
+    let stream_wait_event stream event = Vulkan_api.Event.wait_on event stream
 
     let event_query = Vulkan_api.Event.query
 

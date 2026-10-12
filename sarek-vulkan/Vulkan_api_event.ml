@@ -57,6 +57,23 @@ let record event (stream : Stream.t) =
            (u32 0)
            (from_voidp vk_submit_info null)))
 
+(** All later work of [stream] waits for the work [event] covers: the single
+    queue plus the barrier before every dispatch order it in memory (see
+    {!Vulkan_api_barrier}); the host-side half is that synchronising [stream]
+    also waits for the event ({!Vulkan_api_batch.synchronize}). *)
+let wait_on event (stream : Stream.t) =
+  if (Stream.device stream).Device.id <> event.device.Device.id then
+    Vulkan_error.raise_error
+      (Vulkan_error.context_error
+         "Event.wait_on"
+         (Printf.sprintf
+            "event belongs to device %d, stream to device %d"
+            event.device.Device.id
+            (Stream.device stream).Device.id)) ;
+  Stream.add_awaited
+    stream
+    {Vulkan_api_slot.event_lock = event.lock; event_fence = event.fence}
+
 let synchronize event =
   Mutex.protect event.lock (fun () ->
       await_fence
