@@ -1458,8 +1458,8 @@ found pocl's and IGC's to be; it is lifted (package H3): scalar f16 lowers to
 `half` with a plain narrowing and no barrier, and the f16 x f16 -> f32
 `simdgroup_matrix` configuration is lowered (specs/coopmat-metal-simdgroup.md).
 The generated scalar f16 kernel is also run on the device over the same 63488
-inputs and both shapes (`test_metal_f16_narrowing_e2e`): executed on Apple M4, macOS 15 (2026-10-12): Metal = model and
-Metal = interpreter on 0/63488 inputs for both shapes; controls demoted
+inputs and both shapes (`test_metal_f16_narrowing_e2e`): executed on Apple M4, macOS 15 (2026-10-12): 0/63488 inputs
+differ from the model or from the interpreter, on both shapes; controls demoted
 33088 / 7181 and const 2912 / 620 differ.
 
 **Why the zeros are readable.** §11.5 is this document's own record of a null

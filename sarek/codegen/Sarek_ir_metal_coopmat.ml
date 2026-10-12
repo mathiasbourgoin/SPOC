@@ -105,7 +105,14 @@ let elttype_name = function
 
 let check_buffer ~buffers ~buf (f : C.fragment) =
   match List.assoc_opt buf buffers with
-  | None -> ()
+  | None ->
+      unsupported
+        "cooperative-matrix buffer"
+        (Printf.sprintf
+           "%s is not declared as an array parameter or a shared array of the \
+            kernel; simdgroup_load/store address device or threadgroup memory \
+            only"
+           buf)
   | Some elt ->
       let want = buffer_elttype f in
       if elt <> want then

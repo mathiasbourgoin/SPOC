@@ -69,7 +69,7 @@ module Metal : Framework_sig.PLUGIN_BASE = struct
 
     let coopmat_cache_lock = Mutex.create ()
 
-    let probe_coopmat (d : t) : Sarek_coopmat.device_support =
+    let probe_coopmat (d : t) : Sarek_coopmat.device_support * bool =
       let compile () =
         let lib =
           Metal_api.Library.create_from_source d Metal_coopmat.probe_source
@@ -86,25 +86,29 @@ module Metal : Framework_sig.PLUGIN_BASE = struct
               (fun () ->
                 pipeline.Metal_api.ComputePipeline.thread_execution_width))
       in
-      let simd_width, probe =
+      (* A compiler rejection is deterministic: the answer "no configuration"
+         is final and cached. Any other failure (API error, allocation) may be
+         transient: it is reported the same way but not cached, so the next
+         [capabilities] call probes again. Neither escapes [capabilities] /
+         [Device.init]. Apple GPUs are 32 wide; the width is used only to
+         describe a device offering nothing. *)
+      let simd_width, probe, final =
         match compile () with
-        | width -> (width, Ok ())
-        | exception e ->
-            (* Any failure of the probe (compile error, API error) is the
-               answer "no configuration", with the message; it must not escape
-               [capabilities] / [Device.init]. Apple GPUs are 32 wide; the
-               width is used only to describe a device offering nothing. *)
-            (32, Error (Printexc.to_string e))
+        | width -> (width, Ok (), true)
+        | exception (Sarek_backend_error.Backend_error.Backend_error _ as e) ->
+            (32, Error (Printexc.to_string e), true)
+        | exception e -> (32, Error (Printexc.to_string e), false)
       in
-      Metal_coopmat.support ~simd_width ~probe
+      (Metal_coopmat.support ~simd_width ~probe, final)
 
     let coopmat_support (d : t) =
       Mutex.protect coopmat_cache_lock (fun () ->
           match Hashtbl.find_opt coopmat_cache d.Metal_api.Device.id with
           | Some s -> s
           | None ->
-              let s = probe_coopmat d in
-              Hashtbl.replace coopmat_cache d.Metal_api.Device.id s ;
+              let s, final = probe_coopmat d in
+              if final then
+                Hashtbl.replace coopmat_cache d.Metal_api.Device.id s ;
               s)
 
     let capabilities (d : t) : Framework_sig.capabilities =

@@ -27,12 +27,13 @@ opt-in and the launch fails without it), both decided 2026-07-27.
   surface. Row-major only; subgroup scope only.
 - GLSL/Vulkan lowers the integer configurations; float components are refused by
   the GLSL emitter and by the interpreter. Every other emitter refuses `SCoopmat`.
-- Only the Vulkan backend probes `capabilities.coopmat`; CUDA, HIP and Metal leave
-  it `None` ("not probed"), which the launch gate turns into a refusal.
+- A backend that does not probe leaves `capabilities.coopmat` `None` ("not
+  probed"), which the launch gate turns into a refusal; Vulkan, HIP, CUDA/C and
+  Metal probe.
 
 ## Supported configurations per backend
 
-All shapes are `M = N = K = 16`, scope `Subgroup`. Each `CM_load` / `CM_store`
+All shapes are `M = N = K = 16` on the HIP, CUDA and Vulkan backends (Metal uses 8x8x8, see its row), scope `Subgroup`. Each `CM_load` / `CM_store`
 names its memory layout: row-major (element (r, c) at `index + r·stride + c`) or
 column-major (`index + c·stride + r`), for any fragment (see "Layouts" below).
 
