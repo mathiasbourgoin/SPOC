@@ -185,9 +185,9 @@ let launch_and_say ~device ~ir ~args ~block ~grid =
 Every decision about a kernel that is a matrix product is an `Sarek_policy.Matrix_rewrite` record for `Sarek_policy.set_reporter`. `SAREK_EXPLAIN=1` (exactly `1`, read when the program starts) prints each distinct kernel, device and outcome once on stderr, as one line:
 
 ```
-sarek-explain <kernel> <device> matrix applied proof=<lowering>, <staged|direct (N waves/block)>, <configuration>: bit-identical modulo 2^32
-sarek-explain <kernel> <device> matrix applied granted=<grants> reason="<lowering>, <variant>, <configuration>; <the program's reasons>"
-sarek-explain <kernel> <device> matrix refused <reason>
+sarek-explain <kernel> <framework>:<id> matrix applied proof=<lowering>, <staged|direct (N waves/block)>, <configuration>: bit-identical modulo 2^32
+sarek-explain <kernel> <framework>:<id> matrix applied granted=<grants> reason="<the program's reasons>" lowering="<lowering>, <variant>, <configuration>"
+sarek-explain <kernel> <framework>:<id> matrix refused <reason>
 ```
 
 The first form is the `int32` rewrite, the second a float one (the grants it was admitted under: the consent, the accumulation order, the operand rounding). Kernels that are not matrix products and devices that can never rewrite are not reported. `Execute.run_vectors_outcome` and `Sarek_matrix.run` return the outcome to the caller as well.

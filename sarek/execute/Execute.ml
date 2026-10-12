@@ -1225,8 +1225,9 @@ module Window = struct
       is on and it is not a CPU device (whose host-pointer buffers alias host
       memory, so they can alias each other). *)
   let defers_device (device : Device.t) =
-    (not device.capabilities.Framework_sig.is_cpu)
-    && Launch_window.defers device.framework
+    Window_gate.defers_device
+      ~framework:device.framework
+      ~is_cpu:device.capabilities.Framework_sig.is_cpu
 
   (** [false] when deferral is off for every backend. *)
   let enabled () = Atomic.get Launch_window.enabled
@@ -1468,15 +1469,7 @@ let run_jit (module B : Framework_sig.BACKEND) ?stream ~(device : Device.t)
           ~shared_mem
           args
       in
-      (* CPU devices never defer (host-pointer buffers alias host memory);
-         the decision is reported for SAREK_EXPLAIN. *)
-      if
-        Launch_policy.deferred
-          ~kernel:ir.Sarek_ir_types.kern_name
-          ~device
-          ~streamed:(stream <> None)
-          ~soa_params
-      then
+      if Launch_policy.deferred ir ~device ~stream ~soa_params then
         submit_deferred
           (module B)
           ~device

@@ -209,7 +209,11 @@ let unroll_hints () =
 
 let deferred ?(streamed = false) ?(soa_params = []) ?(kernel = "env_kernel")
     device =
-  Lp.deferred ~kernel ~device ~streamed ~soa_params
+  Lp.deferred
+    {default_kernel with kern_name = kernel}
+    ~device
+    ~stream:(if streamed then Some () else None)
+    ~soa_params
 
 let epilogue backend =
   LE.decide_pair ~backend ~producer:"env_p" ~consumer:"env_c"

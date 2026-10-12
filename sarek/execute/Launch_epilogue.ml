@@ -381,7 +381,7 @@ let permitted (m : _ LW.launch) (c : _ LW.launch) =
     Sarek_policy.report
       {
         kernel = producer ^ " + " ^ consumer;
-        device = c.backend;
+        target = c.backend;
         optimisation = Sarek_policy.Epilogue_fusion;
         decision;
       } ;

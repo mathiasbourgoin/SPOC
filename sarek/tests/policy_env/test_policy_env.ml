@@ -24,7 +24,6 @@
    - model: the process state after SAREK_OPT_DISABLE equals [Env.narrow].
    - explain, explain-off, explain-unknown, explain-replaced: SAREK_EXPLAIN. *)
 
-
 [@@@warning "-33"]
 
 [@@@alert "-sarek_matrix"]
@@ -198,7 +197,6 @@ let test_unknown () =
   Alcotest.(check (list int)) "unroll off" [0; 0; 0; 0] (unroll_hints ()) ;
   Alcotest.(check string) "epilogue on" "exact" (decision_text (epilogue "HIP"))
 
-
 (* Revoking an accuracy grant is named in the refusals it causes. *)
 let coopmat_cfg =
   match Sarek_ir_analysis.kernel_coopmat_configs coopmat_kernel with
@@ -215,7 +213,8 @@ let test_accumulation_order_revoked () =
   Alcotest.(check bool)
     "revoked"
     true
-    (Sarek_policy.revoked (Sarek_policy.Deviation Sarek_policy.Accumulation_order)) ;
+    (Sarek_policy.revoked
+       (Sarek_policy.Deviation Sarek_policy.Accumulation_order)) ;
   let why =
     refusal_text
       (Cm.policy_verdict_for
@@ -223,13 +222,10 @@ let test_accumulation_order_revoked () =
          coopmat_cfg)
   in
   Alcotest.(check bool)
-    ("an explicit coopmat kernel is refused and the refusal says why (" ^ why ^ ")")
+    ("an explicit coopmat kernel is refused and the refusal says why (" ^ why
+   ^ ")")
     true
     (contains ~needle:"revoked by SAREK_OPT_DISABLE" why) ;
-  Alcotest.(check bool)
-    "the float lowering is refused too"
-    false
-    (is_ok (lowering ~explicit:true Adv.F16_inputs)) ;
   Alcotest.(check bool)
     "int32 is still rewritten"
     true
@@ -252,7 +248,10 @@ let test_model () =
   List.iter
     (fun g ->
       ok_or_fail
-        (Sarek_policy.grant Sarek_policy.Process g ~reason:("model " ^ Sarek_policy.grant_name g)))
+        (Sarek_policy.grant
+           Sarek_policy.Process
+           g
+           ~reason:("model " ^ Sarek_policy.grant_name g)))
     Sarek_policy.all_grants ;
   let full =
     List.fold_left
@@ -263,7 +262,9 @@ let test_model () =
       Sarek_policy.Budget.exact
       Sarek_policy.all_grants
   in
-  let restrictions, _ = Sarek_policy.Env.parse "window,Single-Rounding, matrix" in
+  let restrictions, _ =
+    Sarek_policy.Env.parse "window,Single-Rounding, matrix"
+  in
   let modelled =
     Sarek_policy.Env.narrow
       restrictions

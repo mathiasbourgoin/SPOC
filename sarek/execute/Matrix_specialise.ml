@@ -189,6 +189,13 @@ let float32_lowering ~budget precision =
   in
   match precision with
   | Some p when accepted p -> Ok (precision_lowering p)
+  | Some p
+    when Sarek_policy.revoked
+           (Sarek_policy.Deviation (Sarek_policy.Operand_rounding p)) ->
+      Error
+        (Printf.sprintf
+           "operand rounding to %s is revoked by SAREK_OPT_DISABLE"
+           (Sarek_coopmat.operand_precision_name p))
   | Some p ->
       Error
         (Printf.sprintf
@@ -263,7 +270,11 @@ let evidence_for ~budget ~explicit ~case lowering variant cfg =
         List.filter_map (Sarek_policy.Budget.reason budget) grants
       in
       Sarek_policy.Granted
-        {grants; reason = String.concat "; " (description :: reasons)}
+        {
+          grants;
+          reason = Sarek_policy.join_reasons reasons;
+          lowering = Some description;
+        }
 
 let subgroup_override_for_tests = Adm.subgroup_override_for_tests
 
@@ -405,11 +416,11 @@ let policy_decision = function
   | Specialised s -> Sarek_policy.Applied s.evidence
   | Original why -> Sarek_policy.Refused why
 
-let report ~kernel ~device outcome =
+let report ~kernel ~target outcome =
   Sarek_policy.report
     {
       kernel;
-      device;
+      target;
       optimisation = Sarek_policy.Matrix_rewrite;
       decision = policy_decision outcome;
     }
@@ -435,7 +446,8 @@ let choose ?precision ?(explicit = false) ?(stream = false) ~(device : Device.t)
   in
   (match outcome with
   | Original _ when not (reportable device ~explicit ir) -> ()
-  | _ -> report ~kernel:ir.kern_name ~device:device.name outcome) ;
+  | _ ->
+      report ~kernel:ir.kern_name ~target:(Launch_policy.target device) outcome) ;
   outcome
 
 (* A cleared backend cache (an intrinsic or type replaced) must not keep

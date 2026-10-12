@@ -156,23 +156,8 @@ let max_members = ref 8
 
 let max_cached = 4096
 
-let enabled = Atomic.make true
-
-(** Backends deferred by default (specs/launch-window.md); Native, Interpreter
-    and WebGPU stay immediate. {!set_backend_enabled} opts in or out. *)
-let default_backends =
-  ["HIP"; "OpenCL"; "Vulkan"; "CUDA/PTX"; "CUDA/C"; "Metal"]
-
-(* Read on every launch: an immutable list behind an atomic, no lock. *)
-let backends : string list Atomic.t = Atomic.make default_backends
-
+include Window_gate
 include Launch_limits
-
-(** [true] when launches on [backend] are deferred. *)
-let defers (backend : string) : bool =
-  Atomic.get enabled
-  && List.mem backend (Atomic.get backends)
-  && not (Sarek_policy.restricted Sarek_policy.Launch_window)
 
 (** {1 Per-IR facts} *)
 

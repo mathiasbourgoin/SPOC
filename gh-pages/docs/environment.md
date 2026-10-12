@@ -62,7 +62,7 @@ Items are separated by commas, compared case-insensitively, and surrounding spac
 |---|---|
 | `window` | No deferred launches and no horizontal fusion, on every backend. `Execute.Window.set_enabled` stays for programs that need the window off in part of their run. |
 | `epilogue` | No epilogue fusion, on every backend. |
-| `matrix` | No matrix-unit rewrite, for `Execute.run_vectors` and `Sarek_matrix.run`. |
+| `matrix` | No matrix-unit rewrite, for `Execute.run_vectors` and `Sarek_matrix.run`. A kernel the program wrote with `Sarek_gemm.Coopmat` is not a rewrite and still runs. |
 | `narrowing-proof` | The f32 to f16 narrowing keeps its barrier everywhere, even where one rounding is provably equal to two. |
 | `unroll` | No automatic `#pragma unroll` hint on small constant-trip loops. |
 | `accumulation-order`, `operand-rounding-f16`, `operand-rounding-bf16`, `operand-rounding-bf16x3`, `single-rounding`, `cross-kernel-contraction`, `automatic-float-rewrite` | Revokes that grant for the whole process, whatever scope the program grants it at. The program's call still succeeds and is recorded, but no decision sees the grant. `SAREK_EXPLAIN` prints `grant-revoked` for it. |
@@ -73,18 +73,29 @@ The generated source and the launch memo follow the policy: a restriction cannot
 
 ### `SAREK_EXPLAIN`
 
-One line per distinct (kernel, device, optimisation, decision); a repeated launch adds none. Fields are separated by single spaces; spaces inside a kernel or device name are written `_`, and an epilogue pair `p + c` is written `p+c`. Decisions made by a code generator (narrowing proof, unroll) have no device: the field is the generator, `cuda-c` (HIP and CUDA/C), `opencl`, `metal` or `glsl`.
+One line per **distinct** (kernel, target, optimisation, decision): a decision that comes back after another one is not printed again (a window switched off and on per prompt chunk prints two lines, not one per switch). The memory of what was printed is bounded (4096 distinct decisions, then forgotten). Fields are separated by single spaces; spaces inside a kernel name are written `_`, and an epilogue pair `p + c` is written `p+c`.
+
+The **target** says where the decision was taken, in one scheme:
+
+| Target | Used by | Example |
+|---|---|---|
+| `<framework>:<device id>` | decisions about a device: `window`, `matrix`, `coopmat-gate` | `HIP:0`, `OpenCL:1` |
+| `<framework>` | decisions about a backend: `epilogue` | `HIP`, `CUDA/PTX` |
+| `gen:<generator>` | code generation, which does not know the device: `narrowing-proof`, `unroll` | `gen:cuda-c` (HIP and CUDA/C), `gen:opencl`, `gen:metal`, `gen:glsl` |
 
 ```
-sarek-explain <kernel> <device> <optimisation> applied proof=<text>
-sarek-explain <kernel> <device> <optimisation> applied granted=<grant>[,<grant>] reason="<reason>"
-sarek-explain <kernel> <device> <optimisation> applied exact
-sarek-explain <kernel> <device> <optimisation> refused <reason>
+sarek-explain <kernel> <target> <optimisation> applied proof=<text>
+sarek-explain <kernel> <target> <optimisation> applied granted=<grant>[,<grant>] reason="<reason>" [lowering="<description>"]
+sarek-explain <kernel> <target> <optimisation> applied exact
+sarek-explain <kernel> <target> <optimisation> refused <reason>
+sarek-explain <kernel> <target> coopmat-gate applied|refused ...
 sarek-explain <kernel> - policy refused grant-on-generated-name <grant>
 sarek-explain <kernel> - policy refused grant-revoked <grant>
 ```
 
-`<optimisation>` is `window`, `epilogue`, `matrix`, `narrowing-proof` or `unroll`; `<grant>` is one of the grant names above; `<reason>` is what the program gave when it granted. `matrix` also reports the explicit cooperative-matrix gate of a kernel the program wrote with `Sarek_gemm.Coopmat`. The last two forms say that a grant the program made has no effect: a `Kernel` grant on a generated name (a fused, derived or static-fusion kernel) is never counted, and a revoked grant is not obeyed. Sample lines from a run on an AMD RX 7900 XTX (HIP) are in `CHANGES.md`.
+`<optimisation>` is `window`, `epilogue`, `matrix`, `narrowing-proof` or `unroll`; `<grant>` is one of the grant names above. `reason="..."` holds only what the program gave when it granted (each reason once, in order, joined with `; `). `lowering="..."` is the matrix rewrite's own description (lowering, variant, fragment configuration), present on the float rewrites. `coopmat-gate` is an event kind of its own, not an optimisation: it reports the accuracy gate of the **device backends** for a kernel the program wrote with `Sarek_gemm.Coopmat` (the interpreter's gate is not reported), `SAREK_OPT_DISABLE` has no name for it, and nothing restricts it. The last two lines say that a grant the program made has no effect: a `Kernel` grant on a generated name (a fused, derived or static-fusion kernel) is never counted, and a revoked grant is not obeyed; each is printed once, at the next report for that kernel, also when its decisions settled before. A reporter set with `Sarek_policy.set_reporter` is called outside the policy's lock, possibly from several domains: lines of different domains may interleave. Sample lines from a run on an AMD RX 7900 XTX (HIP) are in `CHANGES.md`.
+
+**Revoking an accuracy grant has a visible effect.** `accumulation-order` is the closest equivalent of the old `SAREK_MATRIX_REWRITE=exact` for float paths: it refuses every float matrix-unit path (the rewrite and `Sarek_gemm.Coopmat`) and keeps `int32`. An explicit cooperative-matrix kernel the program wrote then **fails at launch** with a capability refusal that says `accumulation-order is revoked by SAREK_OPT_DISABLE`. Revoking `operand-rounding-bf16` or `-bf16x3` does the same for bfloat16 kernels. Revoking one operand rounding can make the rewrite pick another precision the program also granted (for example float16 instead of bfloat16), which is less accurate; revoke all of them to rule that out.
 
 ## Launch window and fusion
 

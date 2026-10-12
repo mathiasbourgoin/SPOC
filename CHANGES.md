@@ -36,35 +36,45 @@
 
   `Matrix_specialise.lowering_for` loses its `~mode` argument and `specialised` gains
   `evidence`. `Execute.Window.set_enabled`, `set_backend_enabled` and `set_epilogue_backend`
-  stay. `Sarek_policy.evidence`'s `Granted` now carries `{grants; reason}`; `set_reporter`
-  takes `event`s (`Decision of record | Ignored_grant`).
+  stay. `Sarek_policy.evidence`'s `Granted` now carries `{grants; reason; lowering}`,
+  `Sarek_policy.record`'s `device` field is `target`, and `set_reporter` takes `event`s
+  (`Decision of record | Gate | Ignored_grant`).
   `SAREK_OPT_DISABLE` is a comma list (any case, spaces and empty items ignored; an unknown
   item prints one warning line on stderr and is ignored): `window`, `epilogue`, `matrix`,
   `narrowing-proof`, `unroll` restrict that optimisation; `accumulation-order`,
   `operand-rounding-f16|bf16|bf16x3`, `single-rounding`, `cross-kernel-contraction`,
   `automatic-float-rewrite` revoke that grant for the whole process (the program's
   `accept_*`/`grant` call still succeeds and is recorded, but no budget holds it).
-  `SAREK_EXPLAIN=1` writes one stderr line per distinct (kernel, device, optimisation,
-  decision) for every decision point: window (`Launch_policy.deferred`, per launch), epilogue,
-  the matrix rewrite with its lowering and the explicit coopmat gate, the narrowing proof and
-  unroll (per kernel generation; their device column is the generator: `cuda-c`, `opencl`,
-  `metal`, `glsl`), and a program `Kernel` grant on a generated (fused, derived,
-  static-fusion) name or a revoked grant (`sarek-explain <name> - policy refused
-  grant-on-generated-name|grant-revoked <grant>`). Real lines from a run on an AMD RX 7900 XTX
-  (HIP; `SAREK_EXPLAIN=1`; full capture `m3-explain-sample-hip.txt`):
+  `SAREK_EXPLAIN=1` writes one stderr line per **distinct** (kernel, target, optimisation,
+  decision) for every decision point (a decision that flips back is not printed again):
+  window (per launch), epilogue, the matrix rewrite with its lowering, the explicit coopmat
+  gate of the device backends (its own `coopmat-gate` label, not an optimisation and not a
+  `SAREK_OPT_DISABLE` item), the narrowing proof and unroll (per kernel generation), and a
+  program `Kernel` grant on a generated (fused, derived, static-fusion) name or a revoked grant
+  (`sarek-explain <name> - policy refused grant-on-generated-name|grant-revoked <grant>`). The
+  target is `<framework>:<device id>` for window, matrix and the gate (`HIP:0`), `<framework>`
+  for the epilogue, `gen:<generator>` for code generation (`gen:cuda-c`, `gen:opencl`,
+  `gen:metal`, `gen:glsl`); a float matrix line ends with `lowering="..."` and its
+  `reason="..."` holds only the program's reasons. Revoking `accumulation-order` (the closest
+  to the old `SAREK_MATRIX_REWRITE=exact` for float paths) makes an explicit cooperative-matrix
+  kernel fail at launch, with a refusal that says it is revoked by `SAREK_OPT_DISABLE`.
+  Real lines from a run on an AMD RX 7900 XTX (HIP, `SAREK_EXPLAIN=1`; raw capture:
+  `spoc-pipeline-logs/policy-impl/m3-r2-explain-sample-hip.txt` on the owner machine; the
+  CUDA/PTX line is from ZLUDA on the same card):
 
   ```text
-  sarek-explain sarek_kern AMD_Radeon_RX_7900_XTX window applied exact
-  sarek-explain sarek_kern AMD_Radeon_RX_7900_XTX matrix applied proof=int32 byte planes (u8*u8+s32->s32, 10 products), staged, 16x16x16 u8*u8+s32->s32 subgroup: bit-identical modulo 2^32
-  sarek-explain sarek_kern AMD_Radeon_RX_7900_XTX matrix refused float products are rewritten automatically only after Sarek_coopmat.accept_automatic_float_rewrite (plus the accuracy opt-ins); Sarek_matrix.run does not need it
-  sarek-explain sarek_kern AMD_Radeon_RX_7900_XTX matrix applied granted=automatic-float-rewrite,accumulation-order reason="f16 operands (f16*f16+f32->f32), direct (2 waves/block), 16x16x16 f16*f16+f32->f32 subgroup; test_matrix_optin; test_matrix_optin"
+  sarek-explain sarek_kern HIP:0 window applied exact
+  sarek-explain sarek_kern HIP:0 matrix applied proof=int32 byte planes (u8*u8+s32->s32, 10 products), staged, 16x16x16 u8*u8+s32->s32 subgroup: bit-identical modulo 2^32
+  sarek-explain sarek_kern HIP:0 matrix refused float products are rewritten automatically only after Sarek_coopmat.accept_automatic_float_rewrite (plus the accuracy opt-ins); Sarek_matrix.run does not need it
+  sarek-explain sarek_kern HIP:0 matrix applied granted=automatic-float-rewrite,accumulation-order reason="test_matrix_optin" lowering="f16 operands (f16*f16+f32->f32), direct (2 waves/block), 16x16x16 f16*f16+f32->f32 subgroup"
+  sarek-explain sarek_kern_sarek_mm_direct_w2 HIP:0 coopmat-gate applied granted=accumulation-order reason="test_matrix_optin"
   sarek-explain sarek_kern+sarek_kern HIP epilogue applied exact
   sarek-explain sarek_kern+sarek_kern OpenCL epilogue refused no grant cross-kernel-contraction (kernel or process)
   sarek-explain sarek_kern+sarek_kern CUDA/PTX epilogue applied granted=cross-kernel-contraction reason="test_epilogue_exact: measuring the contraction bound"
-  sarek-explain sarek_kern cuda-c narrowing-proof applied proof=4/4 narrowings proven exact
-  sarek-explain sarek_kern cuda-c narrowing-proof refused 0/4 narrowings proven exact, the barrier is kept
-  sarek-explain f16_single_rounding_dequant cuda-c narrowing-proof applied granted=single-rounding reason="test_hip_f16_single_rounding"
-  sarek-explain sarek_kern_sarek_mm cuda-c unroll applied exact
+  sarek-explain sarek_kern gen:cuda-c narrowing-proof applied proof=4/4 narrowings proven exact
+  sarek-explain sarek_kern gen:cuda-c narrowing-proof refused 0/4 narrowings proven exact, the barrier is kept
+  sarek-explain f16_single_rounding_dequant gen:cuda-c narrowing-proof applied granted=single-rounding reason="test_hip_f16_single_rounding"
+  sarek-explain sarek_kern_sarek_mm gen:cuda-c unroll applied exact
   ```
 
   Coverage (what ran where; none of it is a performance claim). Restriction scenarios, the

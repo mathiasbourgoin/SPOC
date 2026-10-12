@@ -14,5 +14,6 @@
   test_sarek_policy
   test_sarek_policy_effective
   test_sarek_policy_env
+  test_sarek_policy_events
   test_sarek_kernel_scope)
  (libraries sarek_ir alcotest astring str unix))
