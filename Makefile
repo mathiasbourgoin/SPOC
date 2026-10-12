@@ -523,8 +523,10 @@ e2e-gpu:
 # fault since the run started (scripts/gpu-kernel-log-gate.sh; Sarek #503/#504).
 # On a machine with several GPUs select the device first (RADV:
 # MESA_VK_DEVICE_SELECT=<vendor>:<device>). Host-memory import stays off unless
-# SPOC_VULKAN_HOST_IMPORT=1 and is refused on AMD drivers; alloc_pinned uses
-# driver-allocated memory and imports nothing.
+# SPOC_VULKAN_HOST_IMPORT=1 (set by the dune stanza of the two import-capable
+# tests only) and is refused on AMD drivers; alloc_pinned uses driver-allocated
+# memory and imports nothing. The Vulkan GPU tests share one dune lock: they
+# run one at a time. Batching is on (SPOC_VULKAN_BATCH=32 default).
 .PHONY: test-vulkan-gpu test-gpu-kernel-log-gate
 test-vulkan-gpu:
 	./scripts/gpu-kernel-log-gate.sh -- dune build --force @sarek-vulkan/test/runtest

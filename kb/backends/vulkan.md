@@ -44,7 +44,7 @@
 ## Features and APIs
 
 - Vulkan compute backend with GLSL-to-SPIR-V through shaderc or `glslangValidator`.
-- Device enumeration, memory allocation with host-visible/device-local selection, staging copies for non-mappable buffers, command pool/buffer/fence streams, asynchronous batched launches (`SPOC_VULKAN_BATCH`, default 1 = off, opt-in because of Sarek #504; per-launch descriptor sets; a compute barrier before each dispatch; pending launches completed before any host access to device memory, sync, kernel eviction or device destroy, event record submitting them, and buffer releases queued until launches have completed), push constants, and compute dispatch.
+- Device enumeration, memory allocation with host-visible/device-local selection, staging copies for non-mappable buffers, command pool/buffer/fence streams, asynchronous batched launches (`SPOC_VULKAN_BATCH`, default 32, `1` = off as the fallback while the cause of Sarek #504 is unconfirmed; per-launch descriptor sets; a compute barrier before each dispatch; pending launches completed before any host access to device memory, sync, kernel eviction or device destroy, event record submitting them, and buffer releases queued until launches have completed), push constants, and compute dispatch.
 - External source language support is GLSL only at `sarek-vulkan/Vulkan_plugin.ml:207`.
 - Generated GLSL uses `layout(local_size_x=...)`, storage buffers for vectors, push constants for scalar params and vector lengths, and Vulkan built-in IDs.
 

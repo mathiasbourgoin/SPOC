@@ -366,9 +366,9 @@ Vulkan.Kernel.launch kernel
   ~stream:None
 ```
 
-With `SPOC_VULKAN_BATCH` above 1, `launch` is asynchronous: it appends the dispatch to the stream's open command
+With `SPOC_VULKAN_BATCH` above 1 (the default is 32), `launch` is asynchronous: it appends the dispatch to the stream's open command
 buffer and returns. The buffer is submitted when it holds `SPOC_VULKAN_BATCH`
-dispatches (opt-in, e.g. `32`; the default `1` submits and waits at every launch, as before, because batching faulted on RADV, Sarek #504), when
+dispatches (`SPOC_VULKAN_BATCH=1` submits and waits at every launch, as before; it is the fallback if batching is suspected, since the async tests once faulted on RADV and the cause is unconfirmed, Sarek #504), when
 another stream of the device launches, and at every synchronisation point:
 `Stream.synchronize`, `Device.synchronize`, `Event.record`, any host access to
 device memory (`Memory.host_to_device`, `device_to_host`, the `_ptr` variants

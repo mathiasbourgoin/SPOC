@@ -14,17 +14,22 @@ Port of the Metal change (CHANGES.md, "Metal kernel launches are asynchronous";
 `specs/metal-ranged-copies.md`) to `sarek-vulkan`. Before, `Kernel.launch`
 recorded one dispatch into the stream's single command buffer, submitted it and
 waited for its fence: every launch blocked the host for the full
-submit-and-complete round trip. With a batch size above 1 (opt-in, 32 is the
-measured setting), a launch appends its dispatch to an open command buffer and
-returns; at the default size of 1 it still submits and waits. The change is semantics-preserving (results and
-their order are unchanged, only the point where the host blocks moves), so it
-is nevertheless opt-in (default batch size 1, Sarek #504).
+submit-and-complete round trip. With a batch size above 1 (the default, 32), a launch appends its
+dispatch to an open command buffer and returns; at size 1 it submits and waits.
+The change is semantics-preserving (results and their order are unchanged, only
+the point where the host blocks moves). It was made opt-in for a while (Sarek
+#504: GPU write page faults and gfx ring resets with the async tests on RADV);
+it is the default again because a validation-layer run (synchronisation and
+GPU-assisted) and single- and two-process gated runs found no hazard. The cause
+of the faults is unconfirmed (hypothesis: collateral of host import, #503, run
+in parallel with the async tests), the issue stays open, and
+`SPOC_VULKAN_BATCH=1` is the fallback.
 
 ## Clarifications
 
 | Q | A |
 |---|---|
-| When is a batch submitted? | When it holds `SPOC_VULKAN_BATCH` dispatches (default 1, which submits and waits at every launch; batching is opt-in since Sarek #504); when another stream of the same device launches (so all streams reach the single queue in launch order); and at every synchronisation point below. Submitting does not wait. |
+| When is a batch submitted? | When it holds `SPOC_VULKAN_BATCH` dispatches (default 32; `1` submits and waits at every launch and is the fallback, Sarek #504); when another stream of the same device launches (so all streams reach the single queue in launch order); and at every synchronisation point below. Submitting does not wait. |
 | When does the host block? | At a synchronisation point (below), and when a launch needs the stream's other command buffer and its previous submission has not completed. |
 | How many command buffers? | Two per stream. One records while the other runs, so recording overlaps execution. |
 | Why per-launch descriptor sets? | A batch may hold the same kernel several times with different arguments. Each dispatch takes a set from a descriptor pool owned by its command buffer slot; the pools are reset when the slot's fence has been waited for. A pool holds 64 sets and 512 descriptors; a slot grows another pool when one is full. The kernel object no longer owns a pool or a set. |
@@ -62,8 +67,8 @@ is nevertheless opt-in (default batch size 1, Sarek #504).
 - **FR-004.** A failed submission or wait raises `Kernel_launch_failed` naming
   the batch's kernels at the first wait; the stream remains usable.
 - **FR-005.** `SPOC_VULKAN_BATCH` (positive integer, read at start; anything
-  else gives the default, 1) sets the batch size; `1` (the default since Sarek
-  #504) is submit-and-wait per launch, a larger value opts in to batching.
+  else gives the default, 32) sets the batch size; `1` is submit-and-wait per
+  launch (the fallback, Sarek #504, cause unconfirmed).
 - **FR-006.** The launch window's results are unchanged
   (`sarek/tests/e2e/test_launch_window.ml` passes on Vulkan).
 
