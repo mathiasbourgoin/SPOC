@@ -25,9 +25,12 @@ let lowering_name = function
 
 (* ---- Tiling ------------------------------------------------------------ *)
 
-(* A 64 x 64 block tile, 4 waves as 2 x 2, each wave 2 x 2 fragments of
-   16 x 16. A wave is one subgroup, whatever the device's width: 32 on HIP
-   gfx11 and CUDA, 64 on RADV (specs/matrix-pattern-rewrite.md). *)
+(* A 64 x 64 block tile, 4 waves as 2 x 2, each wave a 32 x 32 tile of
+   fragments: 2 x 2 of 16 x 16 where the matrix unit has 16 x 16 x 16
+   fragments (HIP gfx11, CUDA, Vulkan), 4 x 4 of 8 x 8 where it has 8 x 8 x 8
+   only (Metal simdgroup_matrix). A wave is one subgroup, whatever the
+   device's width: 32 on HIP gfx11, CUDA and Metal, 64 on RADV
+   (specs/matrix-pattern-rewrite.md). *)
 let bm = 64
 
 let bn = 64
@@ -43,6 +46,17 @@ let threads_of ~subgroup = waves * subgroup
 
 (* The widths the templates are written and measured for. *)
 let supported_subgroup = function 32 | 64 -> true | _ -> false
+
+(* Edge of the tile of fragments one wave computes. *)
+let wave_edge = 32
+
+(* The fragment edges (m = n = k) the templates are laid out for, best first. *)
+let fragment_edges = [16; 8]
+
+let supported_fragment edge = List.mem edge fragment_edges
+
+(* Fragments along one side of a wave's tile. *)
+let fragments_per_wave ~frag = wave_edge / frag
 
 let extra_names =
   ["sarek_mm_me"; "sarek_mm_ne"; "sarek_mm_ze"; "sarek_mm_d"; "sarek_mm_t"]
@@ -266,9 +280,9 @@ let shared_limit = 48 * 1024
 
 let choose_bk s = List.find (fun bk -> shared_bytes s ~bk <= shared_limit) [16]
 
-let config s =
+let config ?(frag = 16) s =
   {
-    C.cfg_shape = {C.m = 16; n = 16; k = 16};
+    C.cfg_shape = {C.m = frag; n = frag; k = frag};
     cfg_a = s.operand;
     cfg_b = s.operand;
     cfg_c = s.acc;

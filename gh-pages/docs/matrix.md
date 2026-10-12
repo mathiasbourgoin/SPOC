@@ -23,7 +23,7 @@ The `int32` rewrite is bit-identical to the original kernel and needs no opt-in,
 | HIP, any other device (gfx10, gfx12, CDNA, the gfx1036 iGPU) | refused with a message naming the rule |
 | CUDA/C (the hidden NVRTC backend), sm_72+ with 32-wide warps | the `int32` rewrite is applied on an explicit request only (`Sarek_matrix.run`), never automatically (8-bit integers, `int32` accumulator, `nvcuda::wmma`). Evidence is compiler output: the generated code compiles with NVRTC for sm_80 and reaches the `u8` tensor-core instruction, but it has never been executed. ZLUDA lacks `wmma.*` and unsigned 8-bit `mma` and is declined. The float rewrites are not offered |
 | Vulkan | executes the `int32` rewrite, when the device advertises the 8-bit integer configuration (RADV on the RX 7900 XTX, 64-wide subgroups). The float rewrites are not offered: GLSL lowers integer fragments only |
-| Metal (Apple GPU with `simdgroup_matrix`) | lowered and executed on Apple M4, macOS 15 (2026-10-12): runs `float16` x `float16` + `float32` -> `float32`, shape 8x8x8 only, bit-identical to the interpreter on the Apple M4 it was run on, offered only where the SIMD-group width is 32; integer and `float16`-accumulate configurations are refused with a message naming the reason; the automatic rewrite does not use it (it builds 16x16x16 statements) |
+| Metal (Apple GPU with `simdgroup_matrix`) | executed on Apple M4, macOS 15 (2026-10-12), offered only where the SIMD-group width is 32: runs `float16` x `float16` + `float32` -> `float32`, shape 8x8x8 only, bit-identical to the interpreter; integer and `float16`-accumulate configurations are refused with a message naming the reason. The rewrite lays the same templates out on 8x8x8 fragments (a wave computes a 32x32 tile as 4x4 fragments, two chained 8-wide multiply-accumulates per step of 16 along the reduction) and applies to the `float16` operands only, under the float opt-ins below; executed on the M4, bit-identical to the original kernel, the interpreter and the host chain, and 4.8x to 7.4x faster than the scalar kernel at n = 512 to 2048 (`bench_metal_matrix_rewrite`). The `int32` rewrite cannot be ported: MSL has no integer `simdgroup_matrix` (its element types are `half`, `float` and `bfloat`), so an integer product runs as the original on Metal and the report says why |
 | OpenCL, WGSL, CUDA/PTX | refuse the statements (OpenCL: no device this project can reach advertises a matrix extension) |
 | Native | not a rewrite backend: the automatic rewrite declines it |
 | Interpreter | executes, as the reference implementation |
@@ -47,7 +47,8 @@ Sarek: kernel 'matmul_naive' contains a matrix product (GEMM) that matrix units 
   HIP gfx11 (wave32): executes
   CUDA/C sm_70+: none (the rewrite lowers the integer case only)
   Vulkan: none (the GLSL emitter lowers integer configurations only)
-  Metal, OpenCL, WGSL, PTX, Native: no matrix-unit lowering
+  Metal (Apple GPU): float16 operands onto 8x8x8 fragments (explicit request, or the automatic opt-in); the bfloat16 split: none
+  OpenCL, WGSL, PTX, Native: no matrix-unit lowering
   accuracy: relaxed beyond the accumulation order: no matrix unit takes float32 operands, so they are rounded (float16: relative error up to 2^-11 each; bfloat16; or a three-term bfloat16 split, near float32); a rewrite needs Sarek_coopmat.accept_operand_rounding ~precision and accept_relaxed_accumulation
   Execute.run_vectors rewrites it onto matrix units only after the opt-in above AND Sarek_coopmat.accept_automatic_float_rewrite (and SAREK_MATRIX_REWRITE not off or exact); Sarek_matrix.run needs the opt-in above only.
   Silence with [@alert "-sarek_matrix"] on the kernel expression or its binding.
@@ -112,12 +113,12 @@ A kernel qualifies when all of these hold; otherwise the original runs and the r
 - Row, column and at most one batch index are affine in the loop variables and thread indices; each operand has a unit stride in one dimension (row-major or column-major). Guards are conjunctions of comparisons with a bound that is the same for every thread.
 - No bound, initial value or epilogue reads `block_dim_*` or `grid_dim_*`, and no index involves `int64`.
 - The element types have a configuration, below.
-- The device is one of HIP with 32-wide waves (gfx11), Vulkan (automatically on 64-wide subgroups, the measured width; a 32-wide device only on an explicit request; the block is four subgroups: 128 or 256 threads), or CUDA/C with 32-wide warps (sm_72+, explicit request only); the configuration is offered by the device (Vulkan and CUDA/C: the `int32` case only); and the rewritten grid fits `max_grid_dims`.
+- The device is one of HIP with 32-wide waves (gfx11), Metal with 32-wide SIMD-groups (the `float16` case only, 8x8x8 fragments), Vulkan (automatically on 64-wide subgroups, the measured width; a 32-wide device only on an explicit request; the block is four subgroups: 128 or 256 threads), or CUDA/C with 32-wide warps (sm_72+, explicit request only); the configuration is offered by the device (Vulkan and CUDA/C: the `int32` case only; Metal: the `float16` case only); and the rewritten grid fits `max_grid_dims`.
 
 | A and B | Accumulator, C | Result of the rewrite |
 |---|---|---|
 | `int32` | `int32` | bit-identical (each operand is split into four byte planes, 10 products per tile, 32-bit wrapping sum) |
-| `float16` | `float32` (C `float32` or `float16`) | within a derived bound of the exact value, not bit-identical: the hardware chooses the addition order |
+| `float16` | `float32` (C `float32` or `float16`) | within a derived bound of the exact value, not bit-identical: the hardware chooses the addition order. On Metal the order is a closed form (accumulator, then the products in index order, all in binary32), so with an initial value of zero the result is meant to be bit-identical to the unrewritten kernel (asserted by `test_matrix_rewrite_metal`, pending its Apple-hardware run); with a non-zero initial value the rewrite adds it after the sum, so it differs from the original, which starts the sum from it |
 | `float32` | `float32` | operands are first rounded to `float16`, `bfloat16`, or a three-term `bfloat16` split; a larger deviation than the previous row |
 | `int64`, `float64`, mixed | | not rewritten |
 

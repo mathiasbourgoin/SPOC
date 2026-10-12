@@ -228,7 +228,7 @@ let test_msl () =
     (contains ~needle:"16x16" src) ;
   Alcotest.(check string)
     "digest of the MSL"
-    "PLACEHOLDER-digest"
+    "f00d2c514416850a3aee7a234852f585"
     (Digest.to_hex (Digest.string src))
 
 let () =

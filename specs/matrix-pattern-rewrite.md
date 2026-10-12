@@ -130,8 +130,62 @@ never executed on NVIDIA hardware.
 | Vulkan | none | int32 byte planes, on by default (exact) | executed on RX 7900 XTX (RADV, Mesa 26.1.4), bit-identical to the original and the host; float: not offered (GLSL has no float fragment) |
 | CUDA/C | none (`coopmat = None`) | int32 byte planes (sm_72+, warp 32) via `Cuda_coopmat`, **explicit request only** (`Sarek_matrix.run`; the automatic path declines: owner rule, untested = opt-in) | compiler-output: NVRTC sm_80 PTX has the u8 `wmma`; not executed: ZLUDA rejects `wmma.*` and unsigned 8-bit `mma` (`specs/zluda-mma-nvrtc13.md` F-1), so ZLUDA devices are declined; no NVIDIA hardware |
 | CUDA/PTX | none | none (no coopmat lowering) | by construction |
-| OpenCL, Metal, Native | none | none | unchanged (Metal: H4b after simdgroup_matrix) |
+| Metal | none | f16 operands (f16×f16+f32→f32) on 8×8×8 fragments, float opt-ins only; **integer declined: no integer `simdgroup_matrix`** | codegen: compiler-output (golden on tartarus); interpreter: executed (`test_matrix_fragment`); Apple M4: pending ladon run (tech lead) |
+| OpenCL, Native | none | none | unchanged |
 | Interpreter | all | unchanged (+ 64-lane layouts checkable) | executed |
+
+## Fragment shape and Metal (H4b)
+
+The templates are parameterised by the **fragment edge** `frag` (m = n = k),
+`Sarek_matrix_rewrite.kernel ?frag` and `config_of ?frag`: 16 (the default,
+byte-identical output, `test_matrix_template_golden`) or 8. A wave's tile stays
+32 × 32 and the block tile 64 × 64, so staging, the accumulator tile and the
+output loop are unchanged; only the fragment grid changes: 2 × 2 fragments of
+16 × 16, or 4 × 4 of 8 × 8 (16 accumulators per wave). A step of 16 along
+the reduction is `16 / frag` chained multiply-accumulates per fragment, in k
+order, into the same accumulator.
+
+*(agent decision, the Open decision of `specs/coopmat-metal-simdgroup.md`)* Route
+chosen: **parameterise the templates by fragment shape**, not lower a
+16×16×16 statement as 2×2 tiles of 8×8 with two chained k-steps in the Metal
+generator. Reasons: the HIP/Vulkan IR is untouched (golden digests unchanged),
+the Metal generator and its files are untouched, and the tile composition is
+visible in the IR, so the interpreter can execute and test it. The claim that
+two chained 8-wide multiply-accumulates are the same C-first sequential
+binary32 chain as one 16-wide one is **tested**, not assumed:
+`test_matrix_fragment` (fragment 8 and 16 on the interpreter, bit-identical to
+the original kernel and to the host chain over k, with a positive control: a
+C-after-chain result differs from the C-first original), and
+`test_matrix_rewrite_metal` on the GPU. Mutation: running one k-step of 8 per
+step of 16 fails 9 of the cases.
+
+`Matrix_specialise` takes the fragment edge from the device: the first of
+`Sarek_matrix_scheme.fragment_edges` (16, then 8) whose configuration the device
+advertises (`fragment_of`); nothing names Metal. The direct float16 variant is
+laid out for 16 × 16 fragments and stays staged at 8.
+
+**Metal admission.** Lowered: `F16_operands` (float16 operands, or float32 rounded
+to float16 under `accept_operand_rounding`). Not lowered, each declined with its
+reason: the integer byte planes (**Metal has no integer `simdgroup_matrix`**: MSL
+offers `half`, `float` and `bfloat` elements only, and the byte-plane scheme
+needs `u8 × u8 + s32`, so the exact rewrite cannot be ported and an integer
+product runs as the original, with the reason in the report); the bfloat16
+lowerings (the bfloat 8×8 fragment is unmeasured and the IR's bf16 fragment
+loads a float32 buffer rounded to bfloat16). Policy is unchanged: the float
+rewrite needs `accept_relaxed_accumulation` and, automatically,
+`accept_automatic_float_rewrite` (#440); `Sarek_matrix.run` does not need the
+latter. Metal's launch is four waves of 32: 128 threads, 22.5 KiB of threadgroup
+memory for f16 (the device limit is 32 KiB; `fits_device` checks it).
+
+**Exactness on Metal.** The multiply-accumulate is a closed form (accumulator,
+then the 8 products added in index order, binary32; `specs/coopmat-metal-simdgroup.md`),
+and a product of two binary16 values is exact in binary32, so with an initial
+value of zero the rewritten result is the sequential chain over k that the
+original kernel and the interpreter compute: **bit-identical**, not merely
+bounded. With a non-zero initial value the rewrite adds it after the chain
+(`init + sum`) while the original starts the chain from it: they differ, as on
+HIP, and `test_matrix_rewrite_metal` asserts the rewrite equals the C-after
+model and the original the C-first one.
 
 ## Codegen and IR additions
 

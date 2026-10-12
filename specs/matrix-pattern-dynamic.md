@@ -47,7 +47,11 @@ that need the original. `Sarek_matrix.run` keeps its PR 2 signature on top.
 Devices: by default HIP (gfx11, 32-wide waves) and Vulkan (RADV, 64-wide
 subgroups) are rewritten, Vulkan the `int32` case only; CUDA/C (sm_72+, 32-wide
 warps, `int32` only) on an explicit request only, like the interpreter, because
-its evidence is compiler output and it has never been executed (H4: `Matrix_specialise.rewrite_backends`, `lowers_on`). The
+its evidence is compiler output and it has never been executed (H4: `Matrix_specialise.rewrite_backends`, `lowering_refusal`). Metal
+(32-wide SIMD-groups) is rewritten for the float16 operands only, on 8x8x8
+fragments (H4b: `fragment_of`, specs/matrix-pattern-rewrite.md, "Fragment shape
+and Metal"); its integer case is declined because MSL has no integer
+`simdgroup_matrix`; the float opt-ins apply unchanged. The
 templates take the subgroup width from the device's cooperative-matrix probe
 (`subgroup_of`): a block is four waves of that width. The
 interpreter is rewritten only on an explicit request (`Sarek_matrix.run`,
@@ -134,7 +138,13 @@ relaxed only leaves the automatic f16 launch original (reason names
 new opt-in only leaves both original; both rewrite.
 `sarek/execute/test/test_matrix_specialise_policy.ml` (no device): the
 `SAREK_MATRIX_REWRITE` parser, `lowering_for`, and `choose` on a fake HIP device
-(the `~explicit` wiring). PR 2's tests use `run_vectors_plain` for the original.
+(the `~explicit` wiring). `sarek-metal/test/test_metal_matrix_rewrite.ml` (no
+device): `choose` on a Metal device record whose capabilities come from
+`Metal_coopmat.support`: float16 admitted at 8x8x8 under the opt-ins, integer
+declined with the reason, a failed probe and a 16-wide SIMD-group declined, the
+aligned size class staying staged, and the generated MSL (digest).
+`test_matrix_fragment.ml` runs the templates at fragment 8 and 16 on the
+interpreter. PR 2's tests use `run_vectors_plain` for the original.
 
 ## Requirements
 

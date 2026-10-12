@@ -47,13 +47,24 @@ let element_case (g : P.gemm) =
   | TInt32, TInt32, TInt32, TInt32 -> Int32_inputs
   | _ -> No_case
 
-let others = ("Metal, OpenCL, WGSL, PTX, Native", "no matrix-unit lowering")
+let others = ("OpenCL, WGSL, PTX, Native", "no matrix-unit lowering")
+
+(* Metal's simdgroup_matrix has 8x8x8 half/float fragments and no integer
+   element: the float16 operands are rewritten onto 8x8x8 fragments, the
+   integer case cannot be (specs/matrix-pattern-rewrite.md, "Metal"). *)
+let metal_float =
+  ( "Metal (Apple GPU)",
+    "float16 operands onto 8x8x8 fragments (explicit request, or the automatic \
+     opt-in); the bfloat16 split: none" )
+
+let metal_integer = ("Metal", "none (MSL has no integer simdgroup_matrix)")
 
 let float_backends =
   [
     ("HIP gfx11 (wave32)", "executes");
     ("CUDA/C sm_70+", "none (the rewrite lowers the integer case only)");
     ("Vulkan", "none (the GLSL emitter lowers integer configurations only)");
+    metal_float;
     others;
   ]
 
@@ -63,6 +74,7 @@ let integer_backends =
     ( "CUDA/C sm_72+",
       "explicit request only; compiled (NVRTC), never run; ZLUDA lacks wmma" );
     ("Vulkan", "executes (RADV, 64-wide subgroups)");
+    metal_integer;
     others;
   ]
 

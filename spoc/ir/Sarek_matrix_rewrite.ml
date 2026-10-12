@@ -38,6 +38,7 @@ type ctx = {
   st : string;  (** scratch tile for the integer planes *)
   bk : int;
   subgroup : int;  (** lanes per wave *)
+  edge : int;  (** fragment edge (m = n = k): 16, or 8 on Metal *)
 }
 
 let me c = List.nth c.extra 0
@@ -49,6 +50,9 @@ let d_ c = List.nth c.extra 3
 let t_ c = List.nth c.extra 4
 
 let threads c = threads_of ~subgroup:c.subgroup
+
+(* Fragments along one side of a wave's 32 x 32 tile. *)
+let per_wave c = fragments_per_wave ~frag:c.edge
 
 let store_planes names idx values =
   SSeq
@@ -166,7 +170,7 @@ let stage_tile c ~tid ~kt ~is_a =
       lets [(gi, tid +: (g8 *: i32 threads))] guarded)
 
 let frag c use =
-  let a, b, acc, _ = C.fragments_of_config (config c.s) in
+  let a, b, acc, _ = C.fragments_of_config (config ~frag:c.edge c.s) in
   match use with `A -> a | `B -> b | `Acc -> acc
 
 let fa i p = Printf.sprintf "sarek_mm_fa%d_%d" i p
@@ -177,8 +181,11 @@ let facc i j s = Printf.sprintf "sarek_mm_acc%d_%d_%d" i j s
 
 let range n = List.init n Fun.id
 
-let ij =
-  List.concat_map (fun i -> List.map (fun j -> (i, j)) (range 2)) (range 2)
+(* The fragments of a wave's tile, row by row. *)
+let ij c =
+  List.concat_map
+    (fun i -> List.map (fun j -> (i, j)) (range (per_wave c)))
+    (range (per_wave c))
 
 let decls c =
   List.concat_map
@@ -186,19 +193,19 @@ let decls c =
       List.map
         (fun p -> SCoopmat (CM_decl {name = fa i p; frag = frag c `A}))
         (range c.s.planes))
-    (range 2)
+    (range (per_wave c))
   @ List.concat_map
       (fun j ->
         List.map
           (fun p -> SCoopmat (CM_decl {name = fb j p; frag = frag c `B}))
           (range c.s.planes))
-      (range 2)
+      (range (per_wave c))
   @ List.concat_map
       (fun (i, j) ->
         List.map
           (fun s -> SCoopmat (CM_decl {name = facc i j s; frag = frag c `Acc}))
           (range c.s.accumulators))
-      ij
+      (ij c)
 
 let fragment_ops c ~wm ~wn ~ks =
   let load_a i p =
@@ -209,8 +216,9 @@ let fragment_ops c ~wm ~wn ~ks =
            frag = frag c `A;
            src = List.nth c.sa p;
            index =
-             (((wm *: i32 32) +: i32 (16 * i)) *: i32 (c.bk + pad c.s))
-             +: i32 (16 * ks);
+             ((wm *: i32 wave_edge) +: i32 (c.edge * i))
+             *: i32 (c.bk + pad c.s)
+             +: i32 (c.edge * ks);
            stride = i32 (c.bk + pad c.s);
            layout = C.Row_major;
          })
@@ -222,8 +230,9 @@ let fragment_ops c ~wm ~wn ~ks =
            frag = frag c `B;
            src = List.nth c.sb p;
            index =
-             (((wn *: i32 32) +: i32 (16 * j)) *: i32 (c.bk + pad c.s))
-             +: i32 (16 * ks);
+             ((wn *: i32 wave_edge) +: i32 (c.edge * j))
+             *: i32 (c.bk + pad c.s)
+             +: i32 (c.edge * ks);
            stride = i32 (c.bk + pad c.s);
            layout = C.Col_major;
          })
@@ -235,12 +244,16 @@ let fragment_ops c ~wm ~wn ~ks =
            a = fa i pa;
            b = fb j pb;
            c = facc i j s;
-           cfg = config c.s;
+           cfg = config ~frag:c.edge c.s;
          })
   in
-  List.concat_map (fun i -> List.map (load_a i) (range c.s.planes)) (range 2)
-  @ List.concat_map (fun j -> List.map (load_b j) (range c.s.planes)) (range 2)
-  @ List.concat_map (fun q -> List.map (muladd q) c.s.products) ij
+  List.concat_map
+    (fun i -> List.map (load_a i) (range c.s.planes))
+    (range (per_wave c))
+  @ List.concat_map
+      (fun j -> List.map (load_b j) (range c.s.planes))
+      (range (per_wave c))
+  @ List.concat_map (fun q -> List.map (muladd q) c.s.products) (ij c)
 
 let k_loop c ~tid ~wm ~wn =
   let kn = c.g.k_hi -: c.g.k_lo +: i32 1 in
@@ -260,7 +273,7 @@ let k_loop c ~tid ~wm ~wn =
          ]
         @ List.concat_map
             (fun ks -> fragment_ops c ~wm ~wn ~ks)
-            (range (c.bk / 16))) )
+            (range (c.bk / c.edge))) )
 
 let store_accs c ~wm ~wn ~s ~dst =
   List.map
@@ -272,13 +285,13 @@ let store_accs c ~wm ~wn ~s ~dst =
              frag = frag c `Acc;
              dst;
              index =
-               (((wm *: i32 32) +: i32 (16 * i)) *: i32 bn)
-               +: (wn *: i32 32)
-               +: i32 (16 * j);
+               (((wm *: i32 wave_edge) +: i32 (c.edge * i)) *: i32 bn)
+               +: (wn *: i32 wave_edge)
+               +: i32 (c.edge * j);
              stride = i32 bn;
              layout = C.Row_major;
            }))
-    ij
+    (ij c)
 
 (* sc := sum over s of acc_s shifted left by 8s (integer planes). *)
 let combine c ~tid ~wm ~wn =
@@ -422,7 +435,7 @@ let body c0 =
 
 let ( let* ) = Result.bind
 
-let kernel ?(subgroup = 32) (k : kernel) (g : P.gemm) lowering =
+let kernel ?(subgroup = 32) ?(frag = 16) (k : kernel) (g : P.gemm) lowering =
   let env = address_env k g in
   let batch = match g.batch with [b] -> Some b | _ -> None in
   let* a_addr = address env g.a batch in
@@ -433,6 +446,13 @@ let kernel ?(subgroup = 32) (k : kernel) (g : P.gemm) lowering =
   else if not (supported_subgroup subgroup) then
     Error
       (Printf.sprintf "no template for %d-wide subgroups (32 and 64)" subgroup)
+  else if not (supported_fragment frag) then
+    Error
+      (Printf.sprintf
+         "no template for %dx%dx%d fragments (16 and 8)"
+         frag
+         frag
+         frag)
   else
     let sch = scheme ~operand_elt:g.a.elt lowering in
     let fresh = {next = max_var_id k + 1} in
@@ -452,6 +472,7 @@ let kernel ?(subgroup = 32) (k : kernel) (g : P.gemm) lowering =
         st = "";
         bk = choose_bk sch;
         subgroup;
+        edge = frag;
       }
     in
     Ok
@@ -470,4 +491,5 @@ let kernel ?(subgroup = 32) (k : kernel) (g : P.gemm) lowering =
 let launch_dims ?(subgroup = 32) ~me ~ne ~ze () =
   ((threads_of ~subgroup, 1, 1), ((ne + bn - 1) / bn, (me + bm - 1) / bm, ze))
 
-let config_of lowering ~operand_elt = config (scheme ~operand_elt lowering)
+let config_of ?(frag = 16) lowering ~operand_elt =
+  config ~frag (scheme ~operand_elt lowering)
