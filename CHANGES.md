@@ -16,6 +16,69 @@
   on RADV (`test_vulkan_host_lifecycle`). Allocation can now fail with an out-of-memory error
   from `vkAllocateMemory` instead of a `Feature_not_supported` refusal, and `stage_to_device`
   works on Vulkan where it was refused.
+- **Breaking.** `SAREK_OPT_DISABLE` and `SAREK_EXPLAIN` replace five switches
+  (`specs/optimisation-policy.md` 3.4-3.5, milestone M3, `gh-pages/docs/environment.md`).
+  Environment variables only restrict: nothing in the environment grants precision or turns
+  on an optimisation. Both are read once, at program start. **Removed outright, no alias and
+  no warning** (setting them now does nothing; `sarek/tests/policy_env` runs a process with
+  all five set and checks the defaults hold):
+
+  | Removed | Replacement |
+  |---|---|
+  | `SAREK_LAUNCH_WINDOW=0` | `SAREK_OPT_DISABLE=window` |
+  | `SAREK_LAUNCH_EPILOGUE=0` | `SAREK_OPT_DISABLE=epilogue` |
+  | `SAREK_MATRIX_REWRITE=off` | `SAREK_OPT_DISABLE=matrix` |
+  | `SAREK_MATRIX_REWRITE=exact` | `SAREK_OPT_DISABLE=automatic-float-rewrite` (int32 still rewritten; unlike the old mode it does not stop an explicit `Sarek_matrix.run`, which never needed the consent) |
+  | `SAREK_AUTO_UNROLL=0` | `SAREK_OPT_DISABLE=unroll` |
+  | `SAREK_MATRIX_REPORT=1` | `SAREK_EXPLAIN=1` |
+  | `Matrix_specialise.mode`, `set_mode`, `parse_mode`, `mode_name`, type `mode`; `Sarek_matrix.mode`, `set_mode`, type `mode` | `Sarek_policy.restrict` (one-way, process-wide) |
+  | `Matrix_specialise.set_reporter`, type `report` | `Sarek_policy.set_reporter` (receives `Decision` records) |
+
+  `Matrix_specialise.lowering_for` loses its `~mode` argument and `specialised` gains
+  `evidence`. `Execute.Window.set_enabled`, `set_backend_enabled` and `set_epilogue_backend`
+  stay. `Sarek_policy.evidence`'s `Granted` now carries `{grants; reason}`; `set_reporter`
+  takes `event`s (`Decision of record | Ignored_grant`).
+  `SAREK_OPT_DISABLE` is a comma list (any case, spaces and empty items ignored; an unknown
+  item prints one warning line on stderr and is ignored): `window`, `epilogue`, `matrix`,
+  `narrowing-proof`, `unroll` restrict that optimisation; `accumulation-order`,
+  `operand-rounding-f16|bf16|bf16x3`, `single-rounding`, `cross-kernel-contraction`,
+  `automatic-float-rewrite` revoke that grant for the whole process (the program's
+  `accept_*`/`grant` call still succeeds and is recorded, but no budget holds it).
+  `SAREK_EXPLAIN=1` writes one stderr line per distinct (kernel, device, optimisation,
+  decision) for every decision point: window (`Launch_policy.deferred`, per launch), epilogue,
+  the matrix rewrite with its lowering and the explicit coopmat gate, the narrowing proof and
+  unroll (per kernel generation; their device column is the generator: `cuda-c`, `opencl`,
+  `metal`, `glsl`), and a program `Kernel` grant on a generated (fused, derived,
+  static-fusion) name or a revoked grant (`sarek-explain <name> - policy refused
+  grant-on-generated-name|grant-revoked <grant>`). Real lines from a run on an AMD RX 7900 XTX
+  (HIP; `SAREK_EXPLAIN=1`; full capture `m3-explain-sample-hip.txt`):
+
+  ```text
+  sarek-explain sarek_kern AMD_Radeon_RX_7900_XTX window applied exact
+  sarek-explain sarek_kern AMD_Radeon_RX_7900_XTX matrix applied proof=int32 byte planes (u8*u8+s32->s32, 10 products), staged, 16x16x16 u8*u8+s32->s32 subgroup: bit-identical modulo 2^32
+  sarek-explain sarek_kern AMD_Radeon_RX_7900_XTX matrix refused float products are rewritten automatically only after Sarek_coopmat.accept_automatic_float_rewrite (plus the accuracy opt-ins); Sarek_matrix.run does not need it
+  sarek-explain sarek_kern AMD_Radeon_RX_7900_XTX matrix applied granted=automatic-float-rewrite,accumulation-order reason="f16 operands (f16*f16+f32->f32), direct (2 waves/block), 16x16x16 f16*f16+f32->f32 subgroup; test_matrix_optin; test_matrix_optin"
+  sarek-explain sarek_kern+sarek_kern HIP epilogue applied exact
+  sarek-explain sarek_kern+sarek_kern OpenCL epilogue refused no grant cross-kernel-contraction (kernel or process)
+  sarek-explain sarek_kern+sarek_kern CUDA/PTX epilogue applied granted=cross-kernel-contraction reason="test_epilogue_exact: measuring the contraction bound"
+  sarek-explain sarek_kern cuda-c narrowing-proof applied proof=4/4 narrowings proven exact
+  sarek-explain sarek_kern cuda-c narrowing-proof refused 0/4 narrowings proven exact, the barrier is kept
+  sarek-explain f16_single_rounding_dequant cuda-c narrowing-proof applied granted=single-rounding reason="test_hip_f16_single_rounding"
+  sarek-explain sarek_kern_sarek_mm cuda-c unroll applied exact
+  ```
+
+  Coverage (what ran where; none of it is a performance claim). Restriction scenarios, the
+  parser and the explain golden: no device (`sarek/tests/policy_env`,
+  `spoc/ir/test/test_sarek_policy_env.ml`), so they cover every backend's decision logic
+  but not a backend's launch. Executed with `SAREK_EXPLAIN=1`: HIP (RX 7900 XTX: window,
+  int32 and float matrix rewrite, epilogue, narrowing, single rounding, unroll), CUDA/PTX
+  through ZLUDA (epilogue with the grant, window), OpenCL (epilogue refused without the
+  grant, window). Native and Interpreter: only the CPU-device window refusal of the explain golden (a fake device); no run with `SAREK_EXPLAIN` on the real CPU backends.
+  Vulkan: the sources are generated and the unroll hint is checked in the GLSL golden;
+  the subset of the Vulkan tests that is not excluded (#503/#504) passed, no launch with
+  `SAREK_EXPLAIN` was run. Metal: not run here (needs the Mac); the Metal generator and
+  `Launch_policy` are the shared code, `sarek-metal/test/test_metal_matrix_rewrite.ml`
+  compiles with the new API.
 
 - Vulkan host-memory import (`alloc_pinned`, `register_host`, from #493) is now an explicit opt-in
   (`SPOC_VULKAN_HOST_IMPORT=1`) and is refused on AMD drivers even then

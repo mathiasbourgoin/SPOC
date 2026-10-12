@@ -3,7 +3,7 @@
 (* SPDX-FileCopyrightText: 2026 Mathias Bourgoin <mathias.bourgoin@gmail.com> *)
 (******************************************************************************)
 
-(* SAREK_LAUNCH_EPILOGUE=0 (set by the dune rule) switches epilogue fusion off
+(* SAREK_OPT_DISABLE=epilogue (set by the dune rule) switches epilogue fusion off
    for the process, one-way: a later [set_epilogue_backend ~backend true] does
    not bring it back (specs/epilogue-fusion.md FR-104). *)
 
@@ -35,6 +35,6 @@ let () =
   Alcotest.run
     "epilogue env off"
     [
-      ( "SAREK_LAUNCH_EPILOGUE=0",
+      ( "SAREK_OPT_DISABLE=epilogue",
         [Alcotest.test_case "one-way" `Quick test_env_off_is_one_way] );
     ]

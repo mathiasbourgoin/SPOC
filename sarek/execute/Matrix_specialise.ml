@@ -211,9 +211,8 @@ let automatic_float_optin ~budget ~explicit =
   if explicit || Sarek_policy.Budget.permits budget consent then Ok ()
   else if Sarek_policy.revoked consent then
     Error
-      "float products are not rewritten automatically: \
-       automatic-float-rewrite is revoked (SAREK_OPT_DISABLE); \
-       Sarek_matrix.run does not need it"
+      "float products are not rewritten automatically: automatic-float-rewrite \
+       is revoked (SAREK_OPT_DISABLE); Sarek_matrix.run does not need it"
   else
     Error
       "float products are rewritten automatically only after \
@@ -234,7 +233,14 @@ let lowering_for ~budget ~explicit case precision =
 (* What justifies a rewrite, for the explain report: int32 is bit-identical;
    a float one rests on the grants it was admitted under (the consent only for
    the automatic path), with their reasons. *)
-let evidence_for ~budget ~explicit ~case lowering ~description =
+let evidence_for ~budget ~explicit ~case lowering variant cfg =
+  let description =
+    Printf.sprintf
+      "%s, %s, %s"
+      (Rw.lowering_name lowering)
+      (variant_name variant)
+      (Sarek_coopmat.config_name cfg)
+  in
   match lowering with
   | Rw.Int32_byte_planes ->
       Sarek_policy.Proof (description ^ ": bit-identical modulo 2^32")
@@ -253,7 +259,9 @@ let evidence_for ~budget ~explicit ~case lowering ~description =
         | Adv.F32_inputs, _ -> [rounding Sarek_policy.Operands_f16]
         | _ -> []
       in
-      let reasons = List.filter_map (Sarek_policy.Budget.reason budget) grants in
+      let reasons =
+        List.filter_map (Sarek_policy.Budget.reason budget) grants
+      in
       Sarek_policy.Granted
         {grants; reason = String.concat "; " (description :: reasons)}
 
@@ -387,17 +395,7 @@ let decide ?precision ~explicit ~stream ~(device : Device.t) ~ir ~launch () =
       grid;
       via_interpreter = device.framework = "Interpreter";
       evidence =
-        evidence_for
-          ~budget
-          ~explicit
-          ~case:plan.case
-          lowering
-          ~description:
-            (Printf.sprintf
-               "%s, %s, %s"
-               (Rw.lowering_name lowering)
-               (variant_name variant)
-               (Sarek_coopmat.config_name cfg));
+        evidence_for ~budget ~explicit ~case:plan.case lowering variant cfg;
     }
 
 (* ---- Report ---------------------------------------------------------------- *)

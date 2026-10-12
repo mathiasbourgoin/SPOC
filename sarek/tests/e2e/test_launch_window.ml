@@ -448,7 +448,7 @@ let run_device (dev : Device.t) =
   let defers = Execute.Window.defers_device dev in
   (* A backend in the default set (Metal included) defers on its GPU devices;
      opt-in backends (WebGPU) are not asserted. Not asserted when the window is
-     switched off (SAREK_LAUNCH_WINDOW=0). *)
+     switched off (SAREK_OPT_DISABLE=window). *)
   if
     Execute.Window.enabled ()
     && (not dev.Device.capabilities.Spoc_framework.Framework_sig.is_cpu)

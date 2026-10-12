@@ -64,7 +64,7 @@ Both must be set to exactly `1` (`Hip_shared.ml:51-53`). Set `SPOC_DISABLE_HIP=1
 | Epilogue fusion | on | off | off |
 | [Matrix rewrite](../gh-pages/docs/matrix.md) of GEMM-shaped kernels | on for integer products; float products only after the opt-ins in `Sarek_coopmat` | off | off (the Interpreter only through an explicit `Sarek_matrix.run`) |
 
-Epilogue fusion needs no grant on HIP (and Metal) because hiprtc is called with `-ffp-contract=off` placed after any option you add, so a merged kernel cannot be contracted into a different result (`Hip_rtc.ml:264-271`; policy in [docs/fp-contraction-policy.md](../docs/fp-contraction-policy.md)). Turn either off with `SAREK_LAUNCH_WINDOW=0` and `SAREK_LAUNCH_EPILOGUE=0`; on other backends fusion needs the `Cross_kernel_contraction` grant. The consequences, including errors surfacing in a later call, are in [Launch window and fusion](../gh-pages/docs/performance.md).
+Epilogue fusion needs no grant on HIP (and Metal) because hiprtc is called with `-ffp-contract=off` placed after any option you add, so a merged kernel cannot be contracted into a different result (`Hip_rtc.ml:264-271`; policy in [docs/fp-contraction-policy.md](../docs/fp-contraction-policy.md)). Turn either off with `SAREK_OPT_DISABLE=window` and `SAREK_OPT_DISABLE=epilogue` (comma-separated, one-way); on other backends fusion needs the `Cross_kernel_contraction` grant. The consequences, including errors surfacing in a later call, are in [Launch window and fusion](../gh-pages/docs/performance.md).
 
 ## Matrix units (gfx11 WMMA)
 

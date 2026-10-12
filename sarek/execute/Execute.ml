@@ -987,8 +987,8 @@ let check_interpreter_capabilities (ir : Sarek_ir_types.kernel) : unit =
     kernel whose intrinsic is missing fails codegen (not memoised). Replacing an
     intrinsic's implementation AFTER a kernel using it has launched is not seen
     by that kernel until {!clear_launch_cache} is called, nor is backend debug
-    logging (first launch only). The POLICY is tracked
-    ({!Policy_stamp}): a later grant or restriction is honoured at once.
+    logging (first launch only). The POLICY is tracked ({!Policy_stamp}): a
+    later grant or restriction is honoured at once.
 
     LIFETIME AND CONCURRENCY. The entry is a slot of the IR's {!Ir_memo} record,
     which is weak in the IR, and its data never refers to the IR, so an entry
@@ -1957,8 +1957,8 @@ let run_vectors_outcome ?(stream : Transfer.stream option) ?precision ?explicit
   outcome
 
 (** Launch [ir] on [device]. When [ir] is a matrix product that matrix units can
-    compute under the current restrictions and accuracy opt-ins,
-    the rewritten kernel runs instead, writing exactly the same outputs
+    compute under the current restrictions and accuracy opt-ins, the rewritten
+    kernel runs instead, writing exactly the same outputs
     (specs/matrix-pattern-dynamic.md). *)
 let run_vectors ?stream ~device ~ir ~args ~block ~grid ?shared_mem () : unit =
   ignore

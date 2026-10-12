@@ -10,17 +10,17 @@
     matrix-unit rewrite of the kernel it was given. The answer depends on the
     kernel (a GEMM nest the rewrite can bound, {!Sarek_matrix_mapping}), the
     device (HIP gfx11, Vulkan, CUDA/C, Metal, or the interpreter; see below),
-    the restrictions of {!Sarek_policy}, the accuracy opt-ins of {!Sarek_coopmat}, and the actual sizes:
-    the aligned float16 size class loads fragments straight from global memory
-    ({!Sarek_matrix_direct}), every other case is staged through shared memory
-    ({!Sarek_matrix_rewrite}). A rewritten launch writes exactly the outputs the
-    original launch writes.
+    the restrictions of {!Sarek_policy}, the accuracy opt-ins of
+    {!Sarek_coopmat}, and the actual sizes: the aligned float16 size class loads
+    fragments straight from global memory ({!Sarek_matrix_direct}), every other
+    case is staged through shared memory ({!Sarek_matrix_rewrite}). A rewritten
+    launch writes exactly the outputs the original launch writes.
 
     Static plans and rewritten kernels are cached by the IR's physical identity
     (like [Execute]'s launch memo, #424) and by (lowering, size class, subgroup
-    width, fragment edge); the device and the policy are re-checked on every launch,
-    which costs a few list lookups. A kernel with no matrix product costs one
-    memo lookup. *)
+    width, fragment edge); the device and the policy are re-checked on every
+    launch, which costs a few list lookups. A kernel with no matrix product
+    costs one memo lookup. *)
 
 open Sarek_ir_types
 
@@ -29,9 +29,9 @@ open Sarek_ir_types
     cases need the operand rounding for [precision] (f32) and, unless
     [explicit], the automatic-rewrite consent, both read from [budget] (the
     grants of the kernel: {!Sarek_policy.budget}; a grant revoked by
-    [SAREK_OPT_DISABLE] is not in it). The accuracy
-    opt-in of the configuration ([accept_relaxed_accumulation]) is checked
-    afterwards, with the device, by {!choose}. *)
+    [SAREK_OPT_DISABLE] is not in it). The accuracy opt-in of the configuration
+    ([accept_relaxed_accumulation]) is checked afterwards, with the device, by
+    {!choose}. *)
 val lowering_for :
   budget:Sarek_policy.Budget.t ->
   explicit:bool ->
@@ -59,8 +59,8 @@ type specialised = {
       (** launch through the interpreter's own entry point *)
   evidence : Sarek_policy.evidence;
       (** what justified the rewrite: int32 is a [Proof] (bit-identical), a
-          float lowering is [Granted] with the grants it was admitted under;
-          the explain report's [applied] line *)
+          float lowering is [Granted] with the grants it was admitted under; the
+          explain report's [applied] line *)
 }
 
 type outcome = Specialised of specialised | Original of string  (** why *)
@@ -103,8 +103,8 @@ val choose :
 
     Every decision about a kernel that is a matrix product is an
     {!Sarek_policy.Matrix_rewrite} record for {!Sarek_policy.report} (kernel,
-    device name, and [Applied evidence] or [Refused why]); not for other
-    kernels or devices that can never rewrite. [SAREK_EXPLAIN=1] prints them. *)
+    device name, and [Applied evidence] or [Refused why]); not for other kernels
+    or devices that can never rewrite. [SAREK_EXPLAIN=1] prints them. *)
 
 (** Test hook: while [true], the analysis of a kernel not yet cached raises, as
     a defect in it would. Launches must still succeed ([Original]). *)

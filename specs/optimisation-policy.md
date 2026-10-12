@@ -35,6 +35,9 @@ diagnostic and test variables (`SPOC_DISABLE_*`, `SAREK_DEBUG`,
 Rows marked "changed" differ from the first version of this note (3ad881b0),
 rows marked "new" were not in it.
 
+Rows 1, 5, 7, 8, 9b, 15 and 16 describe switches that M3 removed (section 3.4); the
+inventory records what existed at the audited revision.
+
 | # | Name | Kind | Fam. | Default | Set by | Scope | Ref |
 |---|---|---|---|---|---|---|---|
 | 1 (changed) | `SAREK_LAUNCH_WINDOW` (off: exactly `0/false/off/no`) | env | S | on; default backends HIP, OpenCL, Vulkan, CUDA/PTX, CUDA/C, Metal; never CPU devices | user | process, read at init | `sarek/execute/Launch_window.ml:159-172`; `sarek/execute/Execute.ml:1218-1220` |
@@ -107,7 +110,7 @@ This table is Katra's, at its revision `bdbce6c`; it is not maintained here.
 | # | Name | Kind | Fam. | Default | Scope |
 |---|---|---|---|---|---|
 | 26 | `KATRA_PREFILL_MMA=1` -> `Mma_gemm.enable` -> grant #10 | env | P (+ Katra's own f16 rounding of weights and activations) | off | process |
-| 27 | `Prefill.without_launch_window` (window off during prompt chunks unless `SAREK_LAUNCH_WINDOW` is set) | internal | T over S | on | per prompt chunk |
+| 27 | `Prefill.without_launch_window` (window off during prompt chunks unless `SAREK_LAUNCH_WINDOW` is set; that variable is removed in M3, so Katra moves to `SAREK_OPT_DISABLE=window` or its own check) | internal | T over S | on | per prompt chunk |
 | 28 | `Staging` buffer via `Transfer.alloc_pinned` (64 MiB) | internal | R | **always on** | per device |
 | 29 | `KATRA_RAM_REGISTER=1` -> `Transfer.register_host` on the L2 pool | env | R | off | process |
 | 30 | `KATRA_LOAD=mmap` | env | R (host memory) | direct reads | process |
@@ -124,7 +127,7 @@ After M1 the grants of rows 10-12 and 14 share one store.
 
 **Drift (flagged, not fixed):** Katra's `Bench_report.env` keeps only `KATRA_*`
 variables (Katra's bench report module), so a stored
-report cannot show `SAREK_LAUNCH_WINDOW=0`.
+report cannot show `SAREK_OPT_DISABLE=window`.
 
 ## 2. Where the evidence contradicts the discussed proposal
 
@@ -228,7 +231,7 @@ val register_fused : name:string -> members:string list -> unit
 val restrict : optimisation -> unit   (* one-way, process-wide *)
 val restricted : optimisation -> bool
 val version : unit -> int             (* bumped by every change of the policy *)
-val set_reporter : (record -> unit) option -> unit
+val set_reporter : (event -> unit) option -> unit   (* Decision record | Ignored_grant *)
 val report : record -> unit           (* once per new outcome per (kernel, device, optimisation) *)
 ```
 
@@ -254,7 +257,7 @@ Where each decision point reads the policy (milestone M2):
 | Decision point | Reads |
 |---|---|
 | Narrowing barriers (`Sarek_ir_cuda`) | `Single_rounding` from `budget ~kernels:[kern_name]`; the exact-narrowing proof is skipped (every barrier kept) when `Narrowing_proof` is restricted |
-| Unroll (`Sarek_ir_unroll`) | off when `Auto_unroll` is restricted (and `SAREK_AUTO_UNROLL=0`, until M3) |
+| Unroll (`Sarek_ir_unroll`) | off when `Auto_unroll` is restricted (`SAREK_OPT_DISABLE=unroll`) |
 | Source memo (`Execute.generate_source_memo`) | `Policy_stamp`: `version ()` plus the digest of the kernel's effective policy, stored with each source |
 | Window (`Launch_window.defers`) | off when `Launch_window` is restricted |
 | Epilogue (`Epilogue_policy.decide_pair`, `Launch_epilogue`) | `decide (effective_for [P; C]) Epilogue_fusion ~backend`, per submit, after the per-backend switch and `Fp_exactness` |
@@ -315,39 +318,71 @@ per-launch cost of the memo is one atomic read while the policy is unchanged.
 ### 3.4 Environment (SPOC: restrictions only, no aliases)
 
 A replaced switch is removed in M3, not kept as an alias (Q6; nothing is
-published yet). The new variable is one parser (comma list, any case, unknown
-item warns once); today `SAREK_LAUNCH_WINDOW=OFF` silently does nothing
-(`gh-pages/docs/environment.md`).
+published yet). The new variable is one parser (`Sarek_policy.Env.parse`: comma
+list, any case, spaces and empty items ignored, unknown item warns once on
+stderr and is ignored). It is read once, when `Sarek_policy` is initialised
+(program start), and acts through `restrict` and an internal revocation. It can
+only take away: no variable grants precision (Q3).
 
 | Replaced variable | Policy equivalent | Fate |
 |---|---|---|
-| `SAREK_LAUNCH_WINDOW=0` | `SAREK_OPT_DISABLE=window` | removed in M3 |
-| `SAREK_LAUNCH_EPILOGUE=0` | `SAREK_OPT_DISABLE=epilogue` | removed in M3 |
-| `SAREK_MATRIX_REWRITE=off` | `SAREK_OPT_DISABLE=matrix` | removed in M3 |
-| `SAREK_MATRIX_REWRITE=exact` | restriction that ignores `Consent Automatic_float_rewrite` | removed in M3; the `SAREK_OPT_DISABLE` name list has no member for it, M3 decides |
-| `SAREK_AUTO_UNROLL=0` | `SAREK_OPT_DISABLE=unroll` | removed in M3 |
-| `SAREK_MATRIX_REPORT=1` | `SAREK_EXPLAIN=matrix` | removed in M3 |
+| `SAREK_LAUNCH_WINDOW=0` | `SAREK_OPT_DISABLE=window` | removed (M3) |
+| `SAREK_LAUNCH_EPILOGUE=0` | `SAREK_OPT_DISABLE=epilogue` | removed (M3) |
+| `SAREK_MATRIX_REWRITE=off` | `SAREK_OPT_DISABLE=matrix` | removed (M3) |
+| `SAREK_MATRIX_REWRITE=exact` | `SAREK_OPT_DISABLE=automatic-float-rewrite` | removed (M3); revokes the consent, so `Execute.run_vectors` rewrites int32 only. Unlike the old mode it does not stop an explicit `Sarek_matrix.run`, which never needed the consent |
+| `SAREK_AUTO_UNROLL=0` | `SAREK_OPT_DISABLE=unroll` | removed (M3) |
+| `SAREK_MATRIX_REPORT=1` | `SAREK_EXPLAIN=1` | removed (M3) |
+| `Matrix_specialise.set_mode` / `mode`, `Sarek_matrix.set_mode` / `mode` | `Sarek_policy.restrict` (one-way, tests) | removed (M3) |
+| `Matrix_specialise.set_reporter` | `Sarek_policy.set_reporter` | removed (M3) |
 | `SAREK_HIP_IGPU_UNCACHED=0` | not in the policy (U: unsafe, repro only) | unchanged |
 | tuning (rows 4, 17-19) | not in the policy (no semantic effect) | unchanged |
 
-`SAREK_OPT_DISABLE=window,epilogue,matrix,narrowing-proof,unroll` is the full
-vocabulary (`Sarek_policy.optimisation_name`). No variable grants precision (Q3).
-M1 touches none of these variables.
+`SAREK_OPT_DISABLE` items: `window,epilogue,matrix,narrowing-proof,unroll`
+(`Sarek_policy.optimisation_name`) restrict that optimisation;
+`accumulation-order`, `operand-rounding-f16|bf16|bf16x3`, `single-rounding`,
+`cross-kernel-contraction`, `automatic-float-rewrite` (`Sarek_policy.grant_name`)
+revoke that grant for the whole process, at any scope: the budget never holds
+it, whatever the program grants. `grant` of a revoked atom still returns
+`Ok ()` (the program's statement is recorded), is never effective, and the
+explain report says so. There is no `all`. `Execute.Window.set_enabled` stays
+(Q4); there is no public scoped-restriction API.
 
-### 3.5 Explain report (M3)
+### 3.5 Explain report (M3, implemented)
 
-`SAREK_EXPLAIN=1` (stderr) or `=json:FILE`, plus `Sarek_policy.set_reporter`
-generalising `Matrix_specialise.set_reporter`; one record per distinct
-(kernel, device, optimisation, decision), covering every rewrite (Q1).
-Illustrative output:
+`SAREK_EXPLAIN=1` installs a default reporter writing to stderr one line per
+distinct (kernel, device, optimisation, decision); a repeated launch adds none.
+Any other value is off (an unknown one warns once). A reporter installed with
+`Sarek_policy.set_reporter` replaces it and receives `event`s: `Decision record`
+and `Ignored_grant` (below). The line format is fixed, space-separated, with
+spaces in names written `_` and an epilogue pair `p + c` written `p+c`
+(`Sarek_policy.Env.explain_line`, pure, tested by a golden):
 
 ```text
-explain q4k_dequant hip:0 narrowing-proof applied proof=T2 sites=6/8
-explain q4k_dequant hip:0 single-rounding refused no grant (kernel or process)
-explain mma_gemm   hip:0 matrix-rewrite  applied granted="Katra fast: ..."
-explain fused#a1c3 hip:0 epilogue-fusion applied exact-on-backend members=rmsnorm,mv
-explain fused#a1c3 hip:0 single-rounding refused meet of members lacks it
+sarek-explain <kernel> <device> <optimisation> applied proof=<text>
+sarek-explain <kernel> <device> <optimisation> applied granted=<grant>[,<grant>] reason="<reason>"
+sarek-explain <kernel> <device> <optimisation> applied exact
+sarek-explain <kernel> <device> <optimisation> refused <reason>
+sarek-explain <kernel> - policy refused grant-on-generated-name <grant>
+sarek-explain <kernel> - policy refused grant-revoked <grant>
 ```
+
+Where each optimisation reports (`json:FILE` of the first draft was dropped):
+
+| Optimisation | Reported by | `device` |
+|---|---|---|
+| `window` | `Launch_policy.deferred`, per launch of a JIT kernel: applied exact, or refused (switched off, disabled, CPU device, not on the backend, stream launch, structure-of-arrays arguments) | device name |
+| `epilogue` | `Launch_epilogue` per producer and consumer, kernel `p + c` | backend |
+| `matrix` | `Matrix_specialise.choose` for every matrix product (int32: `proof`, the lowering and bit-identical modulo 2^32; float: `granted` with the consent, accumulation order and operand rounding it rests on; refused with the reason), and `Launch_policy.coopmat_gate` for the explicit cooperative-matrix gate of a kernel the program wrote | device name |
+| `narrowing-proof` | the CUDA-C generator, per kernel that has an f32 to f16 narrowing: `proof=n/m narrowings proven exact`, refused when none is, `granted=single-rounding`, or disabled | `cuda-c` |
+| `unroll` | `Sarek_ir_unroll.annotate`, per kernel and generator, when a loop would be hinted | `cuda-c`, `opencl`, `metal`, `glsl` |
+
+The last two forms of the format come from `Ignored_grant`: a program `Kernel`
+grant whose name is generated (a fused, derived or static-fusion kernel, which
+never counts, rule 3 of 3.2) and a grant revoked by the environment
+(`(process)` for a process-scope one). Each is reported once, right after the
+first decision that sees the kernel, so a user learns that the grant has no
+effect. The codegen device column is the generator, not a device: code
+generation does not know it.
 
 ### 3.6 Katra
 
@@ -385,9 +420,10 @@ explain fused#a1c3 hip:0 single-rounding refused meet of members lacks it
    fusion on CUDA, OpenCL and Vulkan under `Cross_kernel_contraction`, measured
    per backend (one contraction per element, `specs/epilogue-fusion.md` FR-107;
    HIP and Metal are exact); CHANGES entry.
-3. **SPOC M3:** `SAREK_OPT_DISABLE`, `SAREK_EXPLAIN`; the replaced switches
-   (`SAREK_LAUNCH_WINDOW`, `SAREK_LAUNCH_EPILOGUE`, `SAREK_MATRIX_REWRITE`,
-   `SAREK_AUTO_UNROLL`, `SAREK_MATRIX_REPORT`) are removed outright;
+3. **SPOC M3 (implemented):** `SAREK_OPT_DISABLE`, `SAREK_EXPLAIN`; the
+   replaced switches (`SAREK_LAUNCH_WINDOW`, `SAREK_LAUNCH_EPILOGUE`,
+   `SAREK_MATRIX_REWRITE`, `SAREK_AUTO_UNROLL`, `SAREK_MATRIX_REPORT`) and the
+   matrix mode and reporter APIs are removed outright;
    `gh-pages/docs/environment.md` completed.
 4. **Katra K1** (once M2 is the pinned SPOC revision): `KATRA_PRECISION`,
    `KATRA_PREFILL_MMA` removed, report section.
@@ -420,9 +456,18 @@ explain fused#a1c3 hip:0 single-rounding refused meet of members lacks it
   lacks.
 - **Cache staleness (M2, implemented).** Grant after generating a kernel:
   regenerated source differs (`sarek/execute/test/test_launch_memo.ml`).
-- **Env parser (M3, pure).** Legacy values are gone; `SAREK_OPT_DISABLE` gives
-  restrictions, never a grant.
-- **Explain (M3):** one record per `decide`; golden report for the fixtures.
+- **Env parser (M3, pure, implemented).** `spoc/ir/test/test_sarek_policy_env.ml`: a
+  table of inputs, every name, duplicates, unknown items; over all 2^12 subsets of
+  items, `Env.narrow` never adds a grant, removes a restriction or turns a refused
+  decision into an applied one. `sarek/tests/policy_env`: one process per
+  scenario with the variable set by the dune rule (window, epilogue, matrix,
+  narrowing-proof, unroll; the grants revoked; an unknown item; the five removed
+  variables set and changing nothing).
+- **Explain (M3, implemented):** `sarek/tests/policy_env/explain.expected` is the
+  golden of the lines for a fixed CPU scenario (codegen, window, matrix, coopmat
+  gate, a grant on a generated name); `sarek/execute/test/test_launch_window.ml`
+  checks the epilogue and window records; the e2e matrix tests read the matrix
+  records.
 - **Differential (existing, GPU):** `exact` stays bit-identical to the
   interpreter; each grant stays within its documented bound. Numeric checks stay
   differential on the application side (Q2).

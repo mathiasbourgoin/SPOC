@@ -37,18 +37,22 @@ that need the original. `Sarek_matrix.run` keeps its PR 2 signature on top.
 The opt-ins below (`accept_automatic_float_rewrite`, `accept_relaxed_accumulation`,
 `accept_operand_rounding`) are read from the budget of the kernel being decided
 (`Sarek_policy.budget ~kernels:[kern_name]`, M2): a `Kernel`-scoped grant
-rewrites that kernel only, and `Sarek_policy.restrict Matrix_rewrite` acts as
-mode `Off`.
+rewrites that kernel only, and `Sarek_policy.restrict Matrix_rewrite` (or
+`SAREK_OPT_DISABLE=matrix`) stops the rewrite.
 
-`Matrix_specialise.mode = Off | Exact | Auto`, from `SAREK_MATRIX_REWRITE`
-(see Opt-ins and parsing below; default `auto`), changeable with `set_mode`
-(`Sarek_matrix.set_mode`):
+The environment can only restrict (M3, specs/optimisation-policy.md 3.4):
+`SAREK_OPT_DISABLE=matrix` is the former mode `Off` (no rewrite, also for
+`Sarek_matrix.run`), `SAREK_OPT_DISABLE=automatic-float-rewrite` the former mode
+`Exact` for `Execute.run_vectors` (the consent is revoked, so a float kernel is
+declined with a reason that names the revocation; int32 is still rewritten, and
+an explicit `Sarek_matrix.run` needs no consent). The mode type, `set_mode` and
+`SAREK_MATRIX_REWRITE` no longer exist.
 
-| mode | int32 | float16 operands | float32 operands |
+| restriction | int32 | float16 operands | float32 operands |
 |---|---|---|---|
-| `Off` | original | original | original |
-| `Exact` | rewritten (bit-identical) | original | original |
-| `Auto` (default) | rewritten | rewritten after `accept_automatic_float_rewrite` + `accept_relaxed_accumulation` | rewritten after `accept_automatic_float_rewrite` + `accept_operand_rounding` (+ relaxed); precision: the requested one, else float16 then bfloat16 if accepted (the bf16x3 split, not faster than the scalar kernel, only on request) |
+| none (default) | rewritten (bit-identical) | rewritten after `accept_automatic_float_rewrite` + `accept_relaxed_accumulation` | rewritten after `accept_automatic_float_rewrite` + `accept_operand_rounding` (+ relaxed); precision: the requested one, else float16 then bfloat16 if accepted (the bf16x3 split, not faster than the scalar kernel, only on request) |
+| `automatic-float-rewrite` | rewritten | original (explicit: after the accuracy opt-ins) | original (explicit: after the accuracy opt-ins) |
+| `matrix` | original | original | original |
 
 Devices: by default HIP (gfx11, 32-wide waves) and Vulkan (RADV, 64-wide
 subgroups) are rewritten, Vulkan the `int32` case only; CUDA/C (sm_72+, 32-wide
@@ -92,11 +96,8 @@ does not need it; int32 needs no opt-in. Granting one opt-in never enables more
 than it names: the new opt-in alone does not admit f16 (the accuracy policy
 still refuses).
 
-`SAREK_MATRIX_REWRITE`, case-insensitive: `off`/`0`/`false`/`no` give `Off`;
-`exact` gives `Exact`; `auto`/`on`/`1`/`true`/`yes` give `Auto`; unset or empty
-gives `Auto`. Any other value prints one warning on stderr (variable, value,
-accepted values) and gives `Auto` (`Matrix_specialise.parse_mode`, pure).
-`SAREK_MATRIX_REPORT` accepts only `1` and is unchanged.
+`SAREK_OPT_DISABLE` is parsed by `Sarek_policy.Env.parse` (pure): a comma list,
+any case, unknown items warn once and are ignored. No variable grants anything.
 
 ## Size classes
 
@@ -122,28 +123,31 @@ Per IR (physical identity, ephemeron, as #424's launch memo): the static plan
 and the rewritten kernels per (lowering, size class) — so a kernel's
 rewritten IR is physically stable and hits the launch memo. A kernel whose IR
 is rebuilt for every launch is analysed on every launch (as it misses the
-launch memo too); rewritten kernels are built outside the lock. Mode, opt-ins and
+launch memo too); rewritten kernels are built outside the lock. Restrictions, opt-ins and
 device are checked per launch. A kernel that is not a matrix product costs one
 memo lookup. `Cache_hooks.on_clear_all` clears it.
-`Matrix_specialise.set_reporter` receives every decision about a matrix
-product; `SAREK_MATRIX_REPORT=1` prints each distinct (kernel, device, outcome)
-once on stderr.
+Every decision about a matrix product is an `Sarek_policy.Matrix_rewrite`
+record (`Applied evidence` with the lowering and, for floats, the grants it was
+admitted under, or `Refused why`) for `Sarek_policy.set_reporter`;
+`SAREK_EXPLAIN=1` prints each distinct (kernel, device, outcome) once on
+stderr. `Matrix_specialise.set_reporter` and `SAREK_MATRIX_REPORT` were
+removed in M3.
 
 The PPX advice (PR 1) now says what Execute does with the nest.
 
 ## Tests
 
-`sarek/tests/e2e/test_matrix_dynamic.ml`, every device: `Auto` and `Exact`
-rewrite int32 on the interpreter, gfx11 and Vulkan (bit-identical to the plain
-launch), `Off` never; `Exact` refuses float16 even after the opt-in; float16
+`sarek/tests/e2e/test_matrix_dynamic.ml`, every device: the default
+rewrites int32 on the interpreter, gfx11 and Vulkan (bit-identical to the plain
+launch); float16
 64×64×64 and 256×256×1024 take `Direct`, 40×24×20 and 100×37×129 take
 `Staged`, all within γ_K; one rewritten IR for two launches; the reporter sees
-the rewrite. `test_matrix_optin.exe` (one process per opt-in combination, HIP):
+the rewrite (explain record). `test_matrix_optin.exe` (one process per opt-in combination, HIP):
 relaxed only leaves the automatic f16 launch original (reason names
 `accept_automatic_float_rewrite`) while `Sarek_matrix.run` still rewrites; the
 new opt-in only leaves both original; both rewrite.
 `sarek/execute/test/test_matrix_specialise_policy.ml` (no device): the
-`SAREK_MATRIX_REWRITE` parser, `lowering_for`, and `choose` on a fake HIP device
+`lowering_for`, and `choose` on a fake HIP device
 (the `~explicit` wiring). `sarek-metal/test/test_metal_matrix_rewrite.ml` (no
 device): `choose` on a Metal device record whose capabilities come from
 `Metal_coopmat.support`: float16 admitted at 8x8x8 under the opt-ins, integer

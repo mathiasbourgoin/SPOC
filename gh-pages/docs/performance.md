@@ -135,13 +135,13 @@ On HIP this should print `submitted=2 issued=1 fused_groups=1`; with the window 
 
 | Scope | How |
 |---|---|
-| Whole process, at start | `SAREK_LAUNCH_WINDOW=0` (also `false`, `off`, `no`) |
+| Whole process, at start | `SAREK_OPT_DISABLE=window` (one-way; see [Environment variables](environment.html)) |
 | Whole process, at run time | `Execute.Window.set_enabled false` |
 | One backend | `Execute.Window.set_backend_enabled ~backend:"HIP" false` |
-| Epilogue fusion, at start | `SAREK_LAUNCH_EPILOGUE=0` (also `false`, `off`, `no`) |
+| Epilogue fusion, at start | `SAREK_OPT_DISABLE=epilogue` (one-way) |
 | Epilogue fusion, one backend | `Execute.Window.set_epilogue_backend ~backend:"HIP" false` (`true` only undoes it; it grants nothing) |
 
-The setters flush held launches first. The backend argument is the framework name shown by `sarek-device-info` (`HIP`, `OpenCL`, `Vulkan`, `Metal`, `CUDA/PTX`, `CUDA/C`). Turning the window on for a backend outside the default set (WebGPU, whose codegen is not wired) is an opt-in. Turning epilogue fusion on for OpenCL or Vulkan grants nothing: those kernels fuse only when both hold `Cross_kernel_contraction`, which accepts the difference described above (at most half an ulp of the product plus an ulp of the result).
+`SAREK_EXPLAIN=1` prints, per kernel and device, whether the window deferred the launch and, per producer and consumer pair, whether epilogue fusion applied (`sarek-explain <kernel> <device> window applied exact`, `... epilogue applied granted=cross-kernel-contraction reason="..."`, or `refused <why>`). The setters flush held launches first. The backend argument is the framework name shown by `sarek-device-info` (`HIP`, `OpenCL`, `Vulkan`, `Metal`, `CUDA/PTX`, `CUDA/C`). Turning the window on for a backend outside the default set (WebGPU, whose codegen is not wired) is an opt-in. Turning epilogue fusion on for OpenCL or Vulkan grants nothing: those kernels fuse only when both hold `Cross_kernel_contraction`, which accepts the difference described above (at most half an ulp of the product plus an ulp of the result).
 
 ```ocaml
 let configure () =
