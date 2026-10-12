@@ -35,6 +35,22 @@ let test_opt_in_not_default () =
         (List.mem b LE.default_backends))
     opt_in
 
+(* A backend that lost its exactness guarantee at run time (Metal without the
+   conformant compile options) keeps epilogue fusion off although it is in the
+   default list; backends not marked are unaffected. *)
+let test_inexact_backend_off () =
+  LE.set_backend_enabled ~backend:"Metal" true ;
+  Alcotest.(check bool) "Metal on before the mark" true (LE.enabled "Metal") ;
+  Spoc_framework_registry.Fp_exactness.mark_inexact
+    ~backend:"Metal"
+    ~reason:"test: conformant compile options unavailable" ;
+  Alcotest.(check bool) "Metal off once marked" false (LE.enabled "Metal") ;
+  Alcotest.(check bool) "HIP unaffected" true (LE.enabled "HIP") ;
+  Alcotest.(check bool)
+    "Metal still in the default list"
+    true
+    (List.mem "Metal" LE.default_backends)
+
 let () =
   Alcotest.run
     "epilogue defaults"
@@ -43,5 +59,9 @@ let () =
         [
           Alcotest.test_case "HIP and Metal" `Quick test_default_list;
           Alcotest.test_case "others opt-in" `Quick test_opt_in_not_default;
+          Alcotest.test_case
+            "inexact backend off"
+            `Quick
+            test_inexact_backend_off;
         ] );
     ]
