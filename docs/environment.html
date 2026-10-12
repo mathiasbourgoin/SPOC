@@ -93,8 +93,8 @@
       <td><code class="language-plaintext highlighter-rouge">SAREK_MATRIX_REWRITE</code></td>
     </tr>
     <tr>
-      <td>A positive number (surrounding spaces ignored, except for <code class="language-plaintext highlighter-rouge">SPOC_METAL_BATCH</code>); an invalid value falls back to the default without a message</td>
-      <td><code class="language-plaintext highlighter-rouge">SAREK_DOMAIN_COUNT</code>, <code class="language-plaintext highlighter-rouge">SAREK_CPU_POOL_MAX_DOMAINS</code>, <code class="language-plaintext highlighter-rouge">SAREK_CPU_POOL_IDLE_MS</code>, <code class="language-plaintext highlighter-rouge">SPOC_METAL_BATCH</code></td>
+      <td>A positive number (surrounding spaces ignored, except for <code class="language-plaintext highlighter-rouge">SPOC_METAL_BATCH</code> and <code class="language-plaintext highlighter-rouge">SPOC_VULKAN_BATCH</code>); an invalid value falls back to the default without a message</td>
+      <td><code class="language-plaintext highlighter-rouge">SAREK_DOMAIN_COUNT</code>, <code class="language-plaintext highlighter-rouge">SAREK_CPU_POOL_MAX_DOMAINS</code>, <code class="language-plaintext highlighter-rouge">SAREK_CPU_POOL_IDLE_MS</code>, <code class="language-plaintext highlighter-rouge">SPOC_METAL_BATCH</code>, <code class="language-plaintext highlighter-rouge">SPOC_VULKAN_BATCH</code></td>
     </tr>
     <tr>
       <td>A positive number; an invalid value is an error</td>
@@ -188,6 +188,13 @@
       <td>Most dispatches one Metal command buffer collects before it is committed while the GPU is still busy.</td>
     </tr>
     <tr>
+      <td><code class="language-plaintext highlighter-rouge">SPOC_VULKAN_BATCH</code></td>
+      <td>integer &gt;= 1</td>
+      <td><code class="language-plaintext highlighter-rouge">32</code></td>
+      <td>start</td>
+      <td>Most dispatches one Vulkan command buffer collects before it is submitted. <code class="language-plaintext highlighter-rouge">1</code> submits and waits for every launch, and a failed launch then raises at the launch instead of at the first wait.</td>
+    </tr>
+    <tr>
       <td><code class="language-plaintext highlighter-rouge">SPOC_VULKAN_FENCE_TIMEOUT_S</code></td>
       <td>positive number of seconds</td>
       <td>unset (no bound)</td>
@@ -197,7 +204,7 @@
   </tbody>
 </table>
 
-<p>Device selection is explained in <a href="device_selection.html">Device and backend selection</a>; the Metal batch in <a href="memory.html">Memory and transfers</a>; the fence bound in the <a href="https://github.com/mathiasbourgoin/Sarek/blob/main/sarek-vulkan/README.md">Vulkan README</a>.</p>
+<p>Device selection is explained in <a href="device_selection.html">Device and backend selection</a>; the Metal batch in <a href="memory.html">Memory and transfers</a>; the Vulkan batch in <a href="performance.html">Launch window and fusion</a>; the fence bound in the <a href="https://github.com/mathiasbourgoin/Sarek/blob/main/sarek-vulkan/README.md">Vulkan README</a>.</p>
 
 <h2 id="launch-window-and-fusion">Launch window and fusion</h2>
 
