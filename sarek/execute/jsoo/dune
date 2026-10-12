@@ -35,6 +35,8 @@
 
 (copy_files "../Launch_epilogue.ml")
 
+(copy_files "../Matrix_admission.ml")
+
 (copy_files "../Matrix_specialise.ml")
 
 (executable
@@ -52,6 +54,7 @@
   Fusion_epilogue
   Launch_limits
   Launch_window
+  Matrix_admission
   Matrix_specialise
   Launch_epilogue
   Execute

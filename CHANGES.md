@@ -14,7 +14,7 @@
   `accept_automatic_float_rewrite`, #440). **The integer rewrite is not ported:
   MSL has no integer `simdgroup_matrix`**, so an integer product runs as the
   original on Metal and the report says why; the bfloat16 lowerings are declined
-  too. The advice text lists Metal. The direct float16 size class stays
+  too. The advice text lists Metal. A fragment edge other than 16 is admitted only on Metal's f16 operands (the only place it was executed); the device-admission code moved to the new `Matrix_admission` module. The direct float16 size class stays
   16x16-only. Coverage: HIP/Vulkan/CUDA IR byte-identical (golden digests
   unchanged); interpreter at fragment 8 and 16 executed
   (`test_matrix_fragment`: bit-identical to the original kernel and the host

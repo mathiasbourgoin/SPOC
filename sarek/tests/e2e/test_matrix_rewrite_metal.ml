@@ -185,7 +185,12 @@ let run_f32_as_f16 ~interp dev ((m, n, k) as shape) =
     (compare_floats
        (what ^ ": rewrite vs the rewrite on the Interpreter")
        oracle
-       rewritten)
+       rewritten) ;
+  (* The control: operands that were not rounded give another chain. *)
+  control
+    what
+    ~wrong:(chain ~m ~n ~k ~init:(fun _ -> 0.0) inp.a inp.b)
+    rewritten
 
 let refusals dev =
   let i x = Execute.Int32 (Int32.of_int x) in

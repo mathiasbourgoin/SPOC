@@ -67,8 +67,8 @@ let local c name = new_var c.fresh name TInt32
 (* ---- Staging ---------------------------------------------------------------
 
    Both shared tiles are [outer][k] with padded rows: A as [m][k], B
-   TRANSPOSED as [n][k], so a fragment of either is 16 contiguous elements
-   per lane (B is loaded column-major). Each thread stages [group]
+   TRANSPOSED as [n][k], so a fragment of either is [edge] contiguous elements
+   per row (16 per lane on HIP); B is loaded column-major. Each thread stages [group]
    consecutive k of one row of A (column of B): its [group] shared stores are
    contiguous, and the guarded value is selected, not branched on, so they
    can merge into vector stores. *)
@@ -435,12 +435,9 @@ let body c0 =
 
 let ( let* ) = Result.bind
 
-let kernel ?(subgroup = 32) ?(frag = 16) (k : kernel) (g : P.gemm) lowering =
-  let env = address_env k g in
-  let batch = match g.batch with [b] -> Some b | _ -> None in
-  let* a_addr = address env g.a batch in
-  let* b_addr = address env g.b batch in
-  let* c_addr = address env g.c batch in
+(* What the template cannot express: a bound that reads the launch's own
+   dimensions, a subgroup width or a fragment edge without a layout. *)
+let check_template (g : P.gemm) ~subgroup ~frag =
   if uses_launch_dims g then
     Error "a bound, the initial value or the epilogue reads block_dim/grid_dim"
   else if not (supported_subgroup subgroup) then
@@ -453,39 +450,47 @@ let kernel ?(subgroup = 32) ?(frag = 16) (k : kernel) (g : P.gemm) lowering =
          frag
          frag
          frag)
-  else
-    let sch = scheme ~operand_elt:g.a.elt lowering in
-    let fresh = {next = max_var_id k + 1} in
-    let extra_vars = List.map (extra_param fresh) extra_names in
-    let c =
-      {
-        fresh;
-        s = sch;
-        g;
-        a_addr;
-        b_addr;
-        c_addr;
-        extra = List.map (fun v -> EVar v) extra_vars;
-        sa = [];
-        sb = [];
-        sc = "";
-        st = "";
-        bk = choose_bk sch;
-        subgroup;
-        edge = frag;
-      }
-    in
-    Ok
-      {
-        k with
-        kern_name = k.kern_name ^ "_sarek_mm";
-        kern_params =
-          k.kern_params @ List.map (fun v -> DParam (v, None)) extra_vars;
-        kern_locals = [];
-        kern_body = body c;
-        kern_funcs = [];
-        kern_native_fn = None;
-      }
+  else Ok ()
+
+let kernel ?(subgroup = 32) ?(frag = 16) (k : kernel) (g : P.gemm) lowering =
+  let env = address_env k g in
+  let batch = match g.batch with [b] -> Some b | _ -> None in
+  let* a_addr = address env g.a batch in
+  let* b_addr = address env g.b batch in
+  let* c_addr = address env g.c batch in
+  let* () = check_template g ~subgroup ~frag in
+  let sch = scheme ~operand_elt:g.a.elt lowering in
+  let fresh = {next = max_var_id k + 1} in
+  let extra_vars = List.map (extra_param fresh) extra_names in
+  let c =
+    {
+      fresh;
+      s = sch;
+      g;
+      a_addr;
+      b_addr;
+      c_addr;
+      extra = List.map (fun v -> EVar v) extra_vars;
+      sa = [];
+      sb = [];
+      sc = "";
+      st = "";
+      bk = choose_bk sch;
+      subgroup;
+      edge = frag;
+    }
+  in
+  Ok
+    {
+      k with
+      kern_name = k.kern_name ^ "_sarek_mm";
+      kern_params =
+        k.kern_params @ List.map (fun v -> DParam (v, None)) extra_vars;
+      kern_locals = [];
+      kern_body = body c;
+      kern_funcs = [];
+      kern_native_fn = None;
+    }
 
 (** Launch geometry of the rewritten kernel for a region. *)
 let launch_dims ?(subgroup = 32) ~me ~ne ~ze () =

@@ -27,6 +27,7 @@
   Launch_limits
   Launch_window
   Launch_epilogue
+  Matrix_admission
   Matrix_specialise
   Execute
   Execute_error
