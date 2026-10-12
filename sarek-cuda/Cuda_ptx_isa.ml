@@ -71,8 +71,8 @@ let check_driver ~driver:(dmaj, dmin) ~required : (unit, string) result =
   | Some max when max < required ->
       Error
         (Printf.sprintf
-           "PTX ISA %s is required by the device, but the CUDA driver (CUDA \
-            %d.%d) supports PTX ISA up to %s; update the NVIDIA driver"
+           "PTX ISA %s is required, but the CUDA driver (CUDA %d.%d) supports \
+            PTX ISA up to %s; update the NVIDIA driver"
            (to_string required)
            dmaj
            dmin
@@ -106,3 +106,16 @@ let with_sm_target ~major ~minor ptx =
     else line
   in
   String.split_on_char '\n' ptx |> List.map rewrite |> String.concat "\n"
+
+(** The [.version] the PTX declares, [None] if absent or unparseable. *)
+let declared_version ptx : t option =
+  let prefix = ".version " in
+  String.split_on_char '\n' ptx
+  |> List.find_map (fun line ->
+      if starts_with ~prefix line then
+        of_string
+          (String.sub
+             line
+             (String.length prefix)
+             (String.length line - String.length prefix))
+      else None)
