@@ -5,7 +5,7 @@ planned. Per milestone:
 
 | Milestone | Status | Content |
 |---|---|---|
-| M1 | implemented | `Sarek_policy`: one typed store for every precision grant and consent; the four existing opt-ins and `Sarek_f16_policy` are wrappers over it; no behaviour change (golden `sarek/tests/codegen_golden/test_policy_golden.ml`) |
+| M1 | implemented | `Sarek_policy`: one typed store for every precision grant and consent; the three coopmat opt-ins and `Sarek_f16_policy.accept_single_rounding` are wrappers over it; no behaviour change (golden `sarek/tests/codegen_golden/test_policy_golden.ml`) |
 | M2 | planned | window, epilogue, matrix, narrowing and unroll read the budget; digest in cache keys; fused-kernel meet; epilogue fusion on CUDA/OpenCL/Vulkan under `Cross_kernel_contraction` |
 | M3 | planned | `SAREK_OPT_DISABLE`, `SAREK_EXPLAIN`; the replaced switches are removed outright; `gh-pages/docs/environment.md` completed |
 
@@ -319,7 +319,7 @@ explain fused#a1c3 hip:0 single-rounding refused meet of members lacks it
    `accept_automatic_float_rewrite` and `Sarek_f16_policy.accept_single_rounding`
    become wrappers of `grant` with the same refusals and messages. Gate: a
    golden of every pure generator's source, of the coopmat verdicts and of the
-   grant readers, in four process states, captured on `main` before the change
+   grant readers, in five process states, captured on `main` before the change
    and unchanged by it; plus the laws of `Budget`.
 2. **SPOC M2:** window, epilogue, matrix, narrowing, unroll read the budget;
    digest in cache keys; fused-kernel meet; epilogue fusion on CUDA, OpenCL and
@@ -341,7 +341,7 @@ explain fused#a1c3 hip:0 single-rounding refused meet of members lacks it
   loop, f16 and int32 cooperative-matrix kernels, a plain f32 kernel), the
   source of the CUDA-C (HIP and CUDA/C), OpenCL, Metal, GLSL, WGSL and PTX
   generators, `Sarek_coopmat.policy_verdict` for eight configurations, every
-  reader and every refusal message, in four sequential process states (no
+  reader and every refusal message, in five sequential process states (no
   grant; `Kernel` scope; `All_kernels`; the coopmat grants). The expected file
   was produced on `main` and is unchanged by M1.
 - **Laws (M1).** `spoc/ir/test/test_sarek_policy.ml`: over all 2^7 subsets of

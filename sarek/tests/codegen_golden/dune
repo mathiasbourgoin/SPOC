@@ -230,7 +230,7 @@
 
 ; Behaviour-preservation golden for the optimisation policy
 ; (specs/optimisation-policy.md, M1): generated sources, coopmat verdicts and
-; grant readers in four process states, compared with a checked-in file.
+; grant readers in five process states, compared with a checked-in file.
 
 (executable
  (name test_policy_golden)
