@@ -282,43 +282,29 @@ let test_opencl_refusal_reason () =
         Alcotest.failf "OpenCL reason %S does not say why" got
   | exception e -> Alcotest.failf "wrong exception %s" (Printexc.to_string e)
 
-(* ---- 0. the explicit opt-in while the lowering is unexecuted ---------- *)
+(* ---- 0. no opt-in: the lowerings are available as soon as they are used - *)
 
-let expect_gate name k =
-  match gen k with
-  | (_ : string) -> Alcotest.failf "%s: generated without the opt-in" name
-  | exception
-      Sarek_backend_error.Backend_error.Backend_error
-        (Sarek_backend_error.Backend_error.Codegen
-           {
-             error =
-               Sarek_backend_error.Backend_error.Unsupported_construct
-                 {reason; _};
-             _;
-           }) ->
-      if not (contains ~needle:"accept_unexecuted_lowering" reason) then
-        Alcotest.failf "%s: refusal does not name the opt-in: %s" name reason
-  | exception e ->
-      Alcotest.failf "%s: wrong exception %s" name (Printexc.to_string e)
-
-(* Runs first; every later test needs the opt-in, taken here. *)
-let test_gate () =
-  expect_gate "f16" (f16_scale ()) ;
-  expect_gate "coopmat" (tile f16_cfg) ;
-  Alcotest.check_raises
-    "empty reason"
-    (Invalid_argument
-       "Sarek_ir_metal.accept_unexecuted_lowering: the reason must not be empty")
-    (fun () -> Sarek_ir_metal.accept_unexecuted_lowering ~reason:" ") ;
-  Sarek_ir_metal.accept_unexecuted_lowering
-    ~reason:"test_metal_coopmat_golden: codegen text is what is under test"
+(* First in the suite and in a process that has called no opt-in: scalar f16
+   and a cooperative-matrix tile generate. *)
+let test_available_without_opt_in () =
+  let f16 = gen (f16_scale ()) in
+  if not (contains ~needle:"half" f16) then
+    Alcotest.fail "scalar f16 did not generate MSL with a half type" ;
+  let tile_src = gen (tile f16_cfg) in
+  if not (contains ~needle:"simdgroup_multiply_accumulate" tile_src) then
+    Alcotest.fail "the tile did not generate simdgroup_multiply_accumulate"
 
 let () =
   Alcotest.run
     "metal_coopmat_golden"
     [
-      ( "gate",
-        [Alcotest.test_case "opt-in required, then taken" `Quick test_gate] );
+      ( "available",
+        [
+          Alcotest.test_case
+            "f16 and coopmat generate without an opt-in"
+            `Quick
+            test_available_without_opt_in;
+        ] );
       ( "f16",
         [
           Alcotest.test_case "scalar f16 lowered" `Quick test_f16_lowered;
