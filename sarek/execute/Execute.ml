@@ -865,8 +865,8 @@ let check_device_capabilities ~(device : Device.t) (ir : Sarek_ir_types.kernel)
      [capabilities.coopmat = None] means the backend never probed, which
      {!Sarek_coopmat.verdict} turns into [Unknown] and
      {!Sarek_capability.permits} refuses. That is the safe direction and it is
-     load-bearing: Metal, OpenCL, CUDA/PTX and the CPU backends leave it
-     [None] (Vulkan, HIP and CUDA/C probe), so a coopmat kernel aimed at one
+     load-bearing: OpenCL, CUDA/PTX and the CPU backends leave it
+     [None] (Vulkan, HIP, Metal and CUDA/C probe), so a coopmat kernel aimed at one
      of them is refused here by the capability model before any source is
      compiled — and the diagnostic names the device rather than the emitter.
      CUDA/C (the hidden, explicitly registered NVRTC backend) is admitted on

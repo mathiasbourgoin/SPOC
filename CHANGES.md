@@ -256,8 +256,8 @@
   components (MSL has no integer `simdgroup_matrix`), f16 accumulation (no
   closed form), bf16, f32 operands, other shapes, a block that is not whole
   32-wide SIMD-groups. Like HIP, the float configuration needs
-  `Sarek_coopmat.accept_relaxed_accumulation`; on Metal it is bit-identical to
-  the interpreter (accumulator = C, products added in index order in binary32).
+  `Sarek_coopmat.accept_relaxed_accumulation`; on Apple M4 (the only Metal device run) it is
+  bit-identical to the interpreter (accumulator = C, products added in index order in binary32).
   `Sarek_gemm.Coopmat` takes `?frag` (16 by default, 8 on Metal). OpenCL still
   has no lowering and its refusal now says why: no reachable device advertises a
   matrix extension. Spec `specs/coopmat-metal-simdgroup.md`; tests

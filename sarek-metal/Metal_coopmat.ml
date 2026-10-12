@@ -8,14 +8,17 @@
 
     Metal has no query that lists matrix configurations, and MSL offers exactly
     one lowered here: [simdgroup_half8x8 x half8x8 + float8x8 -> float8x8]
-    (docs/design/f16-relaxed-accuracy.md §2). The probe is therefore EXECUTED
-    evidence rather than a family table: a kernel using that configuration is
-    compiled on the device, and its pipeline reports the SIMD-group width. The
-    pure rule below turns those two facts into a
-    {!Sarek_coopmat.device_support}, so it can be driven without a device. A
-    device whose compiler rejects the probe (pre-Apple7 GPUs, Intel/AMD Macs) is
-    reported as probed with NO configuration — [Some] with an empty list — so a
-    refusal says why instead of "not probed". *)
+    (docs/design/f16-relaxed-accuracy.md §2). The probe is therefore a compile
+    check on the device rather than a family table: a kernel using that
+    configuration is compiled on the device (compile evidence, not execution),
+    and its pipeline reports the SIMD-group width. The pure rule below turns
+    those two facts into a {!Sarek_coopmat.device_support}, so it can be driven
+    without a device. A device whose compiler rejects the probe is reported as
+    probed with NO configuration — [Some] with an empty list — so a refusal says
+    why instead of "not probed"; that pre-Apple7 GPUs and Intel/AMD Macs are in
+    this class is inferred, not observed. The launch check and
+    [Sarek_gemm.Coopmat] assume whole 32-wide SIMD-groups, so a device reporting
+    another width is likewise offered no configuration. *)
 
 module C = Sarek_coopmat
 
@@ -50,11 +53,21 @@ let probe_source =
   \  simdgroup_store(fc, (d + (0)), (ulong)(8), ulong2(0, 0), false);\n\
    }\n"
 
+(** The SIMD-group width the launch check and the GEMM builder assume. *)
+let required_simd_width = 32
+
 (** [support ~simd_width ~probe] is the device's support given the SIMD-group
     width its pipeline reported and the outcome of compiling {!probe_source}. *)
 let support ~simd_width ~(probe : (unit, string) result) : C.device_support =
   let configs, evidence =
     match probe with
+    | Ok () when simd_width <> required_simd_width ->
+        ( [],
+          Printf.sprintf
+            "Metal: the simdgroup_matrix probe compiled, but the SIMD-group \
+             width is %d and the lowering needs %d"
+            simd_width
+            required_simd_width )
     | Ok () ->
         ( [f16_config],
           Printf.sprintf

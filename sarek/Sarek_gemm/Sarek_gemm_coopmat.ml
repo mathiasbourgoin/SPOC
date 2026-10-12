@@ -11,9 +11,10 @@
     [~b_layout:Col_major], [B] is stored transposed ([n x k], element [(r, c)]
     of [B] at [c * k + r]), which is how token-major activations are laid out
     and what a fragment loads with contiguous reads on HIP gfx11. Each subgroup
-    (wavefront / warp) computes a [16*frags_m x 16*frags_n] tile of [D],
-    stepping through [k] sixteen at a time with one 16x16x16 multiply-add per
-    fragment pair; a block holds [waves] subgroups of 32 invocations.
+    (wavefront / warp) computes a [frag*frags_m x frag*frags_n] tile of [D]
+    ([frag] is 16 unless given, 8 on Metal), stepping through [k] [frag] at a
+    time with one [frag x frag x frag] multiply-add per fragment pair; a block
+    holds [waves] subgroups of 32 invocations.
 
     The kernel is IR, not a [%kernel]: the DSL has no cooperative-matrix
     surface. It runs where the configuration [f16 * f16 + f32 -> f32] is offered
@@ -39,6 +40,11 @@ let subgroup = 32
     the HIP/CUDA/Vulkan matrix units, 8 for Metal's [simdgroup_matrix]
     (specs/coopmat-metal-simdgroup.md). *)
 let config_for ~frag =
+  if frag < 1 || 16 mod frag <> 0 then
+    invalid_arg
+      (Printf.sprintf
+         "Sarek_gemm.Coopmat: frag = %d must be positive and divide 16"
+         frag) ;
   {
     Sarek_coopmat.cfg_shape = {Sarek_coopmat.m = frag; n = frag; k = frag};
     cfg_a = Sarek_coopmat.Float16;
@@ -60,6 +66,7 @@ let tile_n ?(frag = 16) t = frag * t.frags_n
     of [frag] (16 unless given), and the number of wave tiles a multiple of
     [t.waves]. *)
 let check_shape ?(frag = 16) t ~m ~n ~k =
+  ignore (config_for ~frag) ;
   if t.frags_m < 1 || t.frags_n < 1 || t.waves < 1 then
     invalid_arg "Sarek_gemm.Coopmat: tiling fields must be positive" ;
   let fail what = invalid_arg ("Sarek_gemm.Coopmat: " ^ what) in

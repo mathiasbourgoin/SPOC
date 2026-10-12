@@ -74,21 +74,26 @@ module Metal : Framework_sig.PLUGIN_BASE = struct
         let lib =
           Metal_api.Library.create_from_source d Metal_coopmat.probe_source
         in
-        let func =
-          Metal_api.Library.get_function lib Metal_coopmat.probe_kernel_name
-        in
-        let pipeline = Metal_api.ComputePipeline.create d func in
-        let width = pipeline.Metal_api.ComputePipeline.thread_execution_width in
-        Metal_api.ComputePipeline.release pipeline ;
-        Metal_api.Library.release lib ;
-        width
+        Fun.protect
+          ~finally:(fun () -> Metal_api.Library.release lib)
+          (fun () ->
+            let func =
+              Metal_api.Library.get_function lib Metal_coopmat.probe_kernel_name
+            in
+            let pipeline = Metal_api.ComputePipeline.create d func in
+            Fun.protect
+              ~finally:(fun () -> Metal_api.ComputePipeline.release pipeline)
+              (fun () ->
+                pipeline.Metal_api.ComputePipeline.thread_execution_width))
       in
       let simd_width, probe =
         match compile () with
         | width -> (width, Ok ())
-        | exception (Sarek_backend_error.Backend_error.Backend_error _ as e) ->
-            (* Apple GPUs are 32 wide; used only to describe a device that
-               offers no configuration. *)
+        | exception e ->
+            (* Any failure of the probe (compile error, API error) is the
+               answer "no configuration", with the message; it must not escape
+               [capabilities] / [Device.init]. Apple GPUs are 32 wide; the
+               width is used only to describe a device offering nothing. *)
             (32, Error (Printexc.to_string e))
       in
       Metal_coopmat.support ~simd_width ~probe
@@ -106,48 +111,44 @@ module Metal : Framework_sig.PLUGIN_BASE = struct
       let open Metal_api.Device in
       let open Metal_types in
       let open Ctypes in
-      try
-        let coopmat_support = coopmat_support d in
-        let max_threads = d.max_threads_per_threadgroup in
-        let width = Unsigned.Size_t.to_int (getf max_threads mtl_size_width) in
-        let height =
-          Unsigned.Size_t.to_int (getf max_threads mtl_size_height)
-        in
-        let depth = Unsigned.Size_t.to_int (getf max_threads mtl_size_depth) in
-        {
-          Framework_sig.max_threads_per_block = width * height * depth;
-          max_block_dims = (width, height, depth);
-          max_grid_dims = (max_int, max_int, max_int);
-          shared_mem_per_block = d.max_threadgroup_memory;
-          (* [recommendedMaxWorkingSetSize]: on Apple silicon there is no
+      let coopmat_support = coopmat_support d in
+      let max_threads = d.max_threads_per_threadgroup in
+      let width = Unsigned.Size_t.to_int (getf max_threads mtl_size_width) in
+      let height = Unsigned.Size_t.to_int (getf max_threads mtl_size_height) in
+      let depth = Unsigned.Size_t.to_int (getf max_threads mtl_size_depth) in
+      {
+        Framework_sig.max_threads_per_block = width * height * depth;
+        max_block_dims = (width, height, depth);
+        max_grid_dims = (max_int, max_int, max_int);
+        shared_mem_per_block = d.max_threadgroup_memory;
+        (* [recommendedMaxWorkingSetSize]: on Apple silicon there is no
              separate VRAM, and this is the share of unified memory the GPU
              can keep resident — what a cache sized from this field must stay
              under. *)
-          total_global_mem =
-            Int64.of_int (Metal_api.Device.recommended_working_set d);
-          compute_capability = (0, 0);
-          (* [d.supports_fp64] is hardcoded false in Metal_api: MSL has no
+        total_global_mem =
+          Int64.of_int (Metal_api.Device.recommended_working_set d);
+        compute_capability = (0, 0);
+        (* [d.supports_fp64] is hardcoded false in Metal_api: MSL has no
              [double] at all, which is Backend_structural and refused at
              codegen through Sarek_capability.float64_absent_metal. It is
              threaded through rather than dropped so the two cannot disagree.
              MSL does have [long], so int64 is provided. *)
-          device_features =
-            (if d.supports_fp64 then [Sarek_ir_analysis.Float64] else [])
-            @ [Sarek_ir_analysis.Int64];
-          (* Probed by compiling a simdgroup_matrix kernel on the device
+        device_features =
+          (if d.supports_fp64 then [Sarek_ir_analysis.Float64] else [])
+          @ [Sarek_ir_analysis.Int64];
+        (* Probed by compiling a simdgroup_matrix kernel on the device
              (specs/coopmat-metal-simdgroup.md): [Some] with the lowered
              configuration, or [Some] with none when the compiler rejects it. *)
-          coopmat = Some coopmat_support;
-          supports_atomics = true;
-          warp_size = coopmat_support.Sarek_coopmat.ds_subgroup_size;
-          (* SIMD width, read from a compiled pipeline *)
-          max_registers_per_block = 0;
-          clock_rate_khz = 0;
-          multiprocessor_count = 0;
-          (* Metal doesn't expose these *)
-          is_cpu = d.is_cpu;
-        }
-      with e -> raise e
+        coopmat = Some coopmat_support;
+        supports_atomics = true;
+        warp_size = coopmat_support.Sarek_coopmat.ds_subgroup_size;
+        (* SIMD width, read from a compiled pipeline *)
+        max_registers_per_block = 0;
+        clock_rate_khz = 0;
+        multiprocessor_count = 0;
+        (* Metal doesn't expose these *)
+        is_cpu = d.is_cpu;
+      }
 
     let set_current (d : t) =
       let _ = get_state d.id in
