@@ -136,6 +136,13 @@ let token dev ~w ~x ~x' ~t =
 
 let set_epilogue (dev : Device.t) on =
   let backend = dev.Device.framework in
+  (* Fusion off HIP and Metal needs the contraction grant (no-op there). *)
+  if on then
+    ignore
+      (Sarek_policy.grant
+         Sarek_policy.Process
+         (Sarek_policy.Deviation Sarek_policy.Cross_kernel_contraction)
+         ~reason:"bench_epilogue: measuring fused against unfused") ;
   Execute.Window.set_backend_enabled ~backend true ;
   Execute.Window.set_epilogue_backend ~backend on
 

@@ -75,6 +75,13 @@
  (modules test_f16_single_rounding_golden)
  (libraries sarek_ir sarek_codegen alcotest))
 
+; Process restrictions (Sarek_policy.restrict): one-way, own executable.
+
+(test
+ (name test_policy_restrict_codegen)
+ (modules test_policy_restrict_codegen)
+ (libraries sarek_ir sarek_codegen alcotest))
+
 (test
  (name test_f16_narrowing_theorem)
  (modules test_f16_narrowing_theorem)

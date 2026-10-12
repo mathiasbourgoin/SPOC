@@ -27,7 +27,7 @@ let codegen_hook : (unit -> unit) ref = ref (fun () -> ())
 
 let launched_lock = Mutex.create ()
 
-let codegen_mode : [`Ok | `None | `Raise] ref = ref `Ok
+let codegen_mode : [`Ok | `None | `Raise | `Cuda] ref = ref `Ok
 
 (* Source strings received by run_source, most recent first. *)
 let launched : string list ref = ref []
@@ -49,6 +49,8 @@ module Probe : BACKEND = struct
     match !codegen_mode with
     | `None -> None
     | `Raise -> failwith "probe codegen refused"
+    | `Cuda ->
+        Some (Sarek_codegen.Sarek_ir_cuda.generate_with_types ~types:[] ir)
     | `Ok ->
         let bx = match block with Some b -> b.x | None -> 0 in
         (* A FRESH string per call, so physical equality across launches can
@@ -579,6 +581,104 @@ let test_domains_share_one_source () =
         (List.for_all (fun s -> s == first) rest)
   | [] -> fail "no launches"
 
+(* The memoised source is keyed on the policy that decides its text
+   (specs/optimisation-policy.md, M2): a grant given after a kernel's source
+   was generated is honoured by the next launch. *)
+let narrowing_kernel name : Sarek_ir_types.kernel =
+  let open Sarek_ir_types in
+  let var n ty =
+    {var_name = n; var_id = 0; var_type = ty; var_mutable = false}
+  in
+  let vec n elt =
+    DParam (var n (TVec elt), Some {arr_elttype = elt; arr_memspace = Global})
+  in
+  let tid = var "tid" TInt32 in
+  {
+    default_kernel with
+    kern_name = name;
+    kern_params = [vec "out" TFloat16; vec "h" TFloat16];
+    kern_body =
+      SLet
+        ( tid,
+          EIntrinsic ([], "global_thread_id", []),
+          SAssign
+            ( LArrayElem ("out", EVar tid),
+              ECast
+                ( TFloat16,
+                  EBinop
+                    ( Mul,
+                      ECast (TFloat32, EArrayRead ("h", EVar tid)),
+                      EConst (CFloat32 1.1) ) ) ) );
+  }
+
+let has_barrier source =
+  let needle = "sarek_f32_barrier(" in
+  let nl = String.length needle in
+  let rec go i =
+    i + nl <= String.length source
+    && (String.sub source i nl = needle || go (i + 1))
+  in
+  go 0
+
+let memo_source ir =
+  match
+    Execute.generate_source_memo
+      (module Probe : BACKEND)
+      ~block:(Execute.dims1d 64)
+      ~soa_params:[]
+      ir
+  with
+  | Some s -> s
+  | None -> fail "no source"
+
+let grant_single scope =
+  match
+    Sarek_policy.grant
+      scope
+      (Sarek_policy.Deviation Sarek_policy.Single_rounding)
+      ~reason:"memo test"
+  with
+  | Ok () -> ()
+  | Error _ -> fail "grant refused"
+
+let test_grant_after_generation () =
+  codegen_mode := `Cuda ;
+  Fun.protect
+    ~finally:(fun () -> codegen_mode := `Ok)
+    (fun () ->
+      let ir = narrowing_kernel "memo_stale_a" in
+      let first = memo_source ir in
+      check bool "barriers before the grant" true (has_barrier first) ;
+      check
+        bool
+        "memo hit while the policy is unchanged"
+        true
+        (memo_source ir == first) ;
+      grant_single (Sarek_policy.Kernel "memo_stale_a") ;
+      let second = memo_source ir in
+      check bool "no barrier after a Kernel grant" false (has_barrier second) ;
+      check bool "and the new source is memoised" true (memo_source ir == second) ;
+      let other = narrowing_kernel "memo_stale_b" in
+      check
+        bool
+        "another kernel keeps its barriers"
+        true
+        (has_barrier (memo_source other)))
+
+let test_unrelated_grant_keeps_source () =
+  codegen_mode := `Cuda ;
+  Fun.protect
+    ~finally:(fun () -> codegen_mode := `Ok)
+    (fun () ->
+      let ir = narrowing_kernel "memo_stale_c" in
+      let first = memo_source ir in
+      grant_single (Sarek_policy.Kernel "memo_stale_unrelated") ;
+      check
+        bool
+        "a grant for another kernel keeps the source"
+        true
+        (memo_source ir == first))
+
 let () =
   run
     "Launch memo"
@@ -637,5 +737,13 @@ let () =
             "one IR hash per matrix decision"
             `Quick
             test_one_ir_hash_per_matrix_decision;
+          test_case
+            "a grant after generation is honoured"
+            `Quick
+            test_grant_after_generation;
+          test_case
+            "an unrelated grant keeps the source"
+            `Quick
+            test_unrelated_grant_keeps_source;
         ] );
     ]

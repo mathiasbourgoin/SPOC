@@ -74,7 +74,12 @@ let test_parse_bogus () =
         ["SAREK_MATRIX_REWRITE"; "bogus"; "off"; "exact"; "auto"]
 
 let lowering ?precision ~explicit case =
-  Spec.lowering_for ~mode:Spec.Auto ~explicit case precision
+  Spec.lowering_for
+    ~budget:(Sarek_policy.budget ~kernels:[])
+    ~mode:Spec.Auto
+    ~explicit
+    case
+    precision
 
 let is_ok = function Ok _ -> true | Error _ -> false
 
@@ -203,7 +208,13 @@ let test_modes_still_refuse () =
       Alcotest.(check bool)
         (Spec.mode_name mode ^ " refuses float even when explicit")
         false
-        (is_ok (Spec.lowering_for ~mode ~explicit:true Adv.F16_inputs None)))
+        (is_ok
+           (Spec.lowering_for
+              ~budget:(Sarek_policy.budget ~kernels:[])
+              ~mode
+              ~explicit:true
+              Adv.F16_inputs
+              None)))
     [Spec.Off; Spec.Exact]
 
 (* After the new opt-in the automatic path decides as the explicit one. *)

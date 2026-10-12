@@ -23,7 +23,9 @@ module Device = Spoc_core.Device
 module Vector = Spoc_core.Vector
 module Transfer = Spoc_core.Transfer
 
-let backend_name = "LaunchWindowProbe"
+(* Named like an OpenCL backend: epilogue fusion there needs the
+   Cross_kernel_contraction grant (Sarek_policy.requires). *)
+let backend_name = "OpenCL"
 
 let log_lock = Mutex.create ()
 
@@ -1240,21 +1242,37 @@ let test_consumer_shape () =
             ECast (TFloat32, gpu "thread_idx_x") ))) ;
   refused "not element-wise" k_prod
 
-let epilogue_pair ?(fresh = true) ~cons_block () =
+(* The epilogue tests below run on kernels that hold the Kernel-scoped
+   Cross_kernel_contraction grant (the probe is named like an OpenCL backend,
+   where fusion needs it); [ungranted_pair] runs the same kernels without it. *)
+let grant_contraction name =
+  match
+    Sarek_policy.grant
+      (Sarek_policy.Kernel name)
+      (Sarek_policy.Deviation Sarek_policy.Cross_kernel_contraction)
+      ~reason:"launch window test"
+  with
+  | Ok () -> ()
+  | Error _ -> failwith "grant refused"
+
+let () = List.iter grant_contraction ["k_prod"; "k_cons"; "two_out"]
+
+let epilogue_pair ?(fresh = true) ?(prod = k_prod) ?(cons = k_cons) ~cons_block
+    () =
   if fresh then reset () else Execute.Window.flush () ;
   Execute.Window.set_epilogue_backend ~backend:backend_name true ;
   let[@warning "-8"] [x; t; y] = resident 3 in
   events := [] ;
   Execute.run_vectors
     ~device:dev
-    ~ir:k_prod
+    ~ir:prod
     ~args:[Execute.Vec x; Execute.Vec t; Execute.Int 64]
     ~block:(Execute.dims1d 64)
     ~grid:(Execute.dims1d 1)
     () ;
   Execute.run_vectors
     ~device:dev
-    ~ir:k_cons
+    ~ir:cons
     ~args:[Execute.Vec y; Execute.Vec t; Execute.Int cons_block]
     ~block:(Execute.dims1d cons_block)
     ~grid:(Execute.dims1d 1)
@@ -1262,6 +1280,29 @@ let epilogue_pair ?(fresh = true) ~cons_block () =
   Execute.Window.flush () ;
   Execute.Window.set_epilogue_backend ~backend:backend_name false ;
   launches ()
+
+(* Switching the backend on is no grant: kernels without the grant run as
+   submitted, and a grant of the producer alone is not enough. *)
+let test_epilogue_needs_the_grant () =
+  let prod = {k_prod with kern_name = "ng_prod"}
+  and cons = {k_cons with kern_name = "ng_cons"} in
+  check
+    int
+    "backend on, no grant: two launches"
+    2
+    (List.length (epilogue_pair ~prod ~cons ~cons_block:64 ())) ;
+  grant_contraction "ng_prod" ;
+  check
+    int
+    "producer only: two launches"
+    2
+    (List.length (epilogue_pair ~prod ~cons ~cons_block:64 ())) ;
+  grant_contraction "ng_cons" ;
+  check
+    int
+    "both granted, later: one merged launch"
+    1
+    (List.length (epilogue_pair ~prod ~cons ~cons_block:64 ()))
 
 let test_epilogue_merged () =
   match epilogue_pair ~cons_block:64 () with
@@ -1389,9 +1430,16 @@ let test_epilogue_off_by_default () =
   reset () ;
   check
     bool
-    "probe backend off by default"
+    "ungranted kernels are refused on an OpenCL-like backend"
     false
-    (Execute.Window.epilogue_on backend_name) ;
+    (match
+       Sarek_execute.Launch_epilogue.decide_pair
+         ~backend:backend_name
+         ~producer:"od_p"
+         ~consumer:"od_c"
+     with
+    | Sarek_policy.Applied _ -> true
+    | Sarek_policy.Refused _ -> false) ;
   check bool "HIP on by default" true (Execute.Window.epilogue_on "HIP")
 
 (* {2 Review round (epilogue)} *)

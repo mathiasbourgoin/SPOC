@@ -16,8 +16,8 @@
  * plus a chain t = a*b ; o = t + c ; r = o * d, and an f16 pair
  *   t = f16(a*b) (float16 storage) ; o = f32(t) + c.
  *
- * On a backend where epilogue fusion is ON BY DEFAULT (Launch_epilogue.
- * default_backends: HIP, whose every kernel is compiled with
+ * On a backend where epilogue fusion is exact by default (Sarek_policy.requires
+ * Epilogue_fusion = Some []: HIP, whose every kernel is compiled with
  * -ffp-contract=off, and Metal, whose every kernel carries
  * #pragma METAL fp contract(off)) fused == unfused AND fused == Interpreter
  * (which rounds every operation as written) are ASSERTED bit for bit, and the
@@ -25,9 +25,13 @@
  * inputs separate fma from mul-then-add, and the Interpreter and the fused
  * forwarding result both differ from the fma reference. The fp-contract pragma in the fused Metal sources is checked without a
  * device by test_epilogue_metal_pragma.
- * On every other deferred device the epilogue is forced on; launch counts are
- * asserted, bit equality only RECORDED ("DEVIATION RECORDED": a precision
- * grant the caller makes by opting in). Informational: [a*b + c] in ONE kernel
+ * On every other deferred device the epilogue is forced on after the program
+ * grants Cross_kernel_contraction (without it nothing fuses there); launch
+ * counts are asserted, bit equality only RECORDED ("DEVIATION RECORDED"), and
+ * the fused result is asserted to lie within one contraction per element of
+ * the unfused one (at most 1 ulp after an add, 1 ulp of the product for the
+ * residual pair; the number of differing elements and the largest distance in
+ * ulps are printed). Informational: [a*b + c] in ONE kernel
  * against the rounded and the fma result (does the device contract?).
  *
  * What it cannot detect: a deviation on inputs or shapes not listed above, a
@@ -245,9 +249,29 @@ let check (dev : Device.t) label ok detail =
     detail ;
   if not ok then failures := (dev.Device.framework ^ " " ^ label) :: !failures
 
+(* The backends whose kernels are never contracted fuse without any grant. *)
+let exact_by_default (dev : Device.t) =
+  Sarek_policy.requires
+    Sarek_policy.Epilogue_fusion
+    ~backend:dev.Device.framework
+  = Some []
+
+(* Elsewhere fusion needs the program's grant that one multiply of a kernel may
+   be contracted with an add of the next (a deviation bounded by one
+   contraction per element, see [within_bound]). It is made once, for the
+   process, when the epilogue is first forced on for such a backend. *)
+let grant_contraction (dev : Device.t) =
+  if not (exact_by_default dev) then
+    ignore
+      (Sarek_policy.grant
+         Sarek_policy.Process
+         (Sarek_policy.Deviation Sarek_policy.Cross_kernel_contraction)
+         ~reason:"test_epilogue_exact: measuring the contraction bound")
+
 (* Window and epilogue forced on for this backend, whatever the defaults. *)
 let with_backend (dev : Device.t) ~epilogue f =
   let backend = dev.Device.framework in
+  if epilogue then grant_contraction dev ;
   let window_was = Execute.Window.defers backend
   and epilogue_was = Execute.Window.epilogue_on backend in
   Execute.Window.set_backend_enabled ~backend true ;
@@ -258,10 +282,56 @@ let with_backend (dev : Device.t) ~epilogue f =
       Execute.Window.set_backend_enabled ~backend window_was)
     f
 
-(* Asserted on a backend where the epilogue is on by default, recorded
-   elsewhere. *)
-let gated (dev : Device.t) =
-  List.mem dev.Device.framework Sarek_execute.Launch_epilogue.default_backends
+(* Bit equality is asserted on a backend where the epilogue is exact by
+   default, recorded elsewhere (where [within_bound] is asserted instead). *)
+let gated = exact_by_default
+
+(* Position of a float32 on a line that is monotone in the float order, so that
+   the distance of two positions is their distance in ulps. *)
+let ordered bits =
+  let i = Int32.to_int bits in
+  if i >= 0 then i else -0x80000000 - i
+
+let ulp_distance x y = abs (ordered x - ordered y)
+
+let max_ulp x y =
+  let m = ref 0 in
+  Array.iteri (fun i v -> m := max !m (ulp_distance v y.(i))) x ;
+  !m
+
+(* "One contraction per element": a fused result differs from the unfused one
+   by at most [ulps] ulps (an add that follows the product, no cancellation), or
+   for the residual pair [o = a*b - t] by at most one ulp of the product. *)
+type bound = Ulps of int | Product_ulp of float array * float array
+
+let within_bound bound x y =
+  match bound with
+  | Ulps k -> max_ulp x y <= k
+  | Product_ulp (a, b) ->
+      let ok = ref true in
+      Array.iteri
+        (fun i v ->
+          let _, e = Float.frexp (a.(i) *. b.(i)) in
+          let ulp = Float.ldexp 1.0 (e - 24) in
+          let d =
+            Float.abs (Int32.float_of_bits v -. Int32.float_of_bits y.(i))
+          in
+          if d > ulp then ok := false)
+        x ;
+      !ok
+
+(* Asserted on every backend that fuses: the bound holds, and what was measured
+   is printed (differing elements, maximum distance in ulps). *)
+let check_bound dev label bound ~fused ~unfused =
+  check
+    dev
+    (label ^ ": within one contraction")
+    (within_bound bound fused unfused)
+    (Printf.sprintf
+       " (%d of %d differ, max %d ulp)"
+       (count_diff fused unfused)
+       n
+       (max_ulp fused unfused))
 
 let verdict (dev : Device.t) label ok detail =
   if gated dev then check dev label ok detail
@@ -313,6 +383,15 @@ let run_pair_device (dev : Device.t) refs pair label inputs =
        " (%d of %d elements of o differ)"
        (count_diff o_on o_off)
        n) ;
+  let a, b, _ = inputs in
+  check_bound
+    dev
+    label
+    (match pair with
+    | Forwarding | Half -> Ulps 1
+    | Shared -> Product_ulp (a, b))
+    ~fused:o_on
+    ~unfused:o_off ;
   Option.iter
     (fun reference ->
       verdict
@@ -352,6 +431,10 @@ let run_chain_device (dev : Device.t) refs inputs =
     (launches_on = 1)
     (Printf.sprintf " (%d)" launches_on) ;
   verdict dev "chain: fused == unfused" (on = off) "" ;
+  (* Two epilogues: the contraction of the first reaches the second's input. *)
+  let _, o_off, _ = off and _, o_on, _ = on in
+  check_bound dev "chain o" (Ulps 1) ~fused:o_on ~unfused:o_off ;
+  check_bound dev "chain r" (Ulps 2) ~fused:r_on ~unfused:r_off ;
   verdict dev "chain: fused == Interpreter" (r_on = refs.chain) "" ;
   verdict
     dev
