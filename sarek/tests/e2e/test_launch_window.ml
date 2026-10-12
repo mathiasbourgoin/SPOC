@@ -379,6 +379,73 @@ let check_bit_identity dev ~defers label f =
     issued
   end
 
+(* A window member for [ir] with [args], as the launch would queue it, on a
+   backend with [limit] argument slots. *)
+let window_member ~limit ir args =
+  let module LW = Sarek_execute.Launch_window in
+  {
+    LW.device_id = 0;
+    backend = "Metal";
+    ir = ir_of ir;
+    ir_id = 0;
+    shared_bytes = Some 0;
+    max_grid_x = max_int;
+    max_shared = max_int;
+    max_arg_slots = limit;
+    args;
+    block = d1 256;
+    grid = d1 1;
+    shared_mem = 0;
+    accesses = [];
+    issue = ignore;
+    issue_fused = (fun _ _ _ -> ());
+  }
+
+let slot_vec n = Execute.Vec (fvec n 0)
+
+(* The three members of the fused-source checks, with the arguments the
+   launches would bind. *)
+let three_members ~limit =
+  [
+    window_member
+      ~limit
+      mv_wave
+      [slot_vec 1; slot_vec 1; slot_vec 1; Execute.Int rows; Execute.Int nb];
+    window_member
+      ~limit
+      mv_row
+      [slot_vec 1; slot_vec 1; slot_vec 1; Execute.Int n_row];
+    window_member ~limit positions [slot_vec 1; slot_vec 1; Execute.Int n_pos];
+  ]
+
+(* Backend launches the window must issue for the [independent] scenario on a
+   backend with [limit] argument slots: its four members are grown into a group
+   while the fused signature (the window's own [fused_slots]) fits, else a new
+   group starts. Unbounded backends give 1. A split into more groups than the
+   slot accounting forces still fails the launch-count check. *)
+let independent_launches ~limit =
+  let module LW = Sarek_execute.Launch_window in
+  let wave () =
+    window_member
+      ~limit
+      mv_wave
+      [slot_vec 1; slot_vec 1; slot_vec 1; Execute.Int rows; Execute.Int nb]
+  in
+  let members =
+    wave () :: List.hd (three_members ~limit) :: List.tl (three_members ~limit)
+  in
+  let groups, current =
+    List.fold_left
+      (fun (groups, current) m ->
+        if
+          current = [] || LW.fused_slots Execute.window (current @ [m]) <= limit
+        then (groups, current @ [m])
+        else (groups + 1, [m]))
+      (0, [])
+      members
+  in
+  groups + if current = [] then 0 else 1
+
 let run_device (dev : Device.t) =
   let defers = Execute.Window.defers_device dev in
   (* A backend in the default set (Metal included) defers on its GPU devices;
@@ -399,7 +466,11 @@ let run_device (dev : Device.t) =
         (Printf.sprintf "%s %d launch(es)" label fused_launches)
         (issued = fused_launches)
   in
-  scenario "independent" independent ~fused_launches:1 ;
+  let independent_groups =
+    independent_launches
+      ~limit:(Sarek_execute.Launch_window.arg_slot_limit dev.Device.framework)
+  in
+  scenario "independent" independent ~fused_launches:independent_groups ;
   (* matvec -> residual add is an epilogue where it is on (HIP). *)
   let epi = Execute.Window.epilogue_on dev.Device.framework in
   scenario "dependent" dependent ~fused_launches:(if epi then 2 else 3) ;
@@ -419,7 +490,7 @@ let run_device (dev : Device.t) =
           Profiling.timer_stop t ;
           ignore (Profiling.timer_elapsed_ms t))
     in
-    check dev "timer flushes" (issued = 1)
+    check dev "timer flushes" (issued = independent_groups)
   end
 
 (* The epilogue-fused kernel (matvec, then residual add) on the Interpreter,
@@ -476,37 +547,11 @@ let count_occurrences ~sub s =
   in
   go 0 0
 
-(* The window's own count of the fused kernel's argument slots, for the same
-   three members and the arguments the launches would bind. *)
+(* The window's own count of the fused kernel's argument slots. *)
 let window_slots () =
-  let module LW = Sarek_execute.Launch_window in
-  let v n = Execute.Vec (fvec n 0) in
-  let member ir args =
-    {
-      LW.device_id = 0;
-      backend = "Metal";
-      ir = ir_of ir;
-      ir_id = 0;
-      shared_bytes = Some 0;
-      max_grid_x = max_int;
-      max_shared = max_int;
-      max_arg_slots = 31;
-      args;
-      block = d1 256;
-      grid = d1 1;
-      shared_mem = 0;
-      accesses = [];
-      issue = ignore;
-      issue_fused = (fun _ _ _ -> ());
-    }
-  in
-  LW.fused_slots
+  Sarek_execute.Launch_window.fused_slots
     Execute.window
-    [
-      member mv_wave [v 1; v 1; v 1; Execute.Int rows; Execute.Int nb];
-      member mv_row [v 1; v 1; v 1; Execute.Int n_row];
-      member positions [v 1; v 1; Execute.Int n_pos];
-    ]
+    (three_members ~limit:31)
 
 (* Expected from the kernels: 5 barriers in the wave matvec and 8 in the row
    kernel (13 in all); the second member's work-group id is shifted by its
@@ -525,6 +570,9 @@ let fused_source_checks () =
       n ~sub:"(((int)__metal_bid.x) - hf1_off)" metal = 2 );
     ( "window slot count = Metal [[buffer(]]",
       n ~sub:"[[buffer(" metal = window_slots () && window_slots () = 26 );
+    ( "independent: 2 groups at 31 slots, 1 unbounded",
+      independent_launches ~limit:31 = 2
+      && independent_launches ~limit:max_int = 1 );
   ]
 
 (* The fused kernel on the Interpreter, against its members one by one. *)
