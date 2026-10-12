@@ -8,7 +8,7 @@ of llama.cpp's MMQ kernels and for the per-row rescale of online softmax._
 shows that 8-bit WMMA is not faster than f16 WMMA on gfx1100, so the first
 consumer (a Katra int8 prompt path) would gain only the dequantisation work it
 removes, not matrix throughput. **Date:** 2026-10-12. **Requested by:** the Katra
-prompt plan (lever C, SPOC items S1 and S2).
+project (an int8 prompt path in the style of llama.cpp's MMQ).
 
 ## 1. Decisive measurement: iu8 vs f16 WMMA peak on gfx1100
 
@@ -17,29 +17,37 @@ faster than the f16 one. It is not.
 
 **Kernel.** One `SCoopmat` IR kernel per configuration, lowered by the existing
 HIP coopmat code (`sarek/codegen/Sarek_ir_cuda_coopmat.ml`, unchanged): A and B
-loaded once, four independent accumulators, a loop of `n` iterations each issuing
-four `CM_muladd` (`acc_k = A * B + acc_k`), the four accumulators stored at the
-end. Block 256 threads (8 waves), grid 1536 blocks, no other memory traffic. Ops
-counted as `2 * 16^3` per `CM_muladd`. The lowered instructions are
-`v_wmma_f32_16x16x16_f16` and `v_wmma_i32_16x16x16_iu8` (ISA checked with
-`hipcc --offload-arch=gfx1100 -O3 --cuda-device-only -S`, ROCm 7.2.4).
+loaded once, four independent accumulators, a loop of `n = 8192` iterations each
+issuing four `CM_muladd` (`acc_k = A * B + acc_k`), the four accumulators stored
+at the end. Block 256 threads (8 waves), grid 1536 blocks, no other memory
+traffic. Ops counted as `2 * 16^3` per `CM_muladd`. Operands are all 1 (u8) and
+all 1.0 (f16), accumulators start at 0, so both configurations switch similar
+bits. The generated source of both kernels, compiled with
+`hipcc --offload-arch=gfx1100 -O3 -ffp-contract=off --cuda-device-only -S`
+(ROCm 7.2.4), has exactly four `v_wmma_i32_16x16x16_iu8` (resp.
+`v_wmma_f32_16x16x16_f16`) in the loop body.
 
 **Machine and conditions.** RX 7900 XTX (gfx1100), ROCm 7.2.4, only the dGPU
-visible (`HIP_VISIBLE_DEVICES=0`), run under `scripts/gpu-kernel-log-gate.sh`
-(clean log). Other sessions were loading the CPU (load average 3.3 to 4.4) but
-not this measurement's GPU queue: runs were serialised behind a shared lock.
-Best of 5 launches after one warm-up; two configurations alternated twice, in
-both orders. Raw output is kept outside the repository.
+visible (`HIP_VISIBLE_DEVICES=0`), each run under `scripts/gpu-kernel-log-gate.sh`
+(exit 0, clean log) and serialised behind the GPU lock shared with other
+sessions. Other sessions were loading the CPU (load average 3.4 to 4.7). Best of
+5 launches after one warm-up; per run the two configurations alternate twice;
+two runs, one per order. The bench source, the generated kernels, their ISA and
+the raw output (with date, command and load) are kept outside the repository.
 
-| run | n | s8 x s8 + s32 | f16 x f16 + f32 | iu8 / f16 |
-|---|---|---|---|---|
-| f16 first | 1024 | 130.2, 117.7 TOPS | 137.5, 135.5 TFLOPS | 0.87 to 0.95 |
-| iu8 first | 8192 | 118.7, 129.4 TOPS | 124.2, 133.2 TFLOPS | 0.96 to 0.97 |
+| run | 1st pair (TOPS) | 2nd pair (TOPS) |
+|---|---|---|
+| f16 first | f16 116.7, iu8 125.4 | f16 128.1, iu8 133.4 |
+| iu8 first | iu8 118.7, f16 122.0 | iu8 129.5, f16 130.8 |
 
-**Result.** On gfx1100 the 8-bit WMMA rate is at most equal to the f16 rate
-(0.87 to 0.97 of it here, never above). This agrees with RDNA3 issuing both
-16x16x16 WMMA variants at the same rate; RDNA4 (gfx12) doubles the 8-bit rate,
-but Sarek's HIP lowering does not cover gfx12 (`specs/coopmat-hip-wmma.md`).
+**Result.** Whatever comes second in a pair is faster (the device is still
+clocking up), so the order effect (up to 8 %) is larger than any difference
+between the configurations. Means over the four positions: iu8 126.8, f16 124.4
+TOPS, a ratio of 1.02. On gfx1100 the 8-bit and f16 WMMA rates are equal within
+this noise; there is no 2x. An earlier run with all-zero f16 operands showed f16
+ahead (iu8/f16 0.87 to 0.97); zero operands draw less power, so that run is not
+used. RDNA4 (gfx12) has a higher 8-bit rate per AMD's published figures, but
+Sarek's HIP lowering does not cover gfx12 (`specs/coopmat-hip-wmma.md`).
 
 **Consequence for the consumer.** An int8 prompt path on gfx1100 can save the
 dequantise-to-f16 pass, the f16 narrowing of activations and half of the
@@ -95,13 +103,15 @@ nearest even) and **no contraction**:
 ```
 t1 = f32(src[i][j])          (* int -> f32 conversion; identity for f32 src *)
 t2 = t1 * r[i]
-t3 = t2 * c[j]               (* skipped when col = None *)
+t3 = t2 * c[j]               (* t3 = t2 when col = None *)
 t4 = dst[i][j] + t3
-dst[i][j] = t4 - p[i] * q[j] (* the product rounded, then the subtraction; skipped without offset *)
+t5 = p[i] * q[j]             (* only with offset *)
+dst[i][j] = t4 - t5          (* dst[i][j] = t4 without offset *)
 ```
 
-With `accumulate = false` the result is `t3` (minus the offset term when
-present) instead of `t4`; that is the softmax rescale.
+With `accumulate = false`, `t4 = t3` (the old `dst` is not read); that is the
+softmax rescale. Bit-identity is a property of this operation; an f16 `src`
+produced under the relaxed contract is already outside it.
 
 Why this is Strict and needs no `Sarek_policy` grant:
 
@@ -110,34 +120,39 @@ Why this is Strict and needs no `Sarek_policy` grant:
 - Every step above is a single IEEE operation with a fixed order. A device that
   performs exactly these operations produces the interpreter's bits. The
   int-to-float step is exact when `|src| <= 2^24`, which holds for one MMQ block
-  (at most `32 * 128 * 128 = 2^19` for 8-bit by 8-bit); larger values are still deterministic because the
-  conversion is correctly rounded on every target below.
+  (at most `2^19` for s8 x s8 and about `2^21` for u8 x u8 over K = 32, both
+  below `2^24`); larger values are still deterministic on HIP, whose conversion
+  is correctly rounded; on Vulkan only under `RoundingModeRTE` and
+  `DenormPreserve` for 32-bit floats (`SPV_KHR_float_controls`, to verify on
+  RADV). A u32 accumulator is converted as unsigned, or refused.
 - The only way a device can differ is contraction of `t2 * c[j]` with the add,
   or of `p[i] * q[j]` with the subtraction. Each lowering therefore emits
   non-contractible operations (§3). A fused form would remove two roundings per
   element; it is not proposed, because the scale step is a few VALU operations
   per lane against the K-loop's loads and WMMAs, so there is no measured cost to
   buy back. If one appears, the fused form becomes a new named deviation in
-  `Sarek_policy` with its bound (one rounding fewer per fused pair:
-  `|fused - strict| <= u * (|t3| + |p[i] * q[j]|)` per element, `u = 2^-24`),
+  `Sarek_policy` with its bound (first order, both forms' final roundings
+  included: `|fused - strict| <= u * (|t3| + |t5| + 2|t4| + 2|dst'|)` per
+  element, `u = 2^-24`; to be derived and tested before it becomes a grant),
   not a silent compiler choice.
 
 ### 2.4 Interpreter reference
 
 The interpreter keeps whole fragments per subgroup (`coopmat_key` in
 `sarek/interp/Sarek_ir_interp_eval.ml`); the leader lane applies §2.3 element by
-element with `Int32.to_float` followed by rounding to binary32 at each step (the
-same helper the f32 path already uses). This is the oracle every backend is
-compared against bit for bit.
+element with `Sarek_float32.of_int32`, `mul`, `add` and `sub`
+(`sarek/interp/Sarek_float32.mli`). This is the oracle every backend is compared
+against bit for bit. NaN payloads are not compared; subnormals are preserved,
+matching HIP's `-fno-gpu-flush-denormals-to-zero`.
 
 ## 3. Lowering per backend (coverage table)
 
 | backend | lowering | status if implemented | reason |
 |---|---|---|---|
 | Interpreter | §2.4, leader lane, whole fragment | reference | oracle |
-| HIP gfx11 | direct, registers only: accumulator element `e` of lane `l` is row `2e + h`, column `l16` (`h = l / 16`, `l16 = l mod 16`, the layout already used by `sarek_cm_load_acc_*`). Each lane loads `c[l16]` and `q[l16]` once and `r`, `p` for its 8 rows; `v_cvt_f32_i32` then `__fmul_rn`, `__fadd_rn`, `__fsub_rn` (hipcc contracts by default, so plain `*` and `+` are not enough) | executed on RX 7900 XTX, bit-identical | the only backend with a documented accumulator layout and a device here |
-| Vulkan (KHR cooperative matrix) | the accumulator layout is implementation-defined, so no per-lane form. Portable route: convert the int32 fragment to an f32 accumulator-use matrix (`coopmat<float, …>(src)` is element-wise), load `r` and `c` as broadcast matrices (column-major with stride 0 for `r`, row-major with stride 0 for `c`), multiply component-wise, add. To verify on RADV before relying on it: that stride 0 is accepted and that component-wise `*` on cooperative matrices is supported; otherwise a shared-memory round trip (`coopMatStore`, scalar §2.3, `coopMatLoad`), which needs a per-subgroup scratch array declared by the lowering. The products need `precise` to forbid contraction | executed on RADV (gfx1100) | the plan's coverage decision (HIP and Vulkan executed) |
-| CUDA (`nvcuda::wmma`) | the accumulator fragment's element-to-(row, column) map is not documented, so no direct form. Either a shared-memory round trip as for Vulkan, or a move of the 8-bit lowering to `mma.sync` (whose PTX fragment layouts are documented). Named `#error` in the CUDA arm until one is done | compile-only | no NVIDIA GPU; ZLUDA declines `wmma` |
+| HIP gfx11 | direct, registers only: accumulator element `e` of lane `l` is row `2e + h`, column `l16` (`h = l / 16`, `l16 = l mod 16`, the layout already used by `sarek_cm_load_acc_*`). Each lane loads `c[l16]` and `q[l16]` once and `r`, `p` for its 8 rows; `v_cvt_f32_i32`, then plain `*`, `+`, `-`. Non-contraction rests on hiprtc's `-ffp-contract=off` (`base_options` in `sarek-hip/Hip_rtc.ml`); HIP's `__f*_rn` are plain operators in ROCm 7.2 and guarantee nothing. The e2e test checks the ISA for the absence of `v_fma`/`v_fmac` in the scale step | executed on RX 7900 XTX, bit-identical | the only backend with a documented accumulator layout and a device here |
+| Vulkan (KHR cooperative matrix) | the accumulator layout is implementation-defined, so no per-lane form. Portable route: convert the int32 fragment to an f32 accumulator-use matrix (`coopmat<float, …>(src)` is element-wise), load `r` and `c` as broadcast matrices (column-major with stride 0 for `r`, row-major with stride 0 for `c`), multiply component-wise, add. To verify on RADV before relying on it: that stride 0 is accepted and that component-wise `*` on cooperative matrices is supported; otherwise a shared-memory round trip (`coopMatStore`, scalar §2.3, `coopMatLoad`), which needs a per-subgroup scratch array declared by the lowering. The products need `precise` to forbid contraction; also to verify: that `precise` (NoContraction) is honoured on cooperative-matrix arithmetic and that the float_controls modes of §2.3 are available | executed on RADV (gfx1100) | the plan's coverage decision (HIP and Vulkan executed) |
+| CUDA (`nvcuda::wmma`) | the accumulator fragment's element-to-(row, column) map is not documented, so no direct form. Either a shared-memory round trip as for Vulkan, or a move of the 8-bit lowering to `mma.sync` (whose PTX fragment layouts are documented). Until one is done: refused at code generation with a named reason | refused at code generation | no NVIDIA GPU; ZLUDA declines `wmma` |
 | Metal | integer `src`: refused, as every integer configuration already is (no integer `simdgroup_matrix`; `no_integer_reason` in `sarek/codegen/Sarek_ir_metal_coopmat.ml`). f32 `src` (softmax rescale): threadgroup round trip, later | integer refused with the existing named reason | hardware |
 | OpenCL, WGSL, PTX, Native | refused, as every `SCoopmat` statement is | refused | no cooperative matrices |
 
@@ -155,15 +170,16 @@ What `sarek_cm_load_*_i8` compiles to on gfx1100 (ROCm 7.2.4, `-O3`, preamble of
 | fragment form | global memory | shared memory |
 |---|---|---|
 | contiguous (`load_a_i8`: A row-major, B column-major) | one `global_load_b128` per lane | one `ds_load_b128` per lane |
-| strided (`load_b_i8`: B row-major, A column-major) | 16 `global_load_u8` per lane | (same gather) |
+| strided (`load_b_i8`: B row-major, A column-major) | 16 `global_load_u8` per lane | not measured (expected: a gather) |
 
 The contiguous forms are already vector loads, with no alignment precondition in
 the IR (gfx11 accepts the unaligned access; a 16-byte aligned `index + l16 *
 stride` avoids split accesses). The strided form is a gather by construction; the
 remedy is the layout, not the helper: store the activations token-major and load B
-column-major, as `CM_load`'s `layout` field already allows. CUDA's
-`load_matrix_sync` vectorises inside NVIDIA's header under its existing 32-byte
-alignment check, and Vulkan's `coopMatLoad` is the driver's choice.
+column-major, as `CM_load`'s `layout` field already allows. On CUDA,
+`load_matrix_sync` (under the existing 32-byte alignment check) leaves the load
+width to NVIDIA's header, and on Vulkan `coopMatLoad` leaves it to the driver;
+neither was inspected.
 
 ## 5. If the work is resumed
 
@@ -172,6 +188,6 @@ alignment check, and Vulkan's `coopMatLoad` is the driver's choice.
    whose rounding matters), a HIP e2e test bit-identical to the interpreter over
    random int32 fragments and scales, a Vulkan e2e test, and refusal tests for
    CUDA, Metal, OpenCL, WGSL, PTX and Native.
-2. IR member, interpreter, HIP lowering, Vulkan lowering (after the two RADV
-   checks in §3), refusals.
+2. IR member, interpreter, HIP lowering, Vulkan lowering (after the RADV checks in
+   §3), refusals.
 3. The coverage table above in the PR, a reason for each empty cell.
