@@ -1340,9 +1340,15 @@ let test_horizontal_budget () =
     Execute.Window.flush () ;
     sole "horizontal" (raw_launch_names "sarek_hfused_")
   in
-  check bool "k_a + k_b both granted" true
+  check
+    bool
+    "k_a + k_b both granted"
+    true
     (permits_for (fused_of k_a k_b) single) ;
-  check bool "k_a + k_c, k_c not granted" false
+  check
+    bool
+    "k_a + k_c, k_c not granted"
+    false
     (permits_for (fused_of k_a k_c) single)
 
 let test_epilogue_budget () =
@@ -1351,9 +1357,15 @@ let test_epilogue_budget () =
   in
   ignore (epilogue_pair ~cons_block:64 ()) ;
   let fused = sole "epilogue" (raw_launch_names "sarek_efused_") in
-  check bool "granted P and C: the fused kernel holds the grant" true
+  check
+    bool
+    "granted P and C: the fused kernel holds the grant"
+    true
     (permits_for fused contraction) ;
-  check bool "and nothing else" false
+  check
+    bool
+    "and nothing else"
+    false
     (permits_for fused (Sarek_policy.Deviation Sarek_policy.Single_rounding))
 
 let test_epilogue_merged () =
@@ -1823,10 +1835,7 @@ let () =
       ( "grouping",
         [
           test_case "independent launches fused" `Quick test_independent_fused;
-          test_case
-            "fused budget, horizontal"
-            `Quick
-            test_horizontal_budget;
+          test_case "fused budget, horizontal" `Quick test_horizontal_budget;
           test_case "dependent launches in order" `Quick test_dependent_in_order;
           test_case
             "reordered past independent"
@@ -1910,10 +1919,7 @@ let () =
           test_case "index slice" `Quick test_index_slice;
           test_case "consumer shape" `Quick test_consumer_shape;
           test_case "merged when covered" `Quick test_epilogue_merged;
-          test_case
-            "fused budget, epilogue"
-            `Quick
-            test_epilogue_budget;
+          test_case "fused budget, epilogue" `Quick test_epilogue_budget;
           test_case "needs the grant" `Quick test_epilogue_needs_the_grant;
           test_case "merge bounded by slots" `Quick test_epilogue_slot_limit;
           test_case

@@ -190,6 +190,14 @@ val refusal_message : refusal -> string
     Thread-safe; bumps {!version} when it changes the registry. *)
 val register_fused : name:string -> members:string list -> unit
 
+(** [register_derived ~name ~from]: the kernel [name] is [from] rewritten (the
+    matrix rewrite renames its output [<from>_sarek_mm]), not a statement of the
+    program, and has exactly [from]'s budget (recursively, if [from] is itself
+    fused or derived) so that a [Kernel] grant of [from] is read for the
+    rewritten kernel at the capability gate and by the interpreter.
+    [register_fused ~name ~members:[from]]; same registry, same rules. *)
+val register_derived : name:string -> from:string -> unit
+
 (** {1 Restrictions} *)
 
 (** [restrict opt] takes [opt] away for the rest of the process. One-way and
@@ -264,6 +272,10 @@ type record = {
 (** Install (or, with [None], remove) the sink of {!report}. The default is no
     sink; installing one forgets which outcomes were already reported. *)
 val set_reporter : (record -> unit) option -> unit
+
+(** [true] when a sink is installed: lets a decision point skip building a
+    record (and its strings) when nobody listens. *)
+val reporting : unit -> bool
 
 (** [report r]: with a sink installed, calls it if [r.decision] differs from the
     last one reported for [(r.kernel, r.device, r.optimisation)]; otherwise does

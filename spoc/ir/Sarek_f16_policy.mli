@@ -59,5 +59,8 @@ val refusal_message : refusal -> string
 val accept_single_rounding : scope -> reason:string -> (unit, refusal) result
 
 (** The reason recorded for the kernel named [kernel]: its own [Kernel] scope
-    first, then [All_kernels]; [None] when neither was accepted. *)
+    first, then [All_kernels]; [None] when neither was accepted. For a fused or
+    derived kernel ({!Sarek_policy.register_fused}) it is the reason of the meet
+    over its parts, as the code generator reads it ([Sarek_policy.budget]). (The
+    readers of {!Sarek_coopmat}, [*_reason ()], read the process scope.) *)
 val single_rounding_reason : kernel:string -> string option

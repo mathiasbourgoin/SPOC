@@ -185,19 +185,29 @@ let add_scope snapshot scope b =
 (* Fused kernels                                                             *)
 (* ------------------------------------------------------------------------ *)
 
-(* Fused kernel name -> the member names registered for it. Only grows: a name
-   registered again gains the new members (a content-derived name can be built
-   from different members, and then it is covered only by what all allow). *)
-let fused : (string * string list) list Atomic.t = Atomic.make []
+module Names = Map.Make (String)
+
+(* Fused (or derived) kernel name -> the member names registered for it. Only
+   grows: a name registered again gains the new members (a content-derived name
+   can be built from different members, and then it is covered only by what all
+   of them allow). An immutable map behind an atomic: a launch reads one
+   snapshot. *)
+let fused : string list Names.t Atomic.t = Atomic.make Names.empty
 
 let rec register_fused ~name ~members =
   let current = Atomic.get fused in
-  let known = Option.value ~default:[] (List.assoc_opt name current) in
+  let known = Option.value ~default:[] (Names.find_opt name current) in
   let added = List.filter (fun m -> not (List.mem m known)) members in
   if added <> [] then
-    let next = (name, known @ added) :: List.remove_assoc name current in
-    if Atomic.compare_and_set fused current next then bump ()
+    if
+      Atomic.compare_and_set
+        fused
+        current
+        (Names.add name (known @ added) current)
+    then bump ()
     else register_fused ~name ~members
+
+let register_derived ~name ~from = register_fused ~name ~members:[from]
 
 (* A kernel's own grants first, so its reason wins over the process one. *)
 let own_budget snapshot kernel =
@@ -211,7 +221,7 @@ let own_budget snapshot kernel =
    while expanding itself (a malformed registration) contributes nothing, which
    is the least permissive answer. *)
 let rec kernel_budget snapshot registry visiting kernel =
-  match List.assoc_opt kernel registry with
+  match Names.find_opt kernel registry with
   | _ when List.mem kernel visiting -> Budget_impl.exact
   | Some (first :: rest) ->
       let member = kernel_budget snapshot registry (kernel :: visiting) in
@@ -328,6 +338,8 @@ let is_new r =
       else (
         Hashtbl.replace last_outcome key r.decision ;
         true))
+
+let reporting () = Option.is_some (Atomic.get reporter)
 
 let report r =
   match Atomic.get reporter with None -> () | Some f -> if is_new r then f r

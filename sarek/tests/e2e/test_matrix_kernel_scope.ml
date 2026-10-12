@@ -95,7 +95,8 @@ let () =
   (match run dev (named "probe_a") with
   | Sarek_matrix.Rewritten _, c0 ->
       ok "probe_a (Kernel grant): rewritten" ;
-      if c0 = 4.0 then ok "probe_a: c.(0) = 4" else fail "probe_a: c.(0) = %g" c0
+      if c0 = 4.0 then ok "probe_a: c.(0) = 4"
+      else fail "probe_a: c.(0) = %g" c0
   | Sarek_matrix.Original why, _ -> fail "probe_a: not rewritten (%s)" why
   | exception e -> fail "probe_a: raised %s" (Printexc.to_string e)) ;
   (match run dev (named "probe_b") with

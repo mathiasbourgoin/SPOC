@@ -876,7 +876,6 @@ let check_device_capabilities ~(device : Device.t) (ir : Sarek_ir_types.kernel)
      docs/design/f16-relaxed-accuracy.md): a device that cannot run the
      configuration is the more useful refusal, and a float configuration the
      device CAN run still needs the program's explicit opt-in. *)
-  let budget = Sarek_policy.budget ~kernels:[ir.Sarek_ir_types.kern_name] in
   let coopmat_verdicts =
     List.concat_map
       (fun cfg ->
@@ -884,7 +883,9 @@ let check_device_capabilities ~(device : Device.t) (ir : Sarek_ir_types.kernel)
           Sarek_coopmat.verdict
             ~support:device.Device.capabilities.Framework_sig.coopmat
             cfg;
-          Sarek_coopmat.policy_verdict_for budget cfg;
+          Sarek_coopmat.policy_verdict_for
+            (Sarek_policy.budget ~kernels:[ir.Sarek_ir_types.kern_name])
+            cfg;
         ])
       (Sarek_ir_analysis.kernel_coopmat_configs ir)
   in
@@ -985,9 +986,8 @@ let check_interpreter_capabilities (ir : Sarek_ir_types.kernel) : unit =
     kernel whose intrinsic is missing fails codegen (not memoised). Replacing an
     intrinsic's implementation AFTER a kernel using it has launched is not seen
     by that kernel until {!clear_launch_cache} is called, nor is backend debug
-    logging or the read of [SAREK_AUTO_UNROLL] (first launch only). The POLICY
-    is tracked: sources carry a {!Policy_stamp}, so a later grant or restriction
-    is honoured by the next launch.
+    logging or [SAREK_AUTO_UNROLL] (first launch only). The POLICY is tracked
+    ({!Policy_stamp}): a later grant or restriction is honoured at once.
 
     LIFETIME AND CONCURRENCY. The entry is a slot of the IR's {!Ir_memo} record,
     which is weak in the IR, and its data never refers to the IR, so an entry
@@ -1020,19 +1020,13 @@ type source_key = {
 let same_source_key a b =
   a.codegen == b.codegen && a.block = b.block && a.soa_params = b.soa_params
 
-(* The source stored for [key] under a policy still holding for [kernel]. *)
 let find_source ~kernel key sources =
-  List.find_map
-    (fun (k, (s, stamp)) ->
-      if same_source_key k key && Policy_stamp.current stamp ~kernel then Some s
-      else None)
-    sources
+  Policy_stamp.find_current ~kernel ~matches:(same_source_key key) sources
 
 type launch_entry = {
   generation : int;  (** the {!launch_memo_generation} it belongs to *)
   mutable sources : (source_key * (string * Policy_stamp.t)) list;
-      (** generated source per {!source_key}, with the policy it was generated
-          under *)
+      (** source and policy stamp per {!source_key} *)
   mutable verified : (int * Framework_sig.capabilities) list;
       (** (device id, physical capabilities record) that passed the check *)
 }
@@ -1130,10 +1124,12 @@ let generate_source_memo (module B : Framework_sig.BACKEND) ~block ~soa_params
                 | Some first -> Some first
                 | None ->
                     e.sources <-
-                      (key, (source, stamp))
-                      :: List.filter
-                           (fun (k, _) -> not (same_source_key k key))
-                           e.sources ;
+                      Policy_stamp.install
+                        ~matches:(same_source_key key)
+                        e.sources
+                        key
+                        source
+                        stamp ;
                     Some source))
 
 (** Validate a launch on [stream] for [device] BEFORE anything is transferred:
@@ -1243,13 +1239,12 @@ module Window = struct
   let set_backend_enabled ~backend b =
     Launch_window.set_backend_enabled window ~backend b
 
-  (** [false] when epilogue fusion is switched off on this backend. Fusing also
-      needs [Cross_kernel_contraction] grants off HIP and Metal. *)
-  let epilogue_on backend = Launch_epilogue.enabled backend
+  (** [true] when epilogue fusion may run on this backend under the process
+      grants (HIP, Metal; the others with [Cross_kernel_contraction]). *)
+  let epilogue_on backend = Launch_epilogue.available backend
 
   (** Switch epilogue fusion off or back on for one backend (flushes first);
-      [true] never grants [Cross_kernel_contraction] (specs/epilogue-fusion.md).
-  *)
+      never a grant. *)
   let set_epilogue_backend ~backend b =
     Launch_window.flush window ;
     Launch_epilogue.set_backend_enabled ~backend b

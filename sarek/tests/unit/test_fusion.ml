@@ -1438,9 +1438,7 @@ let test_fusion_budget () =
   check "fuse" f ~granted:["fb_p1"] ~ungranted:"fb_c1" ;
   let r = fuse_reduction (copy_kernel "fb_m2") (reduce_kernel "fb_r2") "temp" in
   check "fuse_reduction" r ~granted:["fb_m2"] ~ungranted:"fb_r2" ;
-  let st =
-    fuse_stencil (copy_kernel "fb_p3") (stencil_kernel "fb_c3") "temp"
-  in
+  let st = fuse_stencil (copy_kernel "fb_p3") (stencil_kernel "fb_c3") "temp" in
   check "fuse_stencil" st ~granted:["fb_p3"] ~ungranted:"fb_c3"
 
 let () =

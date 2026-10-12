@@ -81,7 +81,10 @@ val fragment_verdict :
     @raise Invalid_argument if [reason] is empty or blank. *)
 val accept_relaxed_accumulation : reason:string -> unit
 
-(** The reason recorded by {!accept_relaxed_accumulation}, if it was called. *)
+(** The reason recorded by {!accept_relaxed_accumulation} at {b process} scope,
+    if it was called. Like the other [*_reason ()] readers of this module it
+    does not see [Kernel]-scoped grants: the verdicts take a budget
+    ({!policy_verdict_for}). *)
 val relaxed_accumulation_reason : unit -> string option
 
 (** {2 Operand rounding (specs/matrix-pattern-rewrite.md)}

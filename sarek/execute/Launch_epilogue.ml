@@ -377,13 +377,14 @@ let merge_point w g (m : _ LW.launch) (c : _ LW.launch) shape i_buf =
 let permitted (m : _ LW.launch) (c : _ LW.launch) =
   let producer = m.ir.kern_name and consumer = c.ir.kern_name in
   let decision = decide_pair ~backend:c.backend ~producer ~consumer in
-  Sarek_policy.report
-    {
-      kernel = producer ^ " + " ^ consumer;
-      device = c.backend;
-      optimisation = Sarek_policy.Epilogue_fusion;
-      decision;
-    } ;
+  if Sarek_policy.reporting () then
+    Sarek_policy.report
+      {
+        kernel = producer ^ " + " ^ consumer;
+        device = c.backend;
+        optimisation = Sarek_policy.Epilogue_fusion;
+        decision;
+      } ;
   match decision with Sarek_policy.Applied _ -> true | Refused _ -> false
 
 (* Under [w.lock]: [m] merged with its epilogue [c], when every condition and
@@ -393,22 +394,23 @@ let try_member w g (m : _ LW.launch) (c : _ LW.launch) shape =
   | None -> None
   | Some i_buf -> (
       match merge_point w g m c shape i_buf with
-      | Some (p_array, shared) when permitted m c ->
+      | None -> None
+      | Some (p_array, shared) ->
           if
-            cached_covers
-              ~p:m
-              ~p_array
-              ~p_scalars:(scalars w m)
-              ~c
-              ~shape
-              ~c_scalars:(scalars w c)
+            permitted m c
+            && cached_covers
+                 ~p:m
+                 ~p_array
+                 ~p_scalars:(scalars w m)
+                 ~c
+                 ~shape
+                 ~c_scalars:(scalars w c)
           then
             Option.map
               (fun fused ->
                 merged w m c ~fused ~p_array ~shared ~tc:(c.grid.x * c.block.x))
               (fused_ir ~p:m ~p_array ~c ~shared)
-          else None
-      | Some _ | None -> None)
+          else None)
 
 let one_dimensional (l : _ LW.launch) =
   l.grid.y = 1 && l.grid.z = 1 && l.block.y = 1 && l.block.z = 1
