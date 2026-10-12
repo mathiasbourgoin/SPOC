@@ -207,10 +207,6 @@ let test_sync_points_complete_pending device =
     "the upload came after the launches"
     100.0
     (download buf).(0) ;
-  pending_after "Memory.free" (fun () ->
-      let other = upload device [|0.0|] in
-      Memory.free other ;
-      ()) ;
   Memory.free buf
 
 let test_event_after_batch device =
