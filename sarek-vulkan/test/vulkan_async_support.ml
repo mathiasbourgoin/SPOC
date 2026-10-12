@@ -67,14 +67,14 @@ let is_amd_driver device = List.mem device.Device.driver_id [1; 2; 3]
 let with_batching_device f () =
   with_device
     (fun device ->
-      if batch_opted_in then f device
-      else if is_amd_driver device then begin
+      if is_amd_driver device && not batch_opted_in then begin
         print_endline
           "[SKIP] batching is opt-in on AMD drivers (SPOC_VULKAN_BATCH=32, \
            Sarek #504)" ;
         Alcotest.skip ()
       end
       else begin
+        (* Permission is separate from set-up: the tests assume batch 32. *)
         let saved = !Stream.batch_limit in
         Stream.batch_limit := 32 ;
         Fun.protect

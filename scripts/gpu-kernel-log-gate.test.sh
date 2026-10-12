@@ -67,6 +67,10 @@ if [ $? = 4 ]; then echo "PASS: unreadable log fails closed"; else echo "FAIL: u
 GPU_LOG_GATE_ALLOW_NO_LOG=1 GPU_LOG_GATE_LOG_CMD="$work/broken.sh" "$GATE" -- true >/dev/null 2>&1
 if [ $? = 0 ]; then echo "PASS: explicit opt-out runs unguarded"; else echo "FAIL: opt-out"; fail=1; fi
 
+echo "$clean" >"$work/log-after"
+GPU_LOG_GATE_PATTERN='(' GPU_LOG_GATE_LOG_CMD="$work/reader.sh" "$GATE" -- true >/dev/null 2>&1
+if [ $? = 4 ]; then echo "PASS: invalid pattern fails closed"; else echo "FAIL: invalid pattern"; fail=1; fi
+
 "$GATE" >/dev/null 2>&1
 if [ $? = 2 ]; then echo "PASS: no command is a usage error"; else echo "FAIL: usage"; fail=1; fi
 

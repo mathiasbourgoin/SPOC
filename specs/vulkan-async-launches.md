@@ -14,8 +14,9 @@ Port of the Metal change (CHANGES.md, "Metal kernel launches are asynchronous";
 `specs/metal-ranged-copies.md`) to `sarek-vulkan`. Before, `Kernel.launch`
 recorded one dispatch into the stream's single command buffer, submitted it and
 waited for its fence: every launch blocked the host for the full
-submit-and-complete round trip. Now a launch appends its dispatch to an open
-command buffer and returns. The change is semantics-preserving (results and
+submit-and-complete round trip. With a batch size above 1 (opt-in, 32 is the
+measured setting), a launch appends its dispatch to an open command buffer and
+returns; at the default size of 1 it still submits and waits. The change is semantics-preserving (results and
 their order are unchanged, only the point where the host blocks moves), so it
 is nevertheless opt-in (default batch size 1, Sarek #504).
 

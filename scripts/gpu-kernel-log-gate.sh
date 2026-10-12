@@ -57,7 +57,13 @@ scan() { # $1 = since
     return 4
   fi
   local hits
-  hits=$(printf '%s\n' "$out" | grep -E -i -- "$PATTERN" || true)
+  local hits rc
+  hits=$(printf '%s\n' "$out" | grep -E -i -- "$PATTERN")
+  rc=$?
+  if [ "$rc" -gt 1 ]; then
+    echo "gpu-kernel-log-gate: grep failed on the pattern '$PATTERN' (exit $rc)" >&2
+    return 4
+  fi
   if [ -n "$hits" ]; then
     printf '%s\n' "$hits" >&2
     return 1
@@ -73,6 +79,8 @@ if [ -z "${GPU_LOG_GATE_LOG_CMD:-}" ] && [ -z "$(journalctl -k --no-pager -q -n 
 fi
 
 guarded=1
+# Taken before the pre-scan so that the two scans overlap.
+started=$(date '+%Y-%m-%d %H:%M:%S')
 scan "$PRESCAN"
 case $? in
   0) ;;
@@ -90,7 +98,6 @@ case $? in
     ;;
 esac
 
-started=$(date '+%Y-%m-%d %H:%M:%S')
 "$@"
 status=$?
 
