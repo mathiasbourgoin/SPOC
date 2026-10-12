@@ -1,5 +1,17 @@
 ## 2026-10
 
+### Changed
+
+- Vulkan host-memory import (`alloc_pinned`, `register_host`, from #493) is now an explicit opt-in
+  (`SPOC_VULKAN_HOST_IMPORT=1`) and is refused on AMD drivers even then
+  (`Vulkan_host_import_policy`). On a refused device `VK_EXT_external_memory_host` is not
+  enabled and both entry points raise `Feature_not_supported` with the reason. Reason (#503):
+  on tartarus (RX 7900 XTX, RADV, Linux 7.1.2-3-cachyos, amdgpu 3.64.0) imports were followed
+  by a kernel NULL dereference in `amdgpu_hmm_invalidate_gfx`, hit by `kcompactd` migrating
+  the imported anonymous pages, after which processes stayed in uninterruptible sleep until
+  reboot. Not reproduced here, on purpose; the cause is in the driver, SPOC's import was the trigger.
+  Test: `test_vulkan_host_import_policy` (pure decision table, and on a device the default refusal).
+
 ### Added
 
 - `Sarek_policy` (`spoc/ir/Sarek_policy.mli`, `specs/optimisation-policy.md`,

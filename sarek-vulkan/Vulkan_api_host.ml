@@ -47,21 +47,24 @@ let lock = Mutex.create ()
 let refuse reason =
   Vulkan_error.raise_error (Vulkan_error.feature_not_supported reason)
 
+let unavailable_reason (device : Device.t) =
+  match
+    Vulkan_host_import_policy.refusal_reason device.Device.host_import_policy
+  with
+  | Some reason -> reason
+  | None ->
+      "pinned and registered host memory (the device does not offer \
+       VK_EXT_external_memory_host)"
+
 let alignment_of (device : Device.t) =
   match device.Device.host_import_alignment with
   | Some a -> a
-  | None ->
-      refuse
-        "pinned and registered host memory (the device does not offer \
-         VK_EXT_external_memory_host)"
+  | None -> refuse (unavailable_reason device)
 
 let properties_fn_of (device : Device.t) =
   match device.Device.host_pointer_properties_fn with
   | Some fn -> fn
-  | None ->
-      refuse
-        "pinned and registered host memory (the device does not offer \
-         VK_EXT_external_memory_host)"
+  | None -> refuse (unavailable_reason device)
 
 let round_down addr alignment =
   Nativeint.sub addr (Nativeint.rem addr (Nativeint.of_int alignment))
