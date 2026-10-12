@@ -16,7 +16,8 @@
  *   S1 [Sarek_f16_policy.accept_single_rounding (Kernel "q4k_like")]
  *   S2 [Sarek_f16_policy.accept_single_rounding All_kernels]
  *   S3a [Sarek_coopmat.accept_relaxed_accumulation] alone (verdicts only)
- *   S3 every [Sarek_coopmat.accept_*]
+ *   S3 every [Sarek_coopmat.accept_*], readers printed after each operand
+ *      rounding, then a second call with another reason for three of them
  *
  * The output is compared with test_policy_golden.expected by dune. The
  * expected file was produced on the tree BEFORE the policy module existed; it
@@ -268,7 +269,7 @@ let opt_text = function None -> "none" | Some r -> "Some " ^ r
 
 let precisions = [Cm.Operands_f16; Cm.Operands_bf16; Cm.Operands_bf16x3]
 
-let print_verdicts state =
+let print_verdict_lines state =
   List.iter
     (fun cfg ->
       Printf.printf
@@ -276,7 +277,9 @@ let print_verdicts state =
         state
         (Cm.config_name cfg)
         (verdict_text (Cm.policy_verdict cfg)))
-    verdict_configs ;
+    verdict_configs
+
+let print_readers state =
   Printf.printf
     "reader %s | relaxed_accumulation_reason = %s\n"
     state
@@ -301,6 +304,10 @@ let print_verdicts state =
         k.kern_name
         (opt_text (Sarek_f16_policy.single_rounding_reason ~kernel:k.kern_name)))
     corpus
+
+let print_verdicts state =
+  print_verdict_lines state ;
+  print_readers state
 
 let print_state state =
   print_sources state ;
@@ -370,11 +377,18 @@ let () =
   Cm.accept_relaxed_accumulation ~reason:"golden S3 accumulation" ;
   (* S3a: accumulation order alone; bf16 still needs operand rounding. *)
   print_verdicts "S3a" ;
+  (* Readers after each single grant: independence of the precisions does not
+     depend on the order they are granted in. *)
   List.iter
     (fun precision ->
       Cm.accept_operand_rounding
         ~precision
-        ~reason:("golden S3 " ^ Cm.operand_precision_name precision))
+        ~reason:("golden S3 " ^ Cm.operand_precision_name precision) ;
+      print_readers ("S3+" ^ Cm.operand_precision_name precision))
     precisions ;
   Cm.accept_automatic_float_rewrite ~reason:"golden S3 rewrite" ;
+  (* A second call with another reason: the first reason stays. *)
+  Cm.accept_relaxed_accumulation ~reason:"second accumulation reason" ;
+  Cm.accept_operand_rounding ~precision:Cm.Operands_f16 ~reason:"second f16" ;
+  Cm.accept_automatic_float_rewrite ~reason:"second rewrite reason" ;
   print_state "S3"
