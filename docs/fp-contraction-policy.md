@@ -2701,15 +2701,22 @@ that backend compiles *every* kernel without contraction:
 |---|---|---|
 | HIP | yes, `-ffp-contract=off` forced last (§2) | **on**; executed fused == unfused, both pairs, RX 7900 XTX gfx1100 |
 | Metal | yes, `#pragma METAL fp contract(off)` (§10), by construction | **on** (package H9) while the conformant compile options (non-fast math) could be built; if they cannot, the plugin marks Metal inexact and epilogue fusion stays off; pragma effect executed on Apple M4 (§10), fused == unfused == Interpreter executed on Apple M4 / macOS 15 (0 of 4099 differ, forwarding, shared, chain; control fused != fma 1109 of 4099) |
-| CUDA/PTX, CUDA/C | no: nvrtc `--fmad=true` | off (opt-in); executed via ZLUDA on gfx1100 (not NVIDIA hardware) shows no deviation, but ZLUDA is not ptxas |
-| OpenCL | no: executed 2026-10-12, rusticl/radeonsi contracts `o[i] <- a[i]*b[i] + c[i]` (1109 of 1109 sensitive elements equal `fma`) | off (opt-in); the two pairs showed no deviation on rusticl |
-| Vulkan | no: executed 2026-10-12, RADV contracts the same kernel (1109 of 1109) | off (opt-in); the shared pair deviates, 4099 of 4099 |
+| CUDA/PTX, CUDA/C | no: nvrtc `--fmad=true` | **on for kernels granted `Cross_kernel_contraction`** (M2, `Sarek_policy`); executed via ZLUDA on gfx1100 (not NVIDIA hardware) shows no deviation (0 of 4099 elements, forwarding, shared and chain pairs), but ZLUDA is not ptxas |
+| OpenCL | no: executed 2026-10-12, rusticl/radeonsi contracts `o[i] <- a[i]*b[i] + c[i]` (1109 of 1109 sensitive elements equal `fma`) | **on under the grant**; the pairs showed no deviation on rusticl (0 of 4099) |
+| Vulkan | no: executed 2026-10-12, RADV contracts the same kernel (1109 of 1109) | **on under the grant**; the shared pair deviates, 4099 of 4099 elements, at most 0.5 ulp of the product (the rounding error of the product) |
 | WebGPU | unconstrained (§2) | off |
 
-Opting in on a backend that contracts is a precision grant (a result changes by
-an ulp), recorded by `sarek/tests/e2e/test_epilogue_exact.ml`: it asserts
-fused == unfused and fused == Interpreter on the default backends (HIP, Metal) and only *records* the pairs above
-elsewhere. It cannot detect a deviation on other inputs or shapes, nor on
+Fusing on a backend that contracts is a precision grant (a result changes by
+one contraction per element), made per kernel with
+`Sarek_policy.grant (Kernel name) (Deviation Cross_kernel_contraction)` (or at
+process scope) for both kernels of a pair; `Execute.Window.set_epilogue_backend
+~backend true` only undoes a switch-off and is no grant (M2,
+`specs/optimisation-policy.md`). `sarek/tests/e2e/test_epilogue_exact.ml`
+asserts fused == unfused and fused == Interpreter on the exact backends (HIP,
+Metal), and on the others asserts that the fused path was taken, records the
+differing elements and asserts the bound "one contraction per element": at most
+1 ulp of the result after an add (2 after two chained epilogues), at most 1 ulp
+of the product for the residual pair `a*b - t`. It cannot detect a deviation on other inputs or shapes, nor on
 hardware this host does not have. Inputs: 1109 of 4099 elements where
 `fma(a,b,c)` differs from `round(round(a*b)+c)` (the positive control).
 

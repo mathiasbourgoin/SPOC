@@ -38,7 +38,7 @@ Invariants:
 - A fused kernel runs each member's body unchanged. Only the work-group
   position intrinsics are rewritten.
 - Direct and Custom backends are never deferred.
-- Epilogue fusion is on by default only on a backend that compiles every kernel without contraction (HIP, Metal): elsewhere the fused kernel can differ from the pair by an ulp (`docs/fp-contraction-policy.md`, section 14).
+- Epilogue fusion needs no grant only on a backend that compiles every kernel without contraction (HIP, Metal); on CUDA, OpenCL and Vulkan both kernels of a pair must hold the `Cross_kernel_contraction` grant (`Sarek_policy.decide`, decided at each submit, `sarek/execute/Epilogue_policy.ml`), and the fused kernel can then differ from the pair by one contraction per element (`docs/fp-contraction-policy.md`, section 14). A fused kernel's budget is the meet over its members (`Sarek_policy.register_fused`).
 - An epilogue is merged only after the coverage check: every element the
   consumer writes is stored exactly once by the producer, for these
   dimensions and scalars.

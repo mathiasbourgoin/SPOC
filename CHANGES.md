@@ -154,6 +154,45 @@
 
 ### Changed
 
+- Every switchable optimisation now decides through `Sarek_policy`, per launch,
+  from the effective policy of the kernel being decided (milestone M2 of
+  `specs/optimisation-policy.md`): the grants at process and kernel scope (the
+  meet over the members of a fused kernel, `Sarek_policy.register_fused`) and
+  the process restrictions (`Sarek_policy.restrict`, used by M3's
+  `SAREK_OPT_DISABLE` and by tests). New in `Sarek_policy`: `restrict`,
+  `restricted`, `register_fused`, `effective`, `effective_for`, `requires`,
+  `decide`, `version`, `set_reporter`/`report`. A `Kernel`-scoped grant of any
+  of the seven atoms now changes the decision of that kernel and of no other
+  (coopmat verdicts and the matrix rewrite read the kernel's budget:
+  `Sarek_coopmat.policy_verdict_for`, `Matrix_specialise.lowering_for ~budget`,
+  the interpreter's environment carries the kernel's budget). A `Kernel` grant
+  on a fused kernel's own generated name is not counted. **Behaviour changes:**
+  (1) a grant given after a kernel's source was generated is honoured by the
+  next launch (the launch source memo is stamped with the policy; the "a kernel
+  generated before the call keeps its barriers" caveat of #480 is gone);
+  (2) `Execute.Window.set_epilogue_backend ~backend true` no longer enables
+  epilogue fusion on CUDA, OpenCL or Vulkan: it only undoes a switch-off, and
+  fusion there needs `Cross_kernel_contraction` for both kernels of the pair,
+  with which it now runs (it was opt-in by that call);
+  `Launch_epilogue.default_backends` is replaced by `Launch_epilogue.decide_pair`;
+  (3) `Sarek_policy.restrict Narrowing_proof`, `Auto_unroll`, `Launch_window`,
+  `Matrix_rewrite`, `Epilogue_fusion` switch the optimisation off. HIP and Metal
+  fusion, the window, the unroll and the matrix rewrite are unchanged when
+  nothing is granted or restricted (goldens unchanged:
+  `sarek/tests/codegen_golden/test_policy_golden.ml`). Coverage of epilogue
+  fusion by backend (device: RX 7900 XTX, 1109 of 4099 inputs separate fma from
+  multiply-then-add; "fused/unfused" = elements of 4099 that differ):
+
+  | Backend | Before | After | Evidence | Log |
+  |---|---|---|---|---|
+  | HIP | on, exact | on, exact, no grant | executed: 0 differ from unfused and from the Interpreter, five scenarios | `m2-e2e-epilogue-nozluda.txt` |
+  | CUDA/PTX | off; `set_epilogue_backend true` enabled it | needs the grant | executed through ZLUDA (not NVIDIA hardware): fused path taken, 0 differ | `m2-e2e-epilogue-zluda.txt` |
+  | CUDA/C | as CUDA/PTX | needs the grant | decision tested only (backend not enumerated here, no device run) | `m2-tests-pass-after.txt` |
+  | OpenCL (rusticl) | as CUDA/PTX | needs the grant | executed: fused path taken, 0 differ (forwarding, shared, chain) | `m2-e2e-epilogue-nozluda.txt` |
+  | Vulkan (RADV) | as CUDA/PTX | needs the grant | executed: fused path taken; forwarding and chain 0 differ, residual pair 4099 differ, at most 0.5 ulp of the product (within one contraction) | `m2-e2e-epilogue-nozluda.txt`, `m2-vulkan-subset.txt` |
+  | Metal | on, exact, while `Fp_exactness.is_exact "Metal"` | unchanged; refused if marked inexact even with the grant | not run here (pending the Mac run by the maintainer) | |
+  | Native, Interpreter, WebGPU | never fuse | never fuse | decision table, exhaustive (`test_sarek_policy_effective`) | `m2-tests-pass-after.txt` |
+
 - Epilogue fusion is on by default on Metal as well as HIP (H9,
   `specs/epilogue-fusion.md` FR-104; it was opt-in). Every Metal kernel, fused
   ones included, starts with `#pragma METAL fp contract(off)`, which on an

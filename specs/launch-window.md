@@ -87,8 +87,8 @@ operation, and check that it observes the write.
 As a caller or benchmark, I want to turn the window off, flush it explicitly,
 and count launches.
 **Acceptance Scenarios**:
-1. **Given** `SAREK_LAUNCH_WINDOW=0` in the environment or
-   `set_enabled false`, **When** a kernel is launched, **Then** it is issued
+1. **Given** `SAREK_LAUNCH_WINDOW=0` in the environment,
+   `set_enabled false` or `Sarek_policy.restrict Launch_window`, **When** a kernel is launched, **Then** it is issued
    immediately (pre-change behaviour).
 2. **Given** a run, **When** `stats ()` is read, **Then** it reports the
    launches submitted, the backend launches issued, the fused groups and the
