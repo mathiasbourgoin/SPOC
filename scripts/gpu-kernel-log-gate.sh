@@ -23,12 +23,15 @@
 # runs the command unguarded and says so).
 #
 # Patterns (extended regex, case-insensitive): GPU_LOG_GATE_PATTERN, default
-# 'page fault|ring .*timeout|Oops|BUG:'.
+# page fault, ring timeout/reset, GPU reset, Oops, BUG:, WARNING: CPU:,
+# 'blocked for more than', *ERROR*. GPU_LOG_GATE_SETTLE (default 3 s) is waited
+# before the post-run scan.
 # GPU_LOG_GATE_LOG_CMD overrides the log reader (it receives --since's value as
 # $1 and prints log lines); used by the red-path harness.
 set -uo pipefail
 
-PATTERN="${GPU_LOG_GATE_PATTERN:-page fault|ring .*timeout|Oops|BUG:}"
+PATTERN="${GPU_LOG_GATE_PATTERN:-page fault|ring .*(timeout|reset)|GPU reset|\\bOops|\\bBUG:|WARNING: CPU:|blocked for more than|\*ERROR\*}"
+SETTLE="${GPU_LOG_GATE_SETTLE:-3}"
 PRESCAN="${GPU_LOG_GATE_PRESCAN:-10 minutes ago}"
 
 if [ "${1:-}" = "--" ]; then shift; fi
@@ -62,6 +65,13 @@ scan() { # $1 = since
   return 0
 }
 
+# Positive control: a user who cannot read the system journal gets an empty,
+# successful answer, which would read as a clean log. Real reader only.
+if [ -z "${GPU_LOG_GATE_LOG_CMD:-}" ] && [ -z "$(journalctl -k --no-pager -q -n 1 2>/dev/null)" ]; then
+  echo "gpu-kernel-log-gate: the kernel log is empty or not readable by this user (journal group?)" >&2
+  if [ "${GPU_LOG_GATE_ALLOW_NO_LOG:-0}" != "1" ]; then exit 4; fi
+fi
+
 guarded=1
 scan "$PRESCAN"
 case $? in
@@ -85,6 +95,9 @@ started=$(date '+%Y-%m-%d %H:%M:%S')
 status=$?
 
 if [ "$guarded" = "1" ]; then
+  # journald ingests kmsg asynchronously and a ring timeout is logged when the
+  # job times out, possibly after a short-lived process has exited.
+  sleep "$SETTLE"
   scan "$started"
   case $? in
     0) ;;

@@ -420,7 +420,7 @@ let () =
           Alcotest.test_case
             "allocation retry re-raises the original error"
             `Quick
-            (with_batching_device test_alloc_retry_reraises);
+            (with_device test_alloc_retry_reraises);
           Alcotest.test_case
             "a signalled slot is reaped by a free"
             `Quick
@@ -455,6 +455,6 @@ let () =
           Alcotest.test_case
             "destroy twice, stale handle, free after destroy"
             `Quick
-            (with_batching_device test_destroy_twice_and_stale_free);
+            (with_device test_destroy_twice_and_stale_free);
         ] );
     ]

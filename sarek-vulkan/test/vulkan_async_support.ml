@@ -69,10 +69,9 @@ let with_batching_device f () =
     (fun device ->
       if batch_opted_in then f device
       else if is_amd_driver device then begin
-        Printf.printf
-          "[SKIP] batching is opt-in on AMD drivers \
-           (SPOC_VULKAN_BATCH=32;            Sarek #504)\n\
-           %!" ;
+        print_endline
+          "[SKIP] batching is opt-in on AMD drivers (SPOC_VULKAN_BATCH=32, \
+           Sarek #504)" ;
         Alcotest.skip ()
       end
       else begin
