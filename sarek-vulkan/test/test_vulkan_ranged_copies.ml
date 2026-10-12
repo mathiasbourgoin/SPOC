@@ -110,8 +110,75 @@ let range_len = 300_001
 
 let host_kinds device = [pageable; registered device; pinned device]
 
-(* One pairing: zero the device buffer, write a random range at an odd offset,
-   read the whole buffer back. *)
+let check_zero what blank out ~off ~len =
+  Alcotest.(check int)
+    what
+    0
+    (mismatches blank.bytes ~a_off:off out.bytes ~b_off:off len)
+
+(* Every byte outside the range is still zero and the range holds the source;
+   a positive control shows the comparison goes red on one flipped byte. *)
+let check_roundtrip what ~blank ~src ~out =
+  Alcotest.(check int)
+    (what ^ ": range bytes")
+    0
+    (mismatches src.bytes ~a_off:17 out.bytes ~b_off:range_off range_len) ;
+  check_zero
+    (what ^ ": bytes before the range stay zero")
+    blank
+    out
+    ~off:0
+    ~len:range_off ;
+  let after = range_off + range_len in
+  check_zero
+    (what ^ ": bytes after the range stay zero")
+    blank
+    out
+    ~off:after
+    ~len:(size - after) ;
+  let flipped = range_off + 5 in
+  Bigarray.Array1.set
+    out.bytes
+    flipped
+    (Char.chr
+       ((Char.code (Bigarray.Array1.get out.bytes flipped) + 1) land 255)) ;
+  Alcotest.(check int)
+    (what ^ ": control (one flipped byte is detected)")
+    1
+    (mismatches src.bytes ~a_off:17 out.bytes ~b_off:range_off range_len)
+
+let check_staging what ~label ~unmapped ~staged =
+  if label <> "pageable" && unmapped then
+    Alcotest.(check int)
+      (what ^ ": staging buffers used by imported copies")
+      0
+      staged ;
+  if label = "pageable" && unmapped then
+    Alcotest.(check bool) (what ^ ": pageable copies stage") true (staged >= 2)
+
+(* Write a random range at an odd offset of a zeroed device buffer, read the
+   whole buffer back; returns the staging buffers the two copies created. *)
+let write_and_read_back buf ~blank ~src ~out =
+  Transfer.host_to_device
+    ~src_ptr:blank.addr
+    ~dst:buf
+    ~dst_offset:0
+    ~byte_size:size ;
+  fill_random src.bytes ;
+  let staging0 = Atomic.get Memory.staging_buffers_created in
+  Transfer.host_to_device
+    ~src_ptr:(Nativeint.add src.addr (Nativeint.of_int 17))
+    ~dst:buf
+    ~dst_offset:range_off
+    ~byte_size:range_len ;
+  Bigarray.Array1.fill out.bytes '\255' ;
+  Transfer.device_to_host
+    ~src:buf
+    ~src_offset:0
+    ~dst_ptr:out.addr
+    ~byte_size:size ;
+  Atomic.get Memory.staging_buffers_created - staging0
+
 let roundtrip device ~unmapped make_host =
   with_unmapped unmapped (fun () ->
       let buf = Memory.alloc device size Bigarray.char in
@@ -121,70 +188,12 @@ let roundtrip device ~unmapped make_host =
         ((not unmapped) || buf.Memory.mapped_ptr = None) ;
       let blank = pageable size in
       Bigarray.Array1.fill blank.bytes '\000' ;
-      Transfer.host_to_device
-        ~src_ptr:blank.addr
-        ~dst:buf
-        ~dst_offset:0
-        ~byte_size:size ;
-      let src = make_host size in
-      fill_random src.bytes ;
-      let staging0 = Atomic.get Memory.staging_buffers_created in
-      Transfer.host_to_device
-        ~src_ptr:(Nativeint.add src.addr (Nativeint.of_int 17))
-        ~dst:buf
-        ~dst_offset:range_off
-        ~byte_size:range_len ;
-      let out = make_host size in
-      Bigarray.Array1.fill out.bytes '\255' ;
-      Transfer.device_to_host
-        ~src:buf
-        ~src_offset:0
-        ~dst_ptr:out.addr
-        ~byte_size:size ;
-      let staged = Atomic.get Memory.staging_buffers_created - staging0 in
+      let src = make_host size and out = make_host size in
+      let staged = write_and_read_back buf ~blank ~src ~out in
       let what = Printf.sprintf "%s, unmapped=%b" src.label unmapped in
-      Alcotest.(check int)
-        (what ^ ": range bytes")
-        0
-        (mismatches src.bytes ~a_off:17 out.bytes ~b_off:range_off range_len) ;
-      Alcotest.(check int)
-        (what ^ ": bytes before the range stay zero")
-        0
-        (mismatches blank.bytes ~a_off:0 out.bytes ~b_off:0 range_off) ;
-      let after = range_off + range_len in
-      Alcotest.(check int)
-        (what ^ ": bytes after the range stay zero")
-        0
-        (mismatches
-           blank.bytes
-           ~a_off:after
-           out.bytes
-           ~b_off:after
-           (size - after)) ;
-      (* Positive control: the comparison must see one flipped byte. *)
-      Bigarray.Array1.set
-        out.bytes
-        (range_off + 5)
-        (Char.chr
-           ((Char.code (Bigarray.Array1.get out.bytes (range_off + 5)) + 1)
-           land 255)) ;
-      Alcotest.(check int)
-        (what ^ ": control (one flipped byte is detected)")
-        1
-        (mismatches src.bytes ~a_off:17 out.bytes ~b_off:range_off range_len) ;
-      if src.label <> "pageable" && unmapped then
-        Alcotest.(check int)
-          (what ^ ": staging buffers used by imported copies")
-          0
-          staged ;
-      if src.label = "pageable" && unmapped then
-        Alcotest.(check bool)
-          (what ^ ": pageable copies stage")
-          true
-          (staged >= 2) ;
-      src.release () ;
-      out.release () ;
-      blank.release () ;
+      check_roundtrip what ~blank ~src ~out ;
+      check_staging what ~label:src.label ~unmapped ~staged ;
+      List.iter (fun h -> h.release ()) [src; out; blank] ;
       Memory.free buf)
 
 let test_roundtrips device =
@@ -211,82 +220,79 @@ let test_large_dma_write_into_mapped device =
   src.release () ;
   Memory.free buf
 
-let test_ordering_with_launches device =
-  let kernel = step_kernel device in
-  let bytes = n * 4 in
-  let a = Memory.alloc device n Bigarray.float32 in
-  let b = Memory.alloc device n Bigarray.float32 in
-  let host = pinned device bytes in
-  let floats =
-    Bigarray.array1_of_genarray
-      ( Ctypes.bigarray_of_ptr
-          Ctypes.array1
-          n
-          Bigarray.float32
-          (Ctypes.coerce
-             Ctypes.(ptr void)
-             Ctypes.(ptr float)
-             (Ctypes.ptr_of_raw_address host.addr))
-      |> fun x -> Bigarray.genarray_of_array1 x )
-  in
-  let stream = Stream.create device in
-  let other = Stream.create device in
+let float_view host n =
+  Bigarray.array1_of_genarray
+    ( Ctypes.bigarray_of_ptr
+        Ctypes.array1
+        n
+        Bigarray.float32
+        (Ctypes.coerce
+           Ctypes.(ptr void)
+           Ctypes.(ptr float)
+           (Ctypes.ptr_of_raw_address host.addr))
+    |> fun x -> Bigarray.genarray_of_array1 x )
+
+let count_wrong floats want =
+  let wrong = ref 0 in
+  for i = 0 to n - 1 do
+    if Bigarray.Array1.get floats i <> want then incr wrong
+  done ;
+  !wrong
+
+let upload_all host buf =
+  Transfer.host_to_device
+    ~src_ptr:host.addr
+    ~dst:buf
+    ~dst_offset:0
+    ~byte_size:(n * 4)
+
+let download_all host buf =
+  Transfer.device_to_host
+    ~src:buf
+    ~src_offset:0
+    ~dst_ptr:host.addr
+    ~byte_size:(n * 4)
+
+(* copy -> launch -> launch (both unsynchronised, on two streams) -> copy back *)
+let ordering_rounds kernel ~a ~b ~host ~floats ~stream ~other =
   for round = 0 to 19 do
     Bigarray.Array1.fill floats (float_of_int (round * 10)) ;
-    (* copy -> launch (unsynchronised, on a stream) -> copy back at once *)
-    Transfer.host_to_device
-      ~src_ptr:host.addr
-      ~dst:a
-      ~dst_offset:0
-      ~byte_size:bytes ;
+    upload_all host a ;
     launch_step ~stream kernel [a; b] ;
     launch_step ~stream:other kernel [b; a] ;
-    Transfer.device_to_host
-      ~src:a
-      ~src_offset:0
-      ~dst_ptr:host.addr
-      ~byte_size:bytes ;
-    let want = float_of_int ((round * 10) + 2) in
-    let wrong = ref 0 in
-    for i = 0 to n - 1 do
-      if Bigarray.Array1.get floats i <> want then incr wrong
-    done ;
+    download_all host a ;
     Alcotest.(check int)
       (Printf.sprintf "round %d: copy -> launch -> launch -> copy back" round)
       0
-      !wrong
-  done ;
-  (* A copy over the input of a launch that has not run yet must not change what
-     the launch reads. *)
+      (count_wrong floats (float_of_int ((round * 10) + 2)))
+  done
+
+(* A copy over the input of a launch that has not run yet must not change what
+   the launch reads. *)
+let overwrite_rounds kernel ~a ~b ~host ~floats ~stream =
   for round = 0 to 19 do
     Bigarray.Array1.fill floats (float_of_int round) ;
-    Transfer.host_to_device
-      ~src_ptr:host.addr
-      ~dst:a
-      ~dst_offset:0
-      ~byte_size:bytes ;
+    upload_all host a ;
     launch_step ~stream kernel [a; b] ;
     Bigarray.Array1.fill floats (-1000.0) ;
-    Transfer.host_to_device
-      ~src_ptr:host.addr
-      ~dst:a
-      ~dst_offset:0
-      ~byte_size:bytes ;
-    Transfer.device_to_host
-      ~src:b
-      ~src_offset:0
-      ~dst_ptr:host.addr
-      ~byte_size:bytes ;
-    let want = float_of_int (round + 1) in
-    let wrong = ref 0 in
-    for i = 0 to n - 1 do
-      if Bigarray.Array1.get floats i <> want then incr wrong
-    done ;
+    upload_all host a ;
+    download_all host b ;
     Alcotest.(check int)
       (Printf.sprintf "round %d: copy over a pending launch's input" round)
       0
-      !wrong
-  done ;
+      (count_wrong floats (float_of_int (round + 1)))
+  done
+
+let test_ordering_with_launches device =
+  let kernel = step_kernel device in
+  let a = Memory.alloc device n Bigarray.float32 in
+  let b = Memory.alloc device n Bigarray.float32 in
+  let host = pinned device (n * 4) in
+  let floats = float_view host n in
+  let stream = Stream.create device in
+  let other = Stream.create device in
+  ordering_rounds kernel ~a ~b ~host ~floats ~stream ~other ;
+  overwrite_rounds kernel ~a ~b ~host ~floats ~stream ;
   Stream.destroy stream ;
   Stream.destroy other ;
   host.release () ;

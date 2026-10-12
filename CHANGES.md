@@ -20,9 +20,11 @@
   device-buffer suite now runs on Vulkan (`test_device_buffers`), and
   `test_vulkan_ranged_copies` (byte-exact on every path with a positive
   control, staging-free assertion, ordering against unsynchronised launches,
-  misuse, `event_query`); bench `bench_vulkan_pinned_copy`. Not yet done: real
-  asynchronous copies, a staging pool, and the whole-buffer
-  `Memory.device_to_host`, which still reads the BAR mapping directly.
+  misuse, `event_query`); bench `bench_vulkan_pinned_copy`. The whole-buffer
+  `Memory.device_to_host` no longer reads an uncached BAR mapping either
+  (0.03 to 2.6 GB/s at 64 MiB). `stream_wait_event` is recorded: synchronising
+  the waiting stream also waits for the event. Not yet done: real asynchronous
+  copies and a staging pool.
 
 - The int32 matrix-product rewrite runs on Vulkan and is offered on CUDA/C
   (H4, `specs/matrix-pattern-rewrite.md`, "Subgroup width and backends"). The

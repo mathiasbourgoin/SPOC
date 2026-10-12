@@ -918,6 +918,11 @@ let get idx =
       let want_host_import =
         has_ext Vulkan_api_host_ffi.extension_name
         && effective_api_version >= (1, 1)
+        && Vulkan_api_host_ffi.buffer_import_supported
+             phys_dev
+             ~usage:
+               (vk_buffer_usage_transfer_src_bit
+              lor vk_buffer_usage_transfer_dst_bit)
       in
       let requested_extensions =
         List.filter_map

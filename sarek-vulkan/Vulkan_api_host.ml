@@ -32,11 +32,15 @@ type import = {
   memory : vk_device_memory;
 }
 
-(** [import = None] once the device is gone: the host memory of an [owned] entry
-    then stays valid until {!free_pinned}. *)
-type entry = {mutable import : import option; owned : bool}
+(** One import per (device, address). [import = None] once the device is gone: a
+    [registered] entry then stays as a tombstone so a late {!unregister}
+    succeeds quietly. *)
+type entry = {mutable import : import option; registered : bool}
 
 let entries : (int * nativeint, entry) Hashtbl.t = Hashtbl.create 8
+
+(** Live {!alloc_pinned} blocks, whichever devices import them. *)
+let owned_blocks : (nativeint, unit) Hashtbl.t = Hashtbl.create 8
 
 let lock = Mutex.create ()
 
@@ -84,8 +88,9 @@ let create_import_buffer (device : Device.t) length =
   ignore (Sys.opaque_identity ext) ;
   !@buffer
 
-(** Memory type bits both the buffer and the host pointer allow. *)
-let importable_type_bits (device : Device.t) buffer host_ptr =
+(** Memory type bits both the buffer and the host pointer allow, and the size
+    the buffer requires. *)
+let import_requirements (device : Device.t) buffer host_ptr =
   let reqs = make vk_memory_requirements in
   vkGetBufferMemoryRequirements device.Device.device buffer (addr reqs) ;
   let props = make Ffi.host_pointer_properties in
@@ -101,8 +106,9 @@ let importable_type_bits (device : Device.t) buffer host_ptr =
        device.Device.device
        host_ptr
        (addr props)) ;
-  Unsigned.UInt32.to_int (getf reqs mem_req_memoryTypeBits)
-  land Unsigned.UInt32.to_int (getf props Ffi.hp_memoryTypeBits)
+  ( Unsigned.UInt32.to_int (getf reqs mem_req_memoryTypeBits)
+    land Unsigned.UInt32.to_int (getf props Ffi.hp_memoryTypeBits),
+    Unsigned.UInt64.to_int (getf reqs mem_req_size) )
 
 let allocate_import (device : Device.t) ~type_index ~length host_ptr =
   let import_info = make Ffi.import_host_pointer_info in
@@ -125,8 +131,24 @@ let allocate_import (device : Device.t) ~type_index ~length host_ptr =
   ignore (Sys.opaque_identity import_info) ;
   !@memory
 
+let pick_import_type (device : Device.t) bits =
+  match
+    Vulkan_api_memory.find_memory_type
+      device
+      bits
+      (vk_memory_property_host_visible_bit
+     lor vk_memory_property_host_coherent_bit)
+  with
+  | Some index -> index
+  | None ->
+      Vulkan_error.raise_error
+        (Vulkan_error.context_error
+           "host import"
+           "no HOST_VISIBLE | HOST_COHERENT memory type accepts this host \
+            pointer")
+
 (** Import the pages covering the range from [addr] of [byte_size] bytes on
-    [device]. *)
+    [device]. The buffer's own size requirement must fit the rounded range. *)
 let import_range (device : Device.t) ~addr ~byte_size =
   let alignment = alignment_of device in
   let base = round_down addr alignment in
@@ -137,24 +159,21 @@ let import_range (device : Device.t) ~addr ~byte_size =
   let buffer = create_import_buffer device length in
   let memory = ref vk_null_handle in
   try
-    let bits = importable_type_bits device buffer host_ptr in
-    let type_index =
-      match
-        Vulkan_api_memory.find_memory_type
-          device
-          bits
-          (vk_memory_property_host_visible_bit
-         lor vk_memory_property_host_coherent_bit)
-      with
-      | Some index -> index
-      | None ->
-          Vulkan_error.raise_error
-            (Vulkan_error.context_error
-               "host import"
-               "no HOST_VISIBLE | HOST_COHERENT memory type accepts this host \
-                pointer")
-    in
-    memory := allocate_import device ~type_index ~length host_ptr ;
+    let bits, required = import_requirements device buffer host_ptr in
+    if required > length then
+      Vulkan_error.raise_error
+        (Vulkan_error.context_error
+           "host import"
+           (Printf.sprintf
+              "the buffer needs %d bytes, the imported range has %d"
+              required
+              length)) ;
+    memory :=
+      allocate_import
+        device
+        ~type_index:(pick_import_type device bits)
+        ~length
+        host_ptr ;
     check
       "vkBindBufferMemory (host import)"
       (vkBindBufferMemory
@@ -208,17 +227,39 @@ let find (device : Device.t) ~addr ~byte_size =
         entries
         None)
 
+let page_size =
+  lazy ((Foreign.foreign "getpagesize" (void @-> returning int)) ())
+
+(** A registered range is imported as the pages around it; the extension may ask
+    for a coarser granule than a page, and rounding to it would import memory
+    the process may not own. *)
+let check_registrable (device : Device.t) =
+  let alignment = alignment_of device in
+  if alignment > Lazy.force page_size then
+    refuse
+      (Printf.sprintf
+         "register_host (the device imports host memory in %d-byte granules, \
+          larger than a page)"
+         alignment)
+
 let register (device : Device.t) addr ~byte_size =
   if byte_size <= 0 then
     invalid_arg "Vulkan.Async.register_host: byte_size must be positive" ;
-  if Mutex.protect lock (fun () -> Hashtbl.mem entries (device.Device.id, addr))
-  then invalid_arg "Vulkan.Async.register_host: address already registered" ;
+  check_registrable device ;
+  let live =
+    Mutex.protect lock (fun () ->
+        match Hashtbl.find_opt entries (device.Device.id, addr) with
+        | Some {import = Some _; _} -> true
+        | Some {import = None; _} | None -> false)
+  in
+  if live then
+    invalid_arg "Vulkan.Async.register_host: address already registered" ;
   let import = import_range device ~addr ~byte_size in
-  add_entry device addr {import = Some import; owned = false}
+  add_entry device addr {import = Some import; registered = true}
 
 let unregister (device : Device.t) addr =
   match take_entry device addr with
-  | Some ({owned = false; _} as entry) -> release_entry entry
+  | Some ({registered = true; _} as entry) -> release_entry entry
   | Some entry ->
       add_entry device addr entry ;
       invalid_arg "Vulkan.Async.unregister_host: not a registered range"
@@ -260,23 +301,41 @@ let alloc_pinned (device : Device.t) ~byte_size =
   in
   match import_range device ~addr ~byte_size with
   | import ->
-      add_entry device addr {import = Some import; owned = true} ;
+      Mutex.protect lock (fun () -> Hashtbl.replace owned_blocks addr ()) ;
+      add_entry device addr {import = Some import; registered = false} ;
       addr
   | exception e ->
       free_aligned addr ;
       raise e
 
-let free_pinned (device : Device.t) addr =
-  match take_entry device addr with
-  | Some ({owned = true; _} as entry) ->
-      release_entry entry ;
-      free_aligned addr
-  | Some entry ->
-      add_entry device addr entry ;
-      invalid_arg "Vulkan.Async.free_pinned: not a pinned allocation"
-  | None -> invalid_arg "Vulkan.Async.free_pinned: not a pinned allocation"
+(** Releases the block's imports on every device, then the memory. *)
+let free_pinned (_device : Device.t) addr =
+  let owned =
+    Mutex.protect lock (fun () ->
+        let owned = Hashtbl.mem owned_blocks addr in
+        Hashtbl.remove owned_blocks addr ;
+        owned)
+  in
+  if not owned then
+    invalid_arg "Vulkan.Async.free_pinned: not a pinned allocation" ;
+  let imports =
+    Mutex.protect lock (fun () ->
+        let found =
+          Hashtbl.fold
+            (fun key entry acc ->
+              if snd key = addr && not entry.registered then (key, entry) :: acc
+              else acc)
+            entries
+            []
+        in
+        List.iter (fun (key, _) -> Hashtbl.remove entries key) found ;
+        found)
+  in
+  List.iter (fun (_, entry) -> release_entry entry) imports ;
+  free_aligned addr
 
-(* The imports are children of the VkDevice and go before it. A pinned
+(* The imports are children of the VkDevice and go before it. A registered
+   range keeps a tombstone (a late [unregister] succeeds); a pinned
    allocation stays valid host memory until [free_pinned]. *)
 let () =
   Spoc_framework.Cache_hooks.on_device_destroy (fun ~backend index ->
@@ -298,7 +357,7 @@ let () =
         Mutex.protect lock (fun () ->
             Hashtbl.filter_map_inplace
               (fun (id, _) entry ->
-                if id = index && not entry.owned then None else Some entry)
+                if id = index && not entry.registered then None else Some entry)
               entries) ;
         Option.iter raise !first_error
       end)

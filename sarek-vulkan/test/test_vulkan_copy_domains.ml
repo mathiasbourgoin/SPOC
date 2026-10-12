@@ -56,6 +56,9 @@ let worker device id =
 
 let test_concurrent_copies device =
   Atomic.set Memory.force_unmapped true ;
+  (* The FFI bindings are lazy and forcing one from two domains at once raises
+     [Lazy.Undefined]: a pre-existing property of the backend, so warm up. *)
+  ignore (worker device 99) ;
   let results =
     Fun.protect
       ~finally:(fun () -> Atomic.set Memory.force_unmapped false)

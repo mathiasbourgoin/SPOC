@@ -93,6 +93,87 @@ let emh_minImportedHostPointerAlignment =
 
 let () = seal external_memory_host_properties
 
+let structure_type_physical_device_external_buffer_info = 1000071002
+
+let structure_type_external_buffer_properties = 1000071003
+
+(** [VK_EXTERNAL_MEMORY_FEATURE_IMPORTABLE_BIT]. *)
+let memory_feature_importable = 0x4
+
+(** VkPhysicalDeviceExternalBufferInfo. *)
+type external_buffer_query
+
+let external_buffer_query : external_buffer_query structure typ =
+  structure "VkPhysicalDeviceExternalBufferInfo"
+
+let query_sType = field external_buffer_query "sType" uint32_t
+
+let query_pNext = field external_buffer_query "pNext" (ptr void)
+
+let query_flags = field external_buffer_query "flags" uint32_t
+
+let query_usage = field external_buffer_query "usage" uint32_t
+
+let query_handleType = field external_buffer_query "handleType" uint32_t
+
+let () = seal external_buffer_query
+
+(** VkExternalBufferProperties, with the leading field of its embedded
+    VkExternalMemoryProperties flattened: only [externalMemoryFeatures] is read,
+    and the two handle-type masks that follow it are padding here. *)
+type external_buffer_result
+
+let external_buffer_result : external_buffer_result structure typ =
+  structure "VkExternalBufferProperties"
+
+let result_sType = field external_buffer_result "sType" uint32_t
+
+let result_pNext = field external_buffer_result "pNext" (ptr void)
+
+let result_features =
+  field external_buffer_result "externalMemoryFeatures" uint32_t
+
+let result_exportFrom =
+  field external_buffer_result "exportFromImportedHandleTypes" uint32_t
+
+let result_compatible =
+  field external_buffer_result "compatibleHandleTypes" uint32_t
+
+let () = seal external_buffer_result
+
+let vkGetPhysicalDeviceExternalBufferProperties_lazy =
+  foreign_vk_lazy
+    "vkGetPhysicalDeviceExternalBufferProperties"
+    (vk_physical_device_ptr @-> ptr external_buffer_query
+   @-> ptr external_buffer_result @-> returning void)
+
+(** Whether [phys_dev] can import a host allocation as a transfer buffer
+    ([vkGetPhysicalDeviceExternalBufferProperties], core in Vulkan 1.1). *)
+let buffer_import_supported phys_dev ~usage =
+  let query = make external_buffer_query in
+  setf
+    query
+    query_sType
+    (u32 structure_type_physical_device_external_buffer_info) ;
+  setf query query_pNext null ;
+  setf query query_flags (u32 0) ;
+  setf query query_usage (u32 usage) ;
+  setf query query_handleType (u32 handle_type_host_allocation) ;
+  let result = make external_buffer_result in
+  setf result result_sType (u32 structure_type_external_buffer_properties) ;
+  setf result result_pNext null ;
+  setf result result_features (u32 0) ;
+  setf result result_exportFrom (u32 0) ;
+  setf result result_compatible (u32 0) ;
+  Lazy.force
+    vkGetPhysicalDeviceExternalBufferProperties_lazy
+    phys_dev
+    (addr query)
+    (addr result) ;
+  Unsigned.UInt32.to_int (getf result result_features)
+  land memory_feature_importable
+  <> 0
+
 (** [minImportedHostPointerAlignment] of [phys_dev]: the alignment required of
     both the address and the size of an imported range. Only meaningful when the
     device advertises {!extension_name}. *)
@@ -119,29 +200,54 @@ let vkGetDeviceProcAddr_lazy =
     "vkGetDeviceProcAddr"
     (vk_device_ptr @-> string @-> returning (ptr void))
 
+type properties_fn =
+  vk_device structure ptr ->
+  Unsigned.uint32 ->
+  unit ptr ->
+  host_pointer_properties structure ptr ->
+  vk_result
+
+(* Resolved once: the loader returns the same trampoline for every device. *)
+let properties_fn : properties_fn option ref = ref None
+
+let properties_fn_lock = Mutex.create ()
+
+let resolve_properties_fn device : properties_fn =
+  Mutex.protect properties_fn_lock (fun () ->
+      match !properties_fn with
+      | Some fn -> fn
+      | None ->
+          let raw =
+            Lazy.force
+              vkGetDeviceProcAddr_lazy
+              device
+              "vkGetMemoryHostPointerPropertiesEXT"
+          in
+          if is_null raw then
+            Vulkan_error.raise_error
+              (Vulkan_error.feature_not_supported
+                 "vkGetMemoryHostPointerPropertiesEXT (the loader does not \
+                  know it)")
+          else begin
+            let fn =
+              coerce
+                (ptr void)
+                (Foreign.funptr
+                   (vk_device_ptr @-> uint32_t @-> ptr void
+                   @-> ptr host_pointer_properties
+                   @-> returning vk_result))
+                raw
+            in
+            properties_fn := Some fn ;
+            fn
+          end)
+
 (** [vkGetMemoryHostPointerPropertiesEXT]: the memory types [host_ptr] can be
     imported as. The device must have been created with {!extension_name}
     enabled. *)
 let get_memory_host_pointer_properties device host_ptr props =
-  let fn =
-    Lazy.force
-      vkGetDeviceProcAddr_lazy
-      device
-      "vkGetMemoryHostPointerPropertiesEXT"
-  in
-  if is_null fn then
-    Vulkan_error.raise_error
-      (Vulkan_error.feature_not_supported
-         "vkGetMemoryHostPointerPropertiesEXT (the loader does not know it)")
-  else
-    (coerce
-       (ptr void)
-       (Foreign.funptr
-          (vk_device_ptr @-> uint32_t @-> ptr void
-          @-> ptr host_pointer_properties
-          @-> returning vk_result))
-       fn)
-      device
-      (u32 handle_type_host_allocation)
-      host_ptr
-      props
+  (resolve_properties_fn device)
+    device
+    (u32 handle_type_host_allocation)
+    host_ptr
+    props

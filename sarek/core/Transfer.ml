@@ -1826,9 +1826,9 @@ let staged_copy st ~(dev : Device.t) ~(stream : stream) ~src_addr ~byte_size
     sarek-hip/test/stress_hip_staged_launches.ml).
 
     HIP, CUDA: as above. Native, Interpreter, Metal, Vulkan (no asynchronous
-    copies): a synchronous {!copy_to_device}, complete on return (on Metal and
-    Vulkan it first waits for kernels that use [dst]). OpenCL, WebGPU:
-    [Feature_not_supported]. *)
+    copies): a synchronous {!copy_to_device}, complete on return (on Metal it
+    first waits for kernels that use [dst]; on Vulkan for every pending launch
+    of the device). OpenCL, WebGPU: [Feature_not_supported]. *)
 let stage_to_device (type a b) ?(stream : stream option)
     (src : (a, b, Bigarray.c_layout) Bigarray.Array1.t) ~(dst : (a, b) Vector.t)
     ~(dst_offset : int) : unit =
