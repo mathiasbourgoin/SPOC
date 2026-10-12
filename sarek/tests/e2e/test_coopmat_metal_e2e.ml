@@ -11,8 +11,10 @@
  *   1. codegen (any platform): the emitted MSL names the instructions;
  *   2. refusals BEFORE the opt-in, on every Metal device: the f16
  *      configuration is refused for the policy reason, an integer
- *      configuration for the device reason, a partial-SIMD-group block;
- *   3. the opt-in, then on Metal devices: single tiles bit-equal to the
+ *      configuration for the device reason;
+ *   3. the opt-in, then a partial-SIMD-group block (refused for the 32-wide
+ *      rule: before the opt-in the policy gate fires first), then on Metal
+ *      devices: single tiles bit-equal to the
  *      interpreter AND to the closed form measured in
  *      docs/design/f16-relaxed-accuracy.md §2 ("accumulator = C, then add the
  *      products in index order, all in binary32"), every row/column-major
@@ -456,10 +458,12 @@ let () =
     devices ;
   check_codegen () ;
   List.iter check_refusals metal ;
-  List.iter check_block_refusal metal ;
   C.accept_relaxed_accumulation
     ~reason:
       "test_coopmat_metal_e2e: the Metal closed form is what is under test" ;
+  (* After the opt-in: before it the policy gate fires first and the 32-wide
+     rule is never reached. *)
+  List.iter check_block_refusal metal ;
   (match metal with
   | [] -> print_endline "[SKIP] no Metal device: the device checks did not run"
   | _ ->
