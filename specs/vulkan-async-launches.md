@@ -21,8 +21,8 @@ the point where the host blocks moves). It was made opt-in for a while (Sarek
 #504: GPU write page faults and gfx ring resets with the async tests on RADV);
 it is the default again because a validation-layer run (synchronisation and
 GPU-assisted) and single- and two-process gated runs found no hazard. The cause
-of the faults is unconfirmed (hypothesis: collateral of host import, #503, run
-in parallel with the async tests), the issue stays open, and
+of the faults is unconfirmed (an import-related cause is a hypothesis, not
+established), the issue stays open, and
 `SPOC_VULKAN_BATCH=1` is the fallback.
 
 ## Clarifications

@@ -113,19 +113,23 @@
   **The cause of #504 is unconfirmed and the issue stays open.** Evidence for restoring: the
   Khronos validation layer (synchronisation validation and GPU-assisted validation, batch 32)
   reported no hazard, and every pair of the async tests (10-15 repetitions each, in parallel) and
-  single runs, each under the kernel-log gate, were clean. Hypothesis, not a finding: the faults
-  were collateral of host-memory import (#503), because the test stanza set
-  `SPOC_VULKAN_HOST_IMPORT=1` for all seven test executables and the import tests ran in parallel
-  with the async tests; since then import is refused on AMD even when opted in. The test stanza now
-  sets `SPOC_VULKAN_HOST_IMPORT=0` for the async, event and copy-domain tests and `1` only for
-  `test_vulkan_ranged_copies` and `test_vulkan_host_lifecycle` (import variants that skip when
-  import is refused); every Vulkan GPU test holds one dune lock (`vulkan-gpu`), so no import runs
-  beside an async test and no two of them run at once. The batching tests run again on AMD
+  single runs, each under the kernel-log gate, were clean (SPOC 5cc8f0b5, RX 7900 XTX only,
+  raw output in the owner comment on #504, 2026-10-12; the owner accepted restoring batching
+  without the attended run of the old stanza that comment suggested). "No failure observed" does
+  not separate a fixed state from an unreproduced one, hence the open issue. The import
+  hypothesis (#503 userptr work running beside the async tests) is not established: the git
+  history does not show the import tests existing at the time of the faults. What changes in the
+  tests regardless: the async, event and copy-domain tests set `SPOC_VULKAN_HOST_IMPORT=0` and
+  only `test_vulkan_ranged_copies` and `test_vulkan_host_lifecycle` set `1` (their import variants
+  skip when import is refused, always on AMD); every Vulkan test that may open a device holds one
+  dune lock (`vulkan-gpu`), so no import runs beside an async test and no two of them run at
+  once. The batching tests run again on AMD
   drivers (their skip-on-AMD logic is gone) and still set batch 32 themselves. The
   `scripts/gpu-kernel-log-gate.sh` wiring of `make test-vulkan-gpu`, `e2e-gpu` and `e2e-hip` is
   unchanged. If a fault recurs, run with `SPOC_VULKAN_BATCH=1` and report it on #504. The host
-  cost of a launch is about 6.6 us again (59 us at batch 1). The import safety text below is
-  unchanged: import stays opt-in and is refused on AMD drivers. The batch size is a tuning
+  cost of a launch is 6.35 us (3 arguments) / 8.18 us (10) at batch 32 against 52.6 / 55.5 us at
+  batch 1 (`bench_vulkan_launch_overhead`, 10000 launches, RX 7900 XTX, #504 comment). The import
+  safety text above is unchanged: import stays opt-in and is refused on AMD drivers. The batch size is a tuning
   (family T), not a per-kernel decision, so `SAREK_EXPLAIN` does not report it (as for
   `SPOC_METAL_BATCH`).
 

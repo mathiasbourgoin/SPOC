@@ -13,17 +13,20 @@
 (test
  (name test_vulkan_cache_two_kernels)
  (modules test_vulkan_cache_two_kernels)
- (libraries sarek_vulkan alcotest))
+ (libraries sarek_vulkan alcotest)
+ (locks vulkan-gpu))
 
 (test
  (name test_vulkan_ffi_check_funnel)
  (modules test_vulkan_ffi_check_funnel)
- (libraries sarek_vulkan sarek_backend_error alcotest))
+ (libraries sarek_vulkan sarek_backend_error alcotest)
+ (locks vulkan-gpu))
 
 (test
  (name test_vulkan_buffer_index_validation)
  (modules test_vulkan_buffer_index_validation)
- (libraries sarek_vulkan spoc_framework alcotest str))
+ (libraries sarek_vulkan spoc_framework alcotest str)
+ (locks vulkan-gpu))
 
 (test
  (name test_vulkan_error_observability)
@@ -33,12 +36,14 @@
 (test
  (name test_vulkan_f16_tripwire)
  (modules test_vulkan_f16_tripwire)
- (libraries sarek_vulkan spoc_framework alcotest))
+ (libraries sarek_vulkan spoc_framework alcotest)
+ (locks vulkan-gpu))
 
 (test
  (name test_vulkan_coopmat_capability)
  (modules test_vulkan_coopmat_capability)
- (libraries sarek_vulkan spoc_framework sarek_ir alcotest str))
+ (libraries sarek_vulkan spoc_framework sarek_ir alcotest str)
+ (locks vulkan-gpu))
 
 ; backlog-62 slice 3 — the integer coopmat path, executed against an exact host
 ; oracle. A `test` and not a `probe` because the claim it defends (integer
@@ -49,7 +54,8 @@
 (test
  (name test_vulkan_coopmat_integer)
  (modules test_vulkan_coopmat_integer)
- (libraries sarek_vulkan spoc_framework sarek_ir alcotest astring))
+ (libraries sarek_vulkan spoc_framework sarek_ir alcotest astring)
+ (locks vulkan-gpu))
 
 ; backlog-214 - the Vulkan plugin refuses a non-empty ~soa_params instead of
 ; answering an SoA argument list with AoS source. Pure codegen, no device.
@@ -68,6 +74,7 @@
  (name test_vulkan_fence_sync)
  (modules test_vulkan_fence_sync)
  (libraries sarek_vulkan spoc_framework sarek_backend_error alcotest)
+ (locks vulkan-gpu)
  (action
   (setenv
    SPOC_VULKAN_FENCE_TIMEOUT_S
@@ -95,6 +102,7 @@
   sarek_backend_error
   alcotest
   ctypes)
+ (locks vulkan-gpu)
  (action
   (setenv
    SPOC_VULKAN_HOST_IMPORT
@@ -125,7 +133,7 @@
 ; synchronisation ends in an error rather than a hang.
 ;
 ; Host-memory import is switched off for these (SPOC_VULKAN_HOST_IMPORT=0, also
-; against an inherited setting). Every test that touches the GPU holds the
+; against an inherited setting). Every test that may open a device holds the
 ; `vulkan-gpu` lock, so no import runs beside an async test and no two of them
 ; run at once (Sarek #503/#504).
 
