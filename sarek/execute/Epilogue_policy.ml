@@ -52,6 +52,34 @@ let set_backend_enabled ~(backend : string) (b : bool) =
   in
   update ()
 
+(* The policy half of the decision per (backend, producer, consumer), valid
+   for one [Sarek_policy.version]: a repeated submit of a pair computes no
+   effective policy. The switch-off list and the exactness mark are not in the
+   version and are read at every call. *)
+let pair_cache :
+    (string * string * string, int * Sarek_policy.decision) Hashtbl.t =
+  Hashtbl.create 32
+
+let pair_lock = Mutex.create ()
+
+let policy_decision ~backend ~producer ~consumer =
+  let key = (backend, producer, consumer) in
+  (* The version is read before the policy, as {!Sarek_policy.version} asks. *)
+  let version = Sarek_policy.version () in
+  match Mutex.protect pair_lock (fun () -> Hashtbl.find_opt pair_cache key) with
+  | Some (v, decision) when v = version -> decision
+  | Some _ | None ->
+      let decision =
+        Sarek_policy.decide
+          (Sarek_policy.effective_for ~kernels:[producer; consumer])
+          Sarek_policy.Epilogue_fusion
+          ~backend
+      in
+      Mutex.protect pair_lock (fun () ->
+          if Hashtbl.length pair_cache >= 4096 then Hashtbl.reset pair_cache ;
+          Hashtbl.replace pair_cache key (version, decision)) ;
+      decision
+
 (** Whether the epilogue of [consumer] may be merged into [producer] on
     [backend]: the backend is not switched off or inexact, and
     {!Sarek_policy.decide} allows {!Sarek_policy.Epilogue_fusion} for the meet
@@ -62,8 +90,21 @@ let decide_pair ~(backend : string) ~(producer : string) ~(consumer : string) :
     Sarek_policy.Refused ("epilogue fusion switched off on " ^ backend)
   else if not (Spoc_framework_registry.Fp_exactness.is_exact backend) then
     Sarek_policy.Refused (backend ^ " lost its floating-point exactness")
-  else
+  else policy_decision ~backend ~producer ~consumer
+
+(** Whether fusion can run on [backend] under the process grants alone: not
+    switched off, exact, and allowed by {!Sarek_policy.decide} for the process
+    budget (HIP and Metal; the others once [Cross_kernel_contraction] is granted
+    at process scope). Kernel-scoped grants are not seen: the decision per pair
+    is {!decide_pair}. *)
+let available (backend : string) =
+  enabled backend
+  &&
+  match
     Sarek_policy.decide
-      (Sarek_policy.effective_for ~kernels:[producer; consumer])
+      (Sarek_policy.effective_for ~kernels:[])
       Sarek_policy.Epilogue_fusion
       ~backend
+  with
+  | Sarek_policy.Applied _ -> true
+  | Sarek_policy.Refused _ -> false

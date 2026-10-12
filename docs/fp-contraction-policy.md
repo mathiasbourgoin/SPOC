@@ -2714,9 +2714,10 @@ process scope) for both kernels of a pair; `Execute.Window.set_epilogue_backend
 `specs/optimisation-policy.md`). `sarek/tests/e2e/test_epilogue_exact.ml`
 asserts fused == unfused and fused == Interpreter on the exact backends (HIP,
 Metal), and on the others asserts that the fused path was taken, records the
-differing elements and asserts the bound "one contraction per element": at most
-1 ulp of the result after an add (2 after two chained epilogues), at most 1 ulp
-of the product for the residual pair `a*b - t`. It cannot detect a deviation on other inputs or shapes, nor on
+differing elements and asserts the bound "one contraction per element":
+|f - u| <= ulp(a*b)/2 + ulp(r), where u is the unfused result round32(round32(a*b) + c), f the fused one round32(a*b + c) and r the larger of |f| and |u|. That is a rounding error of the product, not "1 ulp of the result": with
+`a = b = 1 + 2^-15`, `c = -1` the two differ by 2^-30, over a hundred ulps of the
+result (`test_contraction_bound`). It cannot detect a deviation on other inputs or shapes, nor on
 hardware this host does not have. Inputs: 1109 of 4099 elements where
 `fma(a,b,c)` differs from `round(round(a*b)+c)` (the positive control).
 

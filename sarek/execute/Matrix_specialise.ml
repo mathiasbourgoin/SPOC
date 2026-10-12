@@ -168,9 +168,19 @@ let entry k =
           Ir_memo.set facts memo_key e ;
           e)
 
-let build k g lowering ~subgroup ~frag = function
-  | Staged -> Rw.kernel ~subgroup ~frag k g lowering
-  | Direct waves -> Direct.kernel k g ~waves
+(* The rewritten kernel is renamed (<name>_sarek_mm): it has the budget of the
+   kernel it came from, for the capability gate and the interpreter. *)
+let build k g lowering ~subgroup ~frag variant =
+  let built =
+    match variant with
+    | Staged -> Rw.kernel ~subgroup ~frag k g lowering
+    | Direct waves -> Direct.kernel k g ~waves
+  in
+  Result.iter
+    (fun (rk : kernel) ->
+      Sarek_policy.register_derived ~name:rk.kern_name ~from:k.kern_name)
+    built ;
+  built
 
 let kernel_for e k g lowering variant ~subgroup ~frag =
   let key = (lowering, variant, subgroup, frag) in

@@ -168,15 +168,30 @@
   fusion by backend (device: RX 7900 XTX, 1109 of 4099 inputs separate fma from
   multiply-then-add; "fused/unfused" = elements of 4099 that differ):
 
-  | Backend | Before | After | Evidence | Log |
-  |---|---|---|---|---|
-  | HIP | on, exact | on, exact, no grant | executed: 0 differ from unfused and from the Interpreter, five scenarios | `m2-e2e-epilogue-nozluda.txt` |
-  | CUDA/PTX | off; `set_epilogue_backend true` enabled it | needs the grant | executed through ZLUDA (not NVIDIA hardware): fused path taken, 0 differ | `m2-e2e-epilogue-zluda.txt` |
-  | CUDA/C | as CUDA/PTX | needs the grant | decision tested only (backend not enumerated here, no device run) | `m2-tests-pass-after.txt` |
-  | OpenCL (rusticl) | as CUDA/PTX | needs the grant | executed: fused path taken, 0 differ (forwarding, shared, chain) | `m2-e2e-epilogue-nozluda.txt` |
-  | Vulkan (RADV) | as CUDA/PTX | needs the grant | executed: fused path taken; forwarding and chain 0 differ, residual pair 4099 differ, at most 0.5 ulp of the product (within one contraction) | `m2-e2e-epilogue-nozluda.txt`, `m2-vulkan-subset.txt` |
-  | Metal | on, exact, while `Fp_exactness.is_exact "Metal"` | unchanged; refused if marked inexact even with the grant | not run here (pending the Mac run by the maintainer) | |
-  | Native, Interpreter, WebGPU | never fuse | never fuse | decision table, exhaustive (`test_sarek_policy_effective`) | `m2-tests-pass-after.txt` |
+  | Backend | Before | After | Evidence |
+  |---|---|---|---|
+  | HIP | on, exact | on, exact, no grant | executed: 0 differ from unfused and from the Interpreter, five scenarios |
+  | CUDA/PTX | off; `set_epilogue_backend true` enabled it | needs the grant | executed through ZLUDA (not NVIDIA hardware): fused path taken, 0 differ |
+  | CUDA/C | as CUDA/PTX | needs the grant | decision tested only (backend not enumerated on the test host, no device run) |
+  | OpenCL (rusticl) | as CUDA/PTX | needs the grant | executed: fused path taken, 0 differ (forwarding, shared, chain) |
+  | Vulkan (RADV) | as CUDA/PTX | needs the grant | executed: fused path taken; forwarding and chain 0 differ, residual pair 4099 differ by at most 0.5 ulp of the product, within the bound |
+  | Metal | on, exact, while `Fp_exactness.is_exact "Metal"` | unchanged; refused if marked inexact even with the grant | executed on an Apple M4 (2026-10-12): `test_epilogue_exact` fused == unfused == Interpreter, 0 of 4099 differ in forwarding, shared and chain; `test_epilogue_metal_pragma` and `test_launch_window` pass |
+  | Native, Interpreter, WebGPU | never fuse | never fuse | decision table, exhaustive (`test_sarek_policy_effective`) |
+
+  Raw logs: `spoc-pipeline-logs/policy-impl/m2-*.txt` (owner machine, outside
+  the repository). The bound on a contracting backend is
+  `|f - u| <= ulp(a*b)/2 + ulp(r)` (`specs/epilogue-fusion.md` FR-107), not "1
+  ulp of the result": under cancellation of `a*b` and `c` it is many ulps of a
+  small result. Also: (4) `Execute.Window.epilogue_on backend` now answers "can
+  fusion run on this backend under the process grants": false on CUDA, OpenCL
+  and Vulkan until `Cross_kernel_contraction` is granted at process scope
+  (kernel-scoped grants are decided per pair, `Launch_epilogue.decide_pair`);
+  (5) a rewritten matrix kernel (`<name>_sarek_mm`) has the budget of the kernel it
+  came from (`Sarek_policy.register_derived`), so a `Kernel`-scoped opt-in rewrites
+  that kernel and launches (it was refused by the capability gate); the static
+  fusion passes of `Sarek_fusion` register their members like the window and
+  epilogue passes; `Sarek_f16_policy.single_rounding_reason` is the budget's
+  reason (a fused kernel has one iff every member does).
 
 - Epilogue fusion is on by default on Metal as well as HIP (H9,
   `specs/epilogue-fusion.md` FR-104; it was opt-in). Every Metal kernel, fused

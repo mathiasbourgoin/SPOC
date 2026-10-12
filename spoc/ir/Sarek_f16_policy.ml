@@ -29,4 +29,9 @@ let single_rounding = Sarek_policy.Deviation Sarek_policy.Single_rounding
 let accept_single_rounding scope ~reason =
   Sarek_policy.grant (policy_scope scope) single_rounding ~reason
 
-let single_rounding_reason ~kernel = Sarek_policy.reason ~kernel single_rounding
+(* The budget's reason, as the code generator reads it: a fused kernel has one
+   iff every member does. *)
+let single_rounding_reason ~kernel =
+  Sarek_policy.Budget.reason
+    (Sarek_policy.budget ~kernels:[kernel])
+    single_rounding

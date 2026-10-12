@@ -280,7 +280,10 @@ atoms changes the decision for that kernel and for no other (tests:
    generated name is **not** counted: names are content digests or counters, not
    a statement of the program. Registering a name again adds members (the name
    is then covered only by what all of them allow); a cycle contributes
-   nothing.
+   nothing. A kernel produced by a rewrite that renames it (the matrix rewrite,
+   `<name>_sarek_mm`) is registered with `register_derived ~name ~from`: it has
+   exactly its source's budget. The static fusion passes of `Sarek_fusion`
+   register like the dynamic ones.
 4. **Restrictions only remove**, so toggling them never makes an earlier check
    unsound. There is no public scoped-restriction API (Q4): SPOC decides the
    prompt-phase window itself and keeps a diagnostic switch;

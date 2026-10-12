@@ -13,7 +13,14 @@
 
 type t = {version : int Atomic.t; digest : string}
 
+(* How many digests were computed: tests check that a launch under an unchanged
+   policy computes none. *)
+let digests = Atomic.make 0
+
+let digests_computed () = Atomic.get digests
+
 let digest_of kernel =
+  Atomic.incr digests ;
   Sarek_policy.effective_digest (Sarek_policy.effective ~kernel)
 
 (** The stamp to take BEFORE computing the result: the version is read first, so
@@ -32,3 +39,16 @@ let current t ~kernel =
     Atomic.set t.version now ;
     true)
   else false
+
+(** The value stored under a key accepted by [matches], if its stamp is current
+    for [kernel]; entries are [(key, (value, stamp))]. *)
+let find_current ~kernel ~matches entries =
+  List.find_map
+    (fun (k, (v, stamp)) ->
+      if matches k && current stamp ~kernel then Some v else None)
+    entries
+
+(** [entries] with the entry for the key replaced (a stale one is dropped, not
+    shadowed). *)
+let install ~matches entries key value stamp =
+  (key, (value, stamp)) :: List.filter (fun (k, _) -> not (matches k)) entries

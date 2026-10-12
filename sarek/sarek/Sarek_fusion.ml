@@ -593,7 +593,7 @@ let length_of_intermediate_needed (producer : kernel) (consumer : kernel)
     glslangValidator or naga — a name the author never wrote, in generated
     source they never saw. *)
 let reject_if_intermediate_survives ~(fn : string) ~(intermediate : string)
-    (fused : kernel) : kernel =
+    ~(members : kernel list) (fused : kernel) : kernel =
   if stmt_uses_array intermediate fused.kern_body then
     Fusion_error.raise_error
       (Fusion_error.Invalid_fusion
@@ -607,7 +607,13 @@ let reject_if_intermediate_survives ~(fn : string) ~(intermediate : string)
                fn
                intermediate;
          })
-  else fused
+  else (
+    (* The fused kernel holds a grant only if all its members do; its generated
+       name is not a statement of the program (Sarek_policy.register_fused). *)
+    Sarek_policy.register_fused
+      ~name:fused.kern_name
+      ~members:(List.map (fun m -> m.kern_name) members) ;
+    fused)
 
 (** Check if two kernels can be fused via an intermediate array.
 
@@ -790,6 +796,7 @@ let fuse (producer : kernel) (consumer : kernel) (intermediate : string) :
           reject_if_intermediate_survives
             ~fn:"fuse"
             ~intermediate
+            ~members:[producer; consumer]
             {
               default_kernel with
               kern_name = consumer.kern_name ^ "_fused";
@@ -1041,6 +1048,7 @@ let fuse_reduction (map_kernel : kernel) (reduce_kernel : kernel)
           reject_if_intermediate_survives
             ~fn:"fuse_reduction"
             ~intermediate
+            ~members:[map_kernel; reduce_kernel]
             {
               default_kernel with
               kern_name = reduce_kernel.kern_name ^ "_fused";
@@ -1311,6 +1319,7 @@ let fuse_stencil (producer : kernel) (consumer : kernel) (intermediate : string)
           reject_if_intermediate_survives
             ~fn:"fuse_stencil"
             ~intermediate
+            ~members:[producer; consumer]
             {
               default_kernel with
               kern_name = consumer.kern_name ^ "_stencil_fused";

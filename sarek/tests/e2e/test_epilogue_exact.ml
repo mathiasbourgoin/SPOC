@@ -327,8 +327,8 @@ let measure bound fused unfused =
         | Ulps k -> float_of_int k *. ulp r
         | Contraction (a, b) -> (ulp (a.(i) *. b.(i)) /. 2.0) +. ulp r
         | Chained (a, b, d, o) ->
-            (Float.abs d.(i)
-            *. ((ulp (a.(i) *. b.(i)) /. 2.0) +. ulp (value o.(i))))
+            Float.abs d.(i)
+            *. ((ulp (a.(i) *. b.(i)) /. 2.0) +. ulp (value o.(i)))
             +. ulp r
       in
       worst := Float.max !worst (delta /. allowed))
@@ -348,7 +348,9 @@ let check_bound dev label bound ~fused ~unfused =
        " (%d of %d differ, max %d ulp, %.3g of the bound)"
        (count_diff fused unfused)
        n
-       (Array.fold_left max 0
+       (Array.fold_left
+          max
+          0
           (Array.mapi (fun i v -> ulp_distance v unfused.(i)) fused))
        worst)
 
