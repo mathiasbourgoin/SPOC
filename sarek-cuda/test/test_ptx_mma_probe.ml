@@ -84,7 +84,7 @@ let is_zluda dev = contains dev.Cuda_api.Device.name "ZLUDA"
 
 let version_of dev =
   let major, minor = dev.Cuda_api.Device.compute_capability in
-  ptx_isa_version ~major ~minor
+  Sarek_cuda.Cuda_ptx_isa.(to_string (required_version ~major ~minor))
 
 let status_name = function
   | Exact -> "runs, bit-exact"

@@ -23,6 +23,7 @@
   Cuda_types
   Cuda_bindings
   Cuda_nvrtc
+  Cuda_ptx_isa
   Cuda_api
   Cuda_coopmat
   Cuda_plugin_base

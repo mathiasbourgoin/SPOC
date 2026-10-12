@@ -171,6 +171,14 @@
 
 ### Fixed
 
+- CUDA/PTX kernels load on Blackwell (sm_120, #506). `load_from_ptx` rewrote
+  `.target` to the device SM but kept the generated `.version 8.0`, which the
+  driver rejects for sm_120 (needs PTX ISA 8.7). The rewrite now raises
+  `.version` to the ISA the device SM needs (never lowers it); the SM-to-ISA
+  table moved from the test tree to `Cuda_ptx_isa`. A driver whose CUDA version
+  is known to accept a lower ISA fails with a message naming both versions
+  instead of `CUDA_ERROR_INVALID_PTX`. The NVRTC path is unchanged (it compiles
+  for at most compute_90 and the driver JITs it). Not run on Blackwell hardware.
 - The launch window no longer grows a fused group past Vulkan's 128-byte
   push-constant block (H6). A fused kernel carries every member's vector
   lengths and scalars plus an int32 offset and size per member, so six small
