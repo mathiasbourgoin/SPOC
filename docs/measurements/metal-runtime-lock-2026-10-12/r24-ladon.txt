@@ -18,3 +18,9 @@ Blocking FFI releases the runtime lock (2 GPU devices)
   [Metal] Apple M4 (Metal): wait 199 ms (spin 13626684), 1 minor GCs and 14k allocating iterations on the other domain during the wait
     FAIL the other domain stalled (fewer than 10 minor GCs)
 ## exit=1
+
+## rerun at e7183cf65 (compiles and memcpy also release the lock), 2026-10-12T06:25Z, Apple M4, macOS 15
+    ok   the other domain kept collecting
+  [Metal] Apple M4 (Metal): wait 199 ms (spin 13625840), 1035 minor GCs and 15583k allocating iterations on the other domain during the wait
+    ok   the other domain kept collecting
+## exit=0
