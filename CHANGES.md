@@ -11,6 +11,16 @@
   the imported anonymous pages, after which processes stayed in uninterruptible sleep until
   reboot. Not reproduced here, on purpose; the cause is in the driver, SPOC's import was the trigger.
   Test: `test_vulkan_host_import_policy` (pure decision table, and on a device the default refusal).
+- Vulkan launch batching (#491) is opt-in: `SPOC_VULKAN_BATCH` now defaults to 1 (submit and
+  wait at every launch); `SPOC_VULKAN_BATCH=32` gives the batched behaviour described below and
+  measured there. Reason (#504): on tartarus (RX 7900 XTX, RADV, Linux 7.1.2-3-cachyos)
+  `test_vulkan_async` produced GPU write page faults (`gfxhub`, 0x8001000c0000-0x8001000c3000) and
+  two gfx ring timeouts and resets while reporting success. Reading the batching, release and
+  barrier code found no buffer released or reused while a batch references it, and three
+  single-process runs of the async tests under the new kernel-log gate (below) were clean, so
+  the cause is not found; the default is the conservative one until it is. The Vulkan tests of
+  batching run with a batch limit of 32, except on AMD drivers, where they skip unless
+  `SPOC_VULKAN_BATCH` above 1 is set.
 
 ### Added
 
@@ -42,6 +52,10 @@
   atoms (`spoc/ir/test/test_sarek_policy.ml`). Native and Interpreter read the
   same store through the same `Sarek_coopmat.policy_verdict`; the grants
   themselves are host-side and were not run on a device.
+- `scripts/gpu-kernel-log-gate.sh`: runs a GPU command and fails when `journalctl -k` shows
+  `page fault`, `ring ... timeout`, `Oops` or `BUG:` since the run started (and refuses to start
+  when the last ten minutes already show one). `make test-vulkan-gpu`, `make e2e-gpu` and
+  `make e2e-hip` run through it; `make test-gpu-kernel-log-gate` is its red-path harness.
 
 - The float matrix-product rewrite runs on Metal (H4b,
   `specs/matrix-pattern-rewrite.md`, "Fragment shape and Metal"). The rewrite

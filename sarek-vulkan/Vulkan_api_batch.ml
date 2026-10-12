@@ -18,8 +18,13 @@ module BE = Sarek_backend_error.Backend_error
 
 (** Dispatches one command buffer collects before it is submitted, from
     [SPOC_VULKAN_BATCH] (a positive integer; anything else gives the default).
-    [1] submits and waits at every launch: the behaviour before batching. *)
-let default_batch = 32
+    [1] submits and waits at every launch: the behaviour before batching.
+
+    Batching is opt-in ([SPOC_VULKAN_BATCH=32] restores the batched behaviour
+    measured in CHANGES.md): [test_vulkan_async] produced GPU write page faults
+    and gfx ring resets on RADV (RX 7900 XTX, Linux 7.1.2) and the cause is not
+    found (Sarek #504). Until it is, a launch submits and waits. *)
+let default_batch = 1
 
 let batch_limit =
   ref

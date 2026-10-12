@@ -23,7 +23,7 @@ is on by default.
 
 | Q | A |
 |---|---|
-| When is a batch submitted? | When it holds `SPOC_VULKAN_BATCH` dispatches (default 32); when another stream of the same device launches (so all streams reach the single queue in launch order); and at every synchronisation point below. Submitting does not wait. |
+| When is a batch submitted? | When it holds `SPOC_VULKAN_BATCH` dispatches (default 1, which submits and waits at every launch; batching is opt-in since Sarek #504); when another stream of the same device launches (so all streams reach the single queue in launch order); and at every synchronisation point below. Submitting does not wait. |
 | When does the host block? | At a synchronisation point (below), and when a launch needs the stream's other command buffer and its previous submission has not completed. |
 | How many command buffers? | Two per stream. One records while the other runs, so recording overlaps execution. |
 | Why per-launch descriptor sets? | A batch may hold the same kernel several times with different arguments. Each dispatch takes a set from a descriptor pool owned by its command buffer slot; the pools are reset when the slot's fence has been waited for. A pool holds 64 sets and 512 descriptors; a slot grows another pool when one is full. The kernel object no longer owns a pool or a set. |
@@ -61,7 +61,8 @@ is on by default.
 - **FR-004.** A failed submission or wait raises `Kernel_launch_failed` naming
   the batch's kernels at the first wait; the stream remains usable.
 - **FR-005.** `SPOC_VULKAN_BATCH` (positive integer, read at start; anything
-  else gives 32) sets the batch size; `1` restores submit-and-wait per launch.
+  else gives the default, 1) sets the batch size; `1` (the default since Sarek
+  #504) is submit-and-wait per launch, a larger value opts in to batching.
 - **FR-006.** The launch window's results are unchanged
   (`sarek/tests/e2e/test_launch_window.ml` passes on Vulkan).
 

@@ -400,61 +400,61 @@ let () =
           Alcotest.test_case
             "finaliser under the queue lock with an open batch"
             `Quick
-            (with_device test_finaliser_under_queue_lock);
+            (with_batching_device test_finaliser_under_queue_lock);
           Alcotest.test_case
             "explicit free keeps a deferred launch error"
             `Quick
-            (with_device (free_keeps_error ~explicit:true));
+            (with_batching_device (free_keeps_error ~explicit:true));
           Alcotest.test_case
             "finaliser free keeps a deferred launch error"
             `Quick
-            (with_device (free_keeps_error ~explicit:false));
+            (with_batching_device (free_keeps_error ~explicit:false));
           Alcotest.test_case
             "byte bound of the release queue"
             `Quick
-            (with_device test_byte_threshold);
+            (with_batching_device test_byte_threshold);
           Alcotest.test_case
             "idle synchronize releases"
             `Quick
-            (with_device test_idle_synchronize_releases);
+            (with_batching_device test_idle_synchronize_releases);
           Alcotest.test_case
             "allocation retry re-raises the original error"
             `Quick
-            (with_device test_alloc_retry_reraises);
+            (with_batching_device test_alloc_retry_reraises);
           Alcotest.test_case
             "a signalled slot is reaped by a free"
             `Quick
-            (with_device test_signalled_slot_is_reaped);
+            (with_batching_device test_signalled_slot_is_reaped);
           Alcotest.test_case
             "a lost device seen by the free path is kept once"
             `Quick
-            (with_device test_reap_lost_device);
+            (with_batching_device test_reap_lost_device);
           Alcotest.test_case
             "a lost-device wait raises once"
             `Quick
-            (with_device test_lost_wait_raises_once);
+            (with_batching_device test_lost_wait_raises_once);
           Alcotest.test_case
             "another wait error keeps the slot in flight"
             `Quick
-            (with_device test_other_wait_error_keeps_slot);
+            (with_batching_device test_other_wait_error_keeps_slot);
           Alcotest.test_case
             "an asynchronous exception during submission"
             `Quick
-            (with_device test_async_exception_in_submit);
+            (with_batching_device test_async_exception_in_submit);
           Alcotest.test_case
             "a burst of asynchronous exceptions during submission"
             `Quick
-            (with_device test_async_exception_burst);
+            (with_batching_device test_async_exception_burst);
           Alcotest.test_case
             "a long burst of asynchronous exceptions during submission"
             `Quick
-            (with_device test_async_exception_long_burst);
+            (with_batching_device test_async_exception_long_burst);
         ] );
       ( "teardown",
         [
           Alcotest.test_case
             "destroy twice, stale handle, free after destroy"
             `Quick
-            (with_device test_destroy_twice_and_stale_free);
+            (with_batching_device test_destroy_twice_and_stale_free);
         ] );
     ]

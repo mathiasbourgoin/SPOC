@@ -266,59 +266,59 @@ let () =
           Alcotest.test_case
             "N launches do not make N waits"
             `Quick
-            (with_device test_launches_do_not_wait_each);
+            (with_batching_device test_launches_do_not_wait_each);
           Alcotest.test_case
             "SPOC_VULKAN_BATCH=1 waits at every launch"
             `Quick
-            (with_device test_batch_of_one_waits_each);
+            (with_batching_device test_batch_of_one_waits_each);
           Alcotest.test_case
             "descriptor sets beyond one pool in one batch"
             `Quick
-            (with_device test_many_sets_one_batch);
+            (with_batching_device test_many_sets_one_batch);
         ] );
       ( "ordering",
         [
           Alcotest.test_case
             "dependent chain across batches"
             `Quick
-            (with_device test_dependent_chain);
+            (with_batching_device test_dependent_chain);
           Alcotest.test_case
             "host read in the middle of a batch"
             `Quick
-            (with_device test_host_read_mid_batch);
+            (with_batching_device test_host_read_mid_batch);
           Alcotest.test_case
             "free right after launches"
             `Quick
-            (with_device test_free_after_launch);
+            (with_batching_device test_free_after_launch);
           Alcotest.test_case
             "two streams share a buffer"
             `Quick
-            (with_device test_two_streams);
+            (with_batching_device test_two_streams);
           Alcotest.test_case
             "every synchronisation point completes pending launches"
             `Quick
-            (with_device test_sync_points_complete_pending);
+            (with_batching_device test_sync_points_complete_pending);
           Alcotest.test_case
             "an event covers the launches before it"
             `Quick
-            (with_device test_event_after_batch);
+            (with_batching_device test_event_after_batch);
         ] );
       ( "errors",
         [
           Alcotest.test_case
             "submit failure surfaces at the first wait"
             `Quick
-            (with_device test_failure_at_first_wait);
+            (with_batching_device test_failure_at_first_wait);
           Alcotest.test_case
             "SPOC_VULKAN_BATCH=1 raises at the launch"
             `Quick
-            (with_device test_batch_of_one_raises_at_launch);
+            (with_batching_device test_batch_of_one_raises_at_launch);
         ] );
       ( "teardown",
         [
           Alcotest.test_case
             "device destroy with pending launches"
             `Quick
-            (with_device test_destroy_with_pending);
+            (with_batching_device test_destroy_with_pending);
         ] );
     ]

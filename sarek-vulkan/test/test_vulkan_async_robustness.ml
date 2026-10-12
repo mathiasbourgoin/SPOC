@@ -275,48 +275,48 @@ let () =
           Alcotest.test_case
             "deferred failure when the batch fills"
             `Quick
-            (with_device test_deferred_failure_batch_full);
+            (with_batching_device test_deferred_failure_batch_full);
           Alcotest.test_case
             "deferred failure when another stream launches"
             `Quick
-            (with_device test_deferred_failure_other_stream);
+            (with_batching_device test_deferred_failure_other_stream);
           Alcotest.test_case
             "a release threshold keeps another stream's error"
             `Quick
-            (with_device test_threshold_keeps_other_stream_error);
+            (with_batching_device test_threshold_keeps_other_stream_error);
         ] );
       ( "streams",
         [
           Alcotest.test_case
             "second stream consumes an open or full batch"
             `Quick
-            (with_device test_cross_stream_batch_state);
+            (with_batching_device test_cross_stream_batch_state);
           Alcotest.test_case
             "two domains on one device"
             `Quick
-            (with_device test_two_domains);
+            (with_batching_device test_two_domains);
         ] );
       ( "buffer release",
         [
           Alcotest.test_case
             "buffers freed from GC finalisers"
             `Quick
-            (with_device test_free_from_finaliser);
+            (with_batching_device test_free_from_finaliser);
           Alcotest.test_case
             "an explicit free releases at once"
             `Quick
-            (with_device test_explicit_free_is_prompt);
+            (with_batching_device test_explicit_free_is_prompt);
           Alcotest.test_case
             "an allocation retries after queued releases"
             `Quick
-            (with_device test_alloc_retries_after_release);
+            (with_batching_device test_alloc_retries_after_release);
           Alcotest.test_case
             "past 64 queued releases a launch runs them"
             `Quick
-            (with_device test_threshold_release);
+            (with_batching_device test_threshold_release);
           Alcotest.test_case
             "a release waits for the batch that binds the buffer"
             `Quick
-            (with_device test_release_waits_for_batch);
+            (with_batching_device test_release_waits_for_batch);
         ] );
     ]

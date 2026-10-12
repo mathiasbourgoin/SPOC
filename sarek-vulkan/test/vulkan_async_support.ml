@@ -52,6 +52,38 @@ let with_device f () =
     f (Device.get 0)
   end
 
+(** Batching is opt-in (Sarek #504). A test of batching runs with the batch
+    limit it needs, except on an AMD driver, where it runs only when
+    SPOC_VULKAN_BATCH above 1 is set in the environment: those drivers faulted
+    on these tests. *)
+let batch_opted_in =
+  match Option.bind (Sys.getenv_opt "SPOC_VULKAN_BATCH") int_of_string_opt with
+  | Some n -> n > 1
+  | None -> false
+
+(* VK_DRIVER_ID_AMD_PROPRIETARY, AMD_OPEN_SOURCE, MESA_RADV. *)
+let is_amd_driver device = List.mem device.Device.driver_id [1; 2; 3]
+
+let with_batching_device f () =
+  with_device
+    (fun device ->
+      if batch_opted_in then f device
+      else if is_amd_driver device then begin
+        Printf.printf
+          "[SKIP] batching is opt-in on AMD drivers \
+           (SPOC_VULKAN_BATCH=32;            Sarek #504)\n\
+           %!" ;
+        Alcotest.skip ()
+      end
+      else begin
+        let saved = !Stream.batch_limit in
+        Stream.batch_limit := 32 ;
+        Fun.protect
+          ~finally:(fun () -> Stream.batch_limit := saved)
+          (fun () -> f device)
+      end)
+    ()
+
 let upload device values =
   let size = Array.length values in
   let buf = Memory.alloc device size Bigarray.float32 in
