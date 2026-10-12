@@ -172,7 +172,9 @@ let test_seen_set_is_bounded () =
    nothing is allocated, whatever the size of the decision text. *)
 let test_no_reporter_costs_nothing () =
   set_reporter None ;
-  let r = {(record "env_hot_a") with decision = Refused (String.make 500 'x')} in
+  let r =
+    {(record "env_hot_a") with decision = Refused (String.make 500 'x')}
+  in
   let before = Gc.minor_words () in
   for _ = 1 to 10_000 do
     report r ;

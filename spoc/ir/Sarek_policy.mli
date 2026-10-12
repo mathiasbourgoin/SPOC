@@ -393,14 +393,16 @@ module Env : sig
   (** One line, no newline, space-separated; names have their spaces replaced by
       ['_'] and an epilogue pair ["p + c"] is written ["p+c"]:
       {v
-sarek-explain <kernel> <device> <optimisation> applied proof=<text>
-sarek-explain <kernel> <device> <optimisation> applied granted=<grant>[,<grant>] reason="<reason>"
-sarek-explain <kernel> <device> <optimisation> applied exact
-sarek-explain <kernel> <device> <optimisation> refused <reason>
+sarek-explain <kernel> <target> <optimisation> applied proof=<text>
+sarek-explain <kernel> <target> <optimisation> applied granted=<grant>[,<grant>] reason="<reason>" [lowering="<description>"]
+sarek-explain <kernel> <target> <optimisation> applied exact
+sarek-explain <kernel> <target> <optimisation> refused <reason>
+sarek-explain <kernel> <target> coopmat-gate applied|refused ...
 sarek-explain <kernel> - policy refused grant-on-generated-name <grant>
 sarek-explain <kernel> - policy refused grant-revoked <grant>
       v}
-      [<optimisation>] and [<grant>] are {!optimisation_name} and {!grant_name};
-      [<reason>] has its quotes and backslashes escaped. *)
+      [<target>] is the target of {!record}, [<optimisation>] and [<grant>] are
+      {!optimisation_name} and {!grant_name}; [<reason>] has its quotes and
+      backslashes escaped. [coopmat-gate] is the [Gate] event. *)
   val explain_line : event -> string
 end

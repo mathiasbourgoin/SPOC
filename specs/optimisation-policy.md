@@ -351,18 +351,19 @@ explain report says so. There is no `all`. `Execute.Window.set_enabled` stays
 ### 3.5 Explain report (M3, implemented)
 
 `SAREK_EXPLAIN=1` installs a default reporter writing to stderr one line per
-distinct (kernel, device, optimisation, decision); a repeated launch adds none.
+distinct (kernel, target, optimisation, decision); a repeated launch adds none.
 Any other value is off (an unknown one warns once). A reporter installed with
-`Sarek_policy.set_reporter` replaces it and receives `event`s: `Decision record`
-and `Ignored_grant` (below). The line format is fixed, space-separated, with
+`Sarek_policy.set_reporter` replaces it and receives `event`s: `Decision record`,
+`Gate` (the explicit coopmat gate) and `Ignored_grant` (below). The line format is fixed, space-separated, with
 spaces in names written `_` and an epilogue pair `p + c` written `p+c`
 (`Sarek_policy.Env.explain_line`, pure, tested by a golden):
 
 ```text
-sarek-explain <kernel> <device> <optimisation> applied proof=<text>
-sarek-explain <kernel> <device> <optimisation> applied granted=<grant>[,<grant>] reason="<reason>"
-sarek-explain <kernel> <device> <optimisation> applied exact
-sarek-explain <kernel> <device> <optimisation> refused <reason>
+sarek-explain <kernel> <target> <optimisation> applied proof=<text>
+sarek-explain <kernel> <target> <optimisation> applied granted=<grant>[,<grant>] reason="<reason>" [lowering="<description>"]
+sarek-explain <kernel> <target> <optimisation> applied exact
+sarek-explain <kernel> <target> <optimisation> refused <reason>
+sarek-explain <kernel> <target> coopmat-gate applied|refused ...
 sarek-explain <kernel> - policy refused grant-on-generated-name <grant>
 sarek-explain <kernel> - policy refused grant-revoked <grant>
 ```

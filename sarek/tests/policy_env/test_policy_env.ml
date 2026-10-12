@@ -255,7 +255,9 @@ let test_operand_rounding_bf16_revoked () =
   Alcotest.(check bool)
     ("names operand-rounding-bf16 (" ^ why ^ ")")
     true
-    (contains ~needle:"operand-rounding-bf16 is revoked by SAREK_OPT_DISABLE" why) ;
+    (contains
+       ~needle:"operand-rounding-bf16 is revoked by SAREK_OPT_DISABLE"
+       why) ;
   Alcotest.(check bool)
     "does not name bf16x3, which is not revoked"
     false
@@ -406,7 +408,8 @@ let scenarios =
     ( "operand-rounding-f16",
       [case "operand-rounding-f16 revoked" test_operand_rounding_revoked] );
     ( "operand-rounding-bf16",
-      [case "operand-rounding-bf16 revoked" test_operand_rounding_bf16_revoked] );
+      [case "operand-rounding-bf16 revoked" test_operand_rounding_bf16_revoked]
+    );
     ("model", [case "model of the environment" test_model]);
     ("unknown", [case "unknown item" test_unknown]);
     ("removed", [case "replaced variables" test_removed]);

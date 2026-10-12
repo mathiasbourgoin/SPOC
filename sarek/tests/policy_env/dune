@@ -25,80 +25,170 @@
 (rule
  (alias runtest)
  (action
-  (setenv SAREK_OPT_DISABLE "" (setenv SAREK_EXPLAIN "" (run %{exe:test_policy_env.exe} baseline)))))
+  (setenv
+   SAREK_OPT_DISABLE
+   ""
+   (setenv
+    SAREK_EXPLAIN
+    ""
+    (run %{exe:test_policy_env.exe} baseline)))))
 
 (rule
  (alias runtest)
  (action
-  (setenv SAREK_OPT_DISABLE "window" (setenv SAREK_EXPLAIN "" (run %{exe:test_policy_env.exe} window)))))
+  (setenv
+   SAREK_OPT_DISABLE
+   "window"
+   (setenv
+    SAREK_EXPLAIN
+    ""
+    (run %{exe:test_policy_env.exe} window)))))
 
 (rule
  (alias runtest)
  (action
-  (setenv SAREK_OPT_DISABLE "epilogue" (setenv SAREK_EXPLAIN "" (run %{exe:test_policy_env.exe} epilogue)))))
+  (setenv
+   SAREK_OPT_DISABLE
+   "epilogue"
+   (setenv
+    SAREK_EXPLAIN
+    ""
+    (run %{exe:test_policy_env.exe} epilogue)))))
 
 (rule
  (alias runtest)
  (action
-  (setenv SAREK_OPT_DISABLE "matrix" (setenv SAREK_EXPLAIN "" (run %{exe:test_policy_env.exe} matrix)))))
+  (setenv
+   SAREK_OPT_DISABLE
+   "matrix"
+   (setenv
+    SAREK_EXPLAIN
+    ""
+    (run %{exe:test_policy_env.exe} matrix)))))
 
 (rule
  (alias runtest)
  (action
-  (setenv SAREK_OPT_DISABLE "Narrowing-Proof" (setenv SAREK_EXPLAIN "" (run %{exe:test_policy_env.exe} narrowing-proof)))))
+  (setenv
+   SAREK_OPT_DISABLE
+   "Narrowing-Proof"
+   (setenv
+    SAREK_EXPLAIN
+    ""
+    (run %{exe:test_policy_env.exe} narrowing-proof)))))
 
 (rule
  (alias runtest)
  (action
-  (setenv SAREK_OPT_DISABLE " unroll " (setenv SAREK_EXPLAIN "" (run %{exe:test_policy_env.exe} unroll)))))
+  (setenv
+   SAREK_OPT_DISABLE
+   " unroll "
+   (setenv
+    SAREK_EXPLAIN
+    ""
+    (run %{exe:test_policy_env.exe} unroll)))))
 
 (rule
  (alias runtest)
  (action
-  (setenv SAREK_OPT_DISABLE "accumulation-order" (setenv SAREK_EXPLAIN "" (run %{exe:test_policy_env.exe} accumulation-order)))))
+  (setenv
+   SAREK_OPT_DISABLE
+   "accumulation-order"
+   (setenv
+    SAREK_EXPLAIN
+    ""
+    (run %{exe:test_policy_env.exe} accumulation-order)))))
 
 (rule
  (alias runtest)
  (action
-  (setenv SAREK_OPT_DISABLE "operand-rounding-f16" (setenv SAREK_EXPLAIN "" (run %{exe:test_policy_env.exe} operand-rounding-f16)))))
+  (setenv
+   SAREK_OPT_DISABLE
+   "operand-rounding-f16"
+   (setenv
+    SAREK_EXPLAIN
+    ""
+    (run %{exe:test_policy_env.exe} operand-rounding-f16)))))
 
 (rule
  (alias runtest)
  (action
-  (setenv SAREK_OPT_DISABLE "operand-rounding-bf16" (setenv SAREK_EXPLAIN "" (run %{exe:test_policy_env.exe} operand-rounding-bf16)))))
+  (setenv
+   SAREK_OPT_DISABLE
+   "operand-rounding-bf16"
+   (setenv
+    SAREK_EXPLAIN
+    ""
+    (run %{exe:test_policy_env.exe} operand-rounding-bf16)))))
 
 (rule
  (alias runtest)
  (action
-  (setenv SAREK_OPT_DISABLE "window,Single-Rounding, matrix" (setenv SAREK_EXPLAIN "" (run %{exe:test_policy_env.exe} model)))))
+  (setenv
+   SAREK_OPT_DISABLE
+   "window,Single-Rounding, matrix"
+   (setenv
+    SAREK_EXPLAIN
+    ""
+    (run %{exe:test_policy_env.exe} model)))))
 
 (rule
  (alias runtest)
  (action
-  (setenv SAREK_OPT_DISABLE "single-rounding" (setenv SAREK_EXPLAIN "" (run %{exe:test_policy_env.exe} single-rounding)))))
+  (setenv
+   SAREK_OPT_DISABLE
+   "single-rounding"
+   (setenv
+    SAREK_EXPLAIN
+    ""
+    (run %{exe:test_policy_env.exe} single-rounding)))))
 
 (rule
  (alias runtest)
  (action
-  (setenv SAREK_OPT_DISABLE "cross-kernel-contraction" (setenv SAREK_EXPLAIN "" (run %{exe:test_policy_env.exe} cross-kernel-contraction)))))
+  (setenv
+   SAREK_OPT_DISABLE
+   "cross-kernel-contraction"
+   (setenv
+    SAREK_EXPLAIN
+    ""
+    (run %{exe:test_policy_env.exe} cross-kernel-contraction)))))
 
 (rule
  (alias runtest)
  (action
-  (setenv SAREK_OPT_DISABLE "automatic-float-rewrite" (setenv SAREK_EXPLAIN "" (run %{exe:test_policy_env.exe} automatic-float-rewrite)))))
+  (setenv
+   SAREK_OPT_DISABLE
+   "automatic-float-rewrite"
+   (setenv
+    SAREK_EXPLAIN
+    ""
+    (run %{exe:test_policy_env.exe} automatic-float-rewrite)))))
 
 ; An unknown item warns on stderr, the rest applies.
 
 (rule
  (targets unknown.out unknown.raw)
  (action
-  (setenv SAREK_OPT_DISABLE "window,bogus,UNROLL, ," (setenv SAREK_EXPLAIN "" (with-stdout-to unknown.out (with-stderr-to unknown.raw (run %{exe:test_policy_env.exe} unknown)))))))
+  (setenv
+   SAREK_OPT_DISABLE
+   "window,bogus,UNROLL, ,"
+   (setenv
+    SAREK_EXPLAIN
+    ""
+    (with-stdout-to
+     unknown.out
+     (with-stderr-to
+      unknown.raw
+      (run %{exe:test_policy_env.exe} unknown)))))))
 
 (rule
  (targets unknown.err)
  (deps unknown.raw)
  (action
-  (with-stdout-to unknown.err (system "grep -v ASSERT unknown.raw || true"))))
+  (with-stdout-to
+   unknown.err
+   (system "grep -v ASSERT unknown.raw || true"))))
 
 (rule
  (alias runtest)
@@ -110,13 +200,40 @@
 (rule
  (targets removed.out removed.raw)
  (action
-  (setenv SAREK_OPT_DISABLE "" (setenv SAREK_EXPLAIN "" (setenv SAREK_LAUNCH_WINDOW "0" (setenv SAREK_LAUNCH_EPILOGUE "0" (setenv SAREK_MATRIX_REWRITE "off" (setenv SAREK_AUTO_UNROLL "0" (setenv SAREK_MATRIX_REPORT "1" (with-stdout-to removed.out (with-stderr-to removed.raw (run %{exe:test_policy_env.exe} removed))))))))))))
+  (setenv
+   SAREK_OPT_DISABLE
+   ""
+   (setenv
+    SAREK_EXPLAIN
+    ""
+    (setenv
+     SAREK_LAUNCH_WINDOW
+     "0"
+     (setenv
+      SAREK_LAUNCH_EPILOGUE
+      "0"
+      (setenv
+       SAREK_MATRIX_REWRITE
+       "off"
+       (setenv
+        SAREK_AUTO_UNROLL
+        "0"
+        (setenv
+         SAREK_MATRIX_REPORT
+         "1"
+         (with-stdout-to
+          removed.out
+          (with-stderr-to
+           removed.raw
+           (run %{exe:test_policy_env.exe} removed))))))))))))
 
 (rule
  (targets removed.err)
  (deps removed.raw)
  (action
-  (with-stdout-to removed.err (system "grep -v ASSERT removed.raw || true"))))
+  (with-stdout-to
+   removed.err
+   (system "grep -v ASSERT removed.raw || true"))))
 
 (rule
  (alias runtest)
@@ -128,13 +245,25 @@
 (rule
  (targets explain.out explain.raw)
  (action
-  (setenv SAREK_OPT_DISABLE "" (setenv SAREK_EXPLAIN "1" (with-stdout-to explain.out (with-stderr-to explain.raw (run %{exe:test_policy_env.exe} explain)))))))
+  (setenv
+   SAREK_OPT_DISABLE
+   ""
+   (setenv
+    SAREK_EXPLAIN
+    "1"
+    (with-stdout-to
+     explain.out
+     (with-stderr-to
+      explain.raw
+      (run %{exe:test_policy_env.exe} explain)))))))
 
 (rule
  (targets explain.err)
  (deps explain.raw)
  (action
-  (with-stdout-to explain.err (system "grep -v ASSERT explain.raw || true"))))
+  (with-stdout-to
+   explain.err
+   (system "grep -v ASSERT explain.raw || true"))))
 
 (rule
  (alias runtest)
@@ -144,13 +273,25 @@
 (rule
  (targets explain-off.out explain-off.raw)
  (action
-  (setenv SAREK_OPT_DISABLE "" (setenv SAREK_EXPLAIN "0" (with-stdout-to explain-off.out (with-stderr-to explain-off.raw (run %{exe:test_policy_env.exe} explain-off)))))))
+  (setenv
+   SAREK_OPT_DISABLE
+   ""
+   (setenv
+    SAREK_EXPLAIN
+    "0"
+    (with-stdout-to
+     explain-off.out
+     (with-stderr-to
+      explain-off.raw
+      (run %{exe:test_policy_env.exe} explain-off)))))))
 
 (rule
  (targets explain-off.err)
  (deps explain-off.raw)
  (action
-  (with-stdout-to explain-off.err (system "grep -v ASSERT explain-off.raw || true"))))
+  (with-stdout-to
+   explain-off.err
+   (system "grep -v ASSERT explain-off.raw || true"))))
 
 (rule
  (alias runtest)
@@ -160,13 +301,25 @@
 (rule
  (targets explain-unknown.out explain-unknown.raw)
  (action
-  (setenv SAREK_OPT_DISABLE "" (setenv SAREK_EXPLAIN "yes" (with-stdout-to explain-unknown.out (with-stderr-to explain-unknown.raw (run %{exe:test_policy_env.exe} explain-unknown)))))))
+  (setenv
+   SAREK_OPT_DISABLE
+   ""
+   (setenv
+    SAREK_EXPLAIN
+    "yes"
+    (with-stdout-to
+     explain-unknown.out
+     (with-stderr-to
+      explain-unknown.raw
+      (run %{exe:test_policy_env.exe} explain-unknown)))))))
 
 (rule
  (targets explain-unknown.err)
  (deps explain-unknown.raw)
  (action
-  (with-stdout-to explain-unknown.err (system "grep -v ASSERT explain-unknown.raw || true"))))
+  (with-stdout-to
+   explain-unknown.err
+   (system "grep -v ASSERT explain-unknown.raw || true"))))
 
 (rule
  (alias runtest)
@@ -178,13 +331,25 @@
 (rule
  (targets explain-replaced.out explain-replaced.raw)
  (action
-  (setenv SAREK_OPT_DISABLE "" (setenv SAREK_EXPLAIN "1" (with-stdout-to explain-replaced.out (with-stderr-to explain-replaced.raw (run %{exe:test_policy_env.exe} explain-replaced)))))))
+  (setenv
+   SAREK_OPT_DISABLE
+   ""
+   (setenv
+    SAREK_EXPLAIN
+    "1"
+    (with-stdout-to
+     explain-replaced.out
+     (with-stderr-to
+      explain-replaced.raw
+      (run %{exe:test_policy_env.exe} explain-replaced)))))))
 
 (rule
  (targets explain-replaced.err)
  (deps explain-replaced.raw)
  (action
-  (with-stdout-to explain-replaced.err (system "grep -v ASSERT explain-replaced.raw || true"))))
+  (with-stdout-to
+   explain-replaced.err
+   (system "grep -v ASSERT explain-replaced.raw || true"))))
 
 (rule
  (alias runtest)
