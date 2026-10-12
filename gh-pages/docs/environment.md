@@ -48,7 +48,7 @@ Device selection is explained in [Device and backend selection](device_selection
 
 | Variable | Accepted values | Default | Read at | Effect |
 |---|---|---|---|---|
-| `SAREK_LAUNCH_WINDOW` | `0`, `false`, `off`, `no` turn it off | on for HIP, OpenCL, Vulkan and CUDA; off for Metal (opt-in); never on CPU devices | start | Switches the launch window (deferred launches and horizontal fusion) off for all backends. |
+| `SAREK_LAUNCH_WINDOW` | `0`, `false`, `off`, `no` turn it off | on for HIP, OpenCL, Vulkan, CUDA and Metal; never on CPU devices | start | Switches the launch window (deferred launches and horizontal fusion) off for all backends. |
 | `SAREK_LAUNCH_EPILOGUE` | `0`, `false`, `off`, `no` turn it off | on for HIP only | start | Switches epilogue fusion off. The variable cannot turn it on for another backend. |
 
 Both are explained in [Launch window and fusion](performance.html).

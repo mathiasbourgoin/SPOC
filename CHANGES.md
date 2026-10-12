@@ -59,6 +59,18 @@
 
 ### Changed
 
+- The launch window (deferral and horizontal fusion) is on by default on Metal
+  (H9, `specs/launch-window.md` FR-020); it was opt-in. Opt out with
+  `SAREK_LAUNCH_WINDOW=0` or `Execute.Window.set_backend_enabled
+  ~backend:"Metal" false`. Backend coverage (window): HIP executed (RX 7900
+  XTX), OpenCL executed, Vulkan executed, CUDA/PTX executed via ZLUDA on gfx1100
+  (not NVIDIA hardware), CUDA/C by construction, Metal off to on with
+  compiler-output evidence only (fused MSL source checked in
+  `test_launch_window`) and executed evidence pending ladon run (tech lead),
+  Native and Interpreter never deferred. `bench_launch_window.exe` (target the
+  device with `SPOC_BENCH_FRAMEWORK=Metal`) alternates window off and on and
+  checks the outputs bit for bit; Metal numbers: pending ladon run.
+
 - CUDA kernel launches marshal all arguments into one 8-byte-slot block plus one
   pointer array (two host allocations whatever the argument count), as the HIP
   launch already did (`specs/cheap-repeated-launches.md` US-4, C-13). Both
