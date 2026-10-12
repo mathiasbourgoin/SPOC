@@ -134,8 +134,8 @@ let submit_info_of slot =
     armed may have come after the queue accepted the batch. *)
 let submit_slot stream slot =
   let device = stream.device in
-  slot.ended <- true ;
   Vulkan_api_barrier.end_of_batch slot.command_buffer ;
+  slot.ended <- true ;
   check "vkEndCommandBuffer" (vkEndCommandBuffer slot.command_buffer) ;
   slot.cb_open <- false ;
   reset_fence

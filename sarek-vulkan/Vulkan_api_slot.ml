@@ -24,14 +24,15 @@ type slot = {
   mutable dispatches : int;
   mutable recording : bool;
   mutable ended : bool;
-      (** The end-of-batch step began (set before its first command): from here
-          the command buffer's state is unknown to the host after an escaped
-          exception, and the batch may or may not run. *)
+      (** Set just before [vkEndCommandBuffer] is called, after the end-of-batch
+          barrier was recorded: from here the command buffer's state is unknown
+          to the host after an escaped exception, and the batch may or may not
+          run. *)
   mutable cb_open : bool;
-      (** The command buffer is in the recording state: set after a successful
-          [vkBeginCommandBuffer], cleared after [vkEndCommandBuffer] or a reset.
-          A begin on an open buffer is invalid; {!Vulkan_api_batch} counts it.
-      *)
+      (** The command buffer may be in the recording state: set just before
+          [vkBeginCommandBuffer] is called, cleared after [vkEndCommandBuffer]
+          or a reset. A begin on an open buffer is invalid; {!Vulkan_api_batch}
+          counts it. *)
   mutable armed : bool;
       (** The fence was reset for a submission that may have reached the queue:
           set after the reset and before [vkQueueSubmit], cleared by {!retire}.
