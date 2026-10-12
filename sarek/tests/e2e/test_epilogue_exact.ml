@@ -18,8 +18,15 @@
  *
  * On a backend where epilogue fusion is ON BY DEFAULT (Launch_epilogue.
  * default_backends: HIP, whose every kernel is compiled with
- * -ffp-contract=off) fused == unfused is ASSERTED, and the fusion must have
- * happened (1 launch instead of 2).
+ * -ffp-contract=off, and Metal, whose every kernel carries
+ * #pragma METAL fp contract(off)) fused == unfused AND fused == Interpreter
+ * (which rounds every operation as written) are ASSERTED bit for bit, and the
+ * fusion must have happened (1 launch instead of 2). Positive controls: the
+ * inputs must separate fma from mul-then-add, the Interpreter must differ from
+ * the fma reference, and the fused forwarding result must differ from it too.
+ * Codegen checks (no device): the fused Metal source starts with the
+ * fp-contract pragma, the same check fails on a source without it, and Metal
+ * refuses the f16 producer (so the f16 pair is not run there).
  * On every other deferred device the epilogue is forced on; launch counts are
  * still asserted everywhere, but bit equality is only RECORDED ("DEVIATION RECORDED n/N" when fused differs from unfused, which
  * is a precision grant the caller makes by opting in); nothing is asserted.
@@ -29,7 +36,7 @@
  * What it cannot detect: a deviation on inputs or shapes not listed above, a
  * backend whose compiler contracts in some other pattern, or anything on a
  * device this host does not have (CUDA runs through ZLUDA on an AMD GPU, not
- * on NVIDIA hardware; Metal is not run here).
+ * on NVIDIA hardware; Metal runs only on a Mac, by hand).
  *   LD_LIBRARY_PATH=$HOME/opt/zluda dune exec sarek/tests/e2e/test_epilogue_exact.exe
  ******************************************************************************)
 
@@ -165,41 +172,45 @@ type pair = Forwarding | Shared | Half
 let launch dev ir args =
   Execute.run_vectors ~device:dev ~ir ~args ~block:(d1 256) ~grid:(d1 grid) ()
 
+(* The same launch on the Interpreter, which rounds every operation as written:
+   the reference a default backend's fused result must equal. *)
+let launch_interp ir args =
+  Execute.run_interpreter_vectors
+    ~ir
+    ~args
+    ~block:(d1 256)
+    ~grid:(d1 grid)
+    ~parallel:false
+
 (* The float16 pair: the intermediate is stored as binary16. *)
-let run_half dev (a, b, c) =
+let run_half launch (a, b, c) =
   let open Execute in
   let va = to_vector a and vb = to_vector b and vc = to_vector c in
   let vo = zeros () and vt = Vector.create Vector.float16 n in
-  launch dev (ir_of producer_f16) [Vec va; Vec vb; Vec vt; Int n] ;
-  launch dev (ir_of consumer_f16) [Vec vo; Vec vt; Vec vc; Int n] ;
+  launch (ir_of producer_f16) [Vec va; Vec vb; Vec vt; Int n] ;
+  launch (ir_of consumer_f16) [Vec vo; Vec vt; Vec vc; Int n] ;
   (bits_of_vector vt, bits_of_vector vo)
 
-let run_pair dev pair ((a, b, c) as inputs) =
+let run_pair launch pair ((a, b, c) as inputs) =
   let open Execute in
   match pair with
-  | Half -> run_half dev inputs
+  | Half -> run_half launch inputs
   | Forwarding | Shared ->
       let va = to_vector a and vb = to_vector b and vc = to_vector c in
       let vt = zeros () and vo = zeros () in
-      launch dev (ir_of producer) [Vec va; Vec vb; Vec vt; Int n] ;
+      launch (ir_of producer) [Vec va; Vec vb; Vec vt; Int n] ;
       (match pair with
       | Shared ->
-          launch
-            dev
-            (ir_of consumer_shared)
-            [Vec vo; Vec va; Vec vb; Vec vt; Int n]
-      | _ -> launch dev (ir_of consumer) [Vec vo; Vec vt; Vec vc; Int n]) ;
+          launch (ir_of consumer_shared) [Vec vo; Vec va; Vec vb; Vec vt; Int n]
+      | _ -> launch (ir_of consumer) [Vec vo; Vec vt; Vec vc; Int n]) ;
       (bits_of_vector vt, bits_of_vector vo)
 
 (* t = a * b ; o = t + c ; r = o * d (three launches, two epilogues). *)
-let run_chain dev (a, b, c) d =
+let run_chain launch (a, b, c) d =
   let open Execute in
   let va = to_vector a and vb = to_vector b and vc = to_vector c in
   let vd = to_vector d in
   let vt = zeros () and vo = zeros () and vr = zeros () in
-  let launch ir args =
-    run_vectors ~device:dev ~ir ~args ~block:(d1 256) ~grid:(d1 grid) ()
-  in
   launch (ir_of producer) [Vec va; Vec vb; Vec vt; Int n] ;
   launch (ir_of consumer) [Vec vo; Vec vt; Vec vc; Int n] ;
   launch (ir_of scale) [Vec vr; Vec vo; Vec vd; Int n] ;
@@ -266,14 +277,30 @@ let verdict (dev : Device.t) label ok detail =
       (if ok then "match" else "DEVIATION RECORDED")
       detail
 
-let run_pair_device (dev : Device.t) pair label inputs =
+(* What the Interpreter computes for each scenario (every operation rounded as
+   written), the reference a default backend's fused result must equal, and
+   the fma-contracted forwarding result, which no exact path may equal. *)
+type references = {
+  forwarding : int32 array;
+  shared : int32 array;
+  half : int32 array option;
+  chain : int32 array;
+  contracted : int32 array;
+}
+
+let reference_of refs = function
+  | Forwarding -> Some refs.forwarding
+  | Shared -> Some refs.shared
+  | Half -> refs.half
+
+let run_pair_device (dev : Device.t) refs pair label inputs =
   let (t_off, o_off), launches_off =
     with_backend dev ~epilogue:false (fun () ->
-        issued_by (fun () -> run_pair dev pair inputs))
+        issued_by (fun () -> run_pair (launch dev) pair inputs))
   in
   let (t_on, o_on), launches_on =
     with_backend dev ~epilogue:true (fun () ->
-        issued_by (fun () -> run_pair dev pair inputs))
+        issued_by (fun () -> run_pair (launch dev) pair inputs))
   in
   check dev (label ^ ": off = 2 launches") (launches_off = 2) "" ;
   check
@@ -289,25 +316,38 @@ let run_pair_device (dev : Device.t) pair label inputs =
        " (%d of %d elements of o differ)"
        (count_diff o_on o_off)
        n) ;
-  o_off
+  Option.iter
+    (fun reference ->
+      verdict
+        dev
+        (label ^ ": fused == Interpreter")
+        (o_on = reference)
+        (Printf.sprintf
+           " (%d of %d elements differ)"
+           (count_diff o_on reference)
+           n) ;
+      verdict dev (label ^ ": unfused == Interpreter") (o_off = reference) "")
+    (reference_of refs pair) ;
+  (o_off, o_on)
 
 let chain_reference (a, b, c) d =
   Array.init n (fun i ->
       round32 (round32 (round32 (a.(i) *. b.(i)) +. c.(i)) *. d.(i)))
 
-let run_chain_device (dev : Device.t) inputs =
-  let d =
-    Array.init n (fun i -> round32 (1.0 +. (Float.of_int (i mod 7) /. 64.0)))
-  in
+let chain_scale () =
+  Array.init n (fun i -> round32 (1.0 +. (Float.of_int (i mod 7) /. 64.0)))
+
+let run_chain_device (dev : Device.t) refs inputs =
+  let d = chain_scale () in
   let off, launches_off =
     with_backend dev ~epilogue:false (fun () ->
-        issued_by (fun () -> run_chain dev inputs d))
+        issued_by (fun () -> run_chain (launch dev) inputs d))
   in
   let on, launches_on =
     with_backend dev ~epilogue:true (fun () ->
-        issued_by (fun () -> run_chain dev inputs d))
+        issued_by (fun () -> run_chain (launch dev) inputs d))
   in
-  let _, _, r_off = off in
+  let _, _, r_off = off and _, _, r_on = on in
   check dev "chain: off = 3 launches" (launches_off = 3) "" ;
   check
     dev
@@ -315,6 +355,7 @@ let run_chain_device (dev : Device.t) inputs =
     (launches_on = 1)
     (Printf.sprintf " (%d)" launches_on) ;
   verdict dev "chain: fused == unfused" (on = off) "" ;
+  verdict dev "chain: fused == Interpreter" (r_on = refs.chain) "" ;
   verdict
     dev
     "chain: unfused == rounded reference"
@@ -333,25 +374,49 @@ let observe_contraction (dev : Device.t) inputs ~rounded ~contracted =
     (count_diff o (bits_of_array rounded))
     (count_diff o (bits_of_array contracted))
 
-let run_all_pairs (dev : Device.t) inputs ~rounded =
-  let o_fwd = run_pair_device dev Forwarding "forwarding" inputs in
+(* Metal refuses float16 kernels in its code generator
+   ([Sarek_ir_metal.reject_float16_kernel], checked in [codegen_checks]), so
+   the f16 pair has nothing to run there. OpenCL and Vulkan refuse it by
+   policy: a skip there, a failure on a default backend. *)
+let run_half_pair dev refs inputs =
+  if dev.Device.framework = "Metal" then
+    Printf.printf "  %-8s f16: SKIP (refused by the code generator)\n%!" "Metal"
+  else
+    match run_pair_device dev refs Half "f16" inputs with
+    | _ -> ()
+    | exception e when not (gated dev) ->
+        Printf.printf
+          "  %-8s f16: SKIP (%s)\n%!"
+          dev.framework
+          (let m = Printexc.to_string e in
+           String.sub m 0 (min 60 (String.length m)))
+
+(* Positive control: the comparison must be able to go red. On a default
+   backend the fused forwarding result must DIFFER from the fma-contracted
+   reference (on the inputs where fma and mul-then-add disagree); a device that
+   contracted would equal it and fail both this and the Interpreter check. *)
+let control_not_contracted dev refs o_fused =
+  let differ = count_diff o_fused refs.contracted in
+  verdict
+    dev
+    "control: fused != fma reference"
+    (differ > 0)
+    (Printf.sprintf " (%d of %d differ)" differ n)
+
+let run_all_pairs (dev : Device.t) refs inputs ~rounded =
+  let o_fwd, o_fwd_fused =
+    run_pair_device dev refs Forwarding "forwarding" inputs
+  in
   verdict
     dev
     "forwarding: unfused == rounded reference"
     (o_fwd = bits_of_array rounded)
     "" ;
-  ignore (run_pair_device dev Shared "shared" inputs) ;
-  run_chain_device dev inputs ;
-  (* Last. OpenCL and Vulkan refuse float16 kernels by policy: a skip there,
-     a failure on a default backend. *)
-  match run_pair_device dev Half "f16" inputs with
-  | _ -> ()
-  | exception e when not (gated dev) ->
-      Printf.printf
-        "  %-8s f16: SKIP (%s)\n%!"
-        dev.framework
-        (let m = Printexc.to_string e in
-         String.sub m 0 (min 60 (String.length m)))
+  control_not_contracted dev refs o_fwd_fused ;
+  ignore (run_pair_device dev refs Shared "shared" inputs) ;
+  run_chain_device dev refs inputs ;
+  (* Last: a refused scenario must not hide the others. *)
+  run_half_pair dev refs inputs
 
 (* A failure of a backend that cannot run the scenario is a skip; anything else
    is a failure. *)
@@ -367,16 +432,82 @@ let guarded (dev : Device.t) f =
         (Printexc.to_string e) ;
       if regression then failures := (dev.framework ^ " raised") :: !failures
 
-let on_device inputs ~rounded ~contracted (dev : Device.t) =
+let on_device refs inputs ~rounded ~contracted (dev : Device.t) =
   if Device.is_cpu dev || dev.framework = "Interpreter" then
     Printf.printf
       "  %-8s %-30s SKIP (launches are not deferred)\n%!"
       dev.framework
       dev.name
   else begin
-    guarded dev (fun () -> run_all_pairs dev inputs ~rounded) ;
+    guarded dev (fun () -> run_all_pairs dev refs inputs ~rounded) ;
     guarded dev (fun () -> observe_contraction dev inputs ~rounded ~contracted)
   end
+
+(* Substring search; the generated sources are a few KB. *)
+let find_sub ~sub src =
+  let n = String.length sub and m = String.length src in
+  let rec go i =
+    if i + n > m then None
+    else if String.sub src i n = sub then Some i
+    else go (i + 1)
+  in
+  go 0
+
+(* The fp-contract pragma is file scoped, so it must precede the first kernel.
+   Run on every host: compiler output only, no device. *)
+let pragma_before_kernel src =
+  match
+    ( find_sub ~sub:"#pragma METAL fp contract(off)" src,
+      find_sub ~sub:"kernel void" src )
+  with
+  | Some p, Some k -> p < k
+  | _ -> false
+
+let strip_pragma src =
+  match find_sub ~sub:"#pragma METAL fp contract(off)" src with
+  | None -> src
+  | Some p ->
+      String.sub src 0 p ^ String.sub src (p + 30) (String.length src - p - 30)
+
+(* Metal's fused epilogue kernel must carry the pragma that makes it exact by
+   construction (docs/fp-contraction-policy.md section 10 and 14). Compiler
+   output on this host; executed evidence needs a Metal device. *)
+let codegen_checks () =
+  let module M = Sarek_codegen.Sarek_ir_metal in
+  let fused =
+    Sarek_execute.Fusion_epilogue.fuse
+      ~name:"epi_pragma"
+      ~producer:(ir_of producer)
+      ~p_array:"t"
+      ~consumer:(ir_of consumer)
+      ~shared:[("t", "t")]
+  in
+  let src = M.generate fused in
+  let refuses_f16 =
+    match M.generate (ir_of producer_f16) with
+    | _ -> false
+    | exception _ -> true
+  in
+  [
+    ("fused MSL: fp contract(off) before the kernel", pragma_before_kernel src);
+    ( "fused MSL: pragma is M.metal_fp_contract_pragma",
+      find_sub ~sub:M.metal_fp_contract_pragma src <> None );
+    ( "control: source without the pragma fails the check",
+      not (pragma_before_kernel (strip_pragma src)) );
+    ("Metal refuses the f16 producer", refuses_f16);
+  ]
+
+let interpreter_references inputs ~contracted =
+  let run pair = snd (run_pair launch_interp pair inputs) in
+  let half = try Some (run Half) with _ -> None in
+  let _, _, chain = run_chain launch_interp inputs (chain_scale ()) in
+  {
+    forwarding = run Forwarding;
+    shared = run Shared;
+    half;
+    chain;
+    contracted = bits_of_array contracted;
+  }
 
 let report_and_exit () =
   if !failures <> [] then begin
@@ -401,5 +532,28 @@ let () =
     n ;
   if sensitive = 0 then
     failures := "no contraction-sensitive input" :: !failures ;
-  Array.iter (on_device inputs ~rounded ~contracted) (Device.init ()) ;
+  let refs = interpreter_references inputs ~contracted in
+  (* The Interpreter rounds as written: it equals the rounded reference and
+     differs from the fma one (the control that the Interpreter reference is
+     itself not contracted). *)
+  let interp_ok = refs.forwarding = bits_of_array rounded in
+  let interp_control = count_diff refs.forwarding refs.contracted > 0 in
+  if not interp_ok then
+    failures := "Interpreter != rounded reference" :: !failures ;
+  if not interp_control then
+    failures := "Interpreter == fma reference" :: !failures ;
+  Printf.printf
+    "  Interpreter forwarding == rounded: %b; != fma: %b\n%!"
+    interp_ok
+    interp_control ;
+  List.iter
+    (fun (label, ok) ->
+      Printf.printf
+        "  %-8s %-62s %s\n%!"
+        "Codegen"
+        label
+        (if ok then "PASS" else "FAIL") ;
+      if not ok then failures := label :: !failures)
+    (codegen_checks ()) ;
+  Array.iter (on_device refs inputs ~rounded ~contracted) (Device.init ()) ;
   report_and_exit ()
