@@ -96,6 +96,25 @@ let contains_sub s sub =
   done ;
   !found
 
+(* The special registers each name must read. *)
+let expected_registers name =
+  let axis = String.sub name (String.length name - 1) 1 in
+  match name with
+  | "thread_id_x" | "thread_idx_x" -> ["%tid.x"]
+  | "thread_id_y" | "thread_idx_y" -> ["%tid.y"]
+  | "thread_id_z" | "thread_idx_z" -> ["%tid.z"]
+  | "block_id_x" | "block_idx_x" -> ["%ctaid.x"]
+  | "block_id_y" | "block_idx_y" -> ["%ctaid.y"]
+  | "block_id_z" | "block_idx_z" -> ["%ctaid.z"]
+  | "block_dim_x" | "block_dim_y" | "block_dim_z" -> ["%ntid." ^ axis]
+  | "grid_dim_x" | "grid_dim_y" | "grid_dim_z" -> ["%nctaid." ^ axis]
+  | "global_thread_id" | "global_idx" | "global_idx_x" ->
+      ["%tid.x"; "%ctaid.x"; "%ntid.x"]
+  | "global_idx_y" -> ["%tid.y"; "%ctaid.y"; "%ntid.y"]
+  | "global_idx_z" -> ["%tid.z"; "%ctaid.z"; "%ntid.z"]
+  | "global_size" -> ["%ntid.x"; "%nctaid.x"]
+  | other -> Alcotest.failf "no expected registers for %s" other
+
 let test_every_position_intrinsic_emits () =
   List.iter
     (fun name ->
@@ -104,7 +123,14 @@ let test_every_position_intrinsic_emits () =
           Alcotest.(check bool)
             (name ^ " emits a store")
             true
-            (contains_sub ptx "st.global")
+            (contains_sub ptx "st.global") ;
+          List.iter
+            (fun reg ->
+              Alcotest.(check bool)
+                (name ^ " reads " ^ reg)
+                true
+                (contains_sub ptx (reg ^ ";")))
+            (expected_registers name)
       | exception e ->
           Alcotest.failf
             "%s: PTX generation raised %s"

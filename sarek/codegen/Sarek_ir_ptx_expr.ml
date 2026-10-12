@@ -1792,19 +1792,7 @@ and index_intrinsic_handlers () : (string list * intrinsic_handler) list =
         let r = new_u32 alloc in
         emit buf "mov.u32 %s, %%nctaid.z;" r ;
         Some r );
-    ( ["global_thread_id"; "global_idx"; "global_idx_x"],
-      fun buf alloc _env _path _name _args ->
-        let r_tid = new_u32 alloc in
-        emit buf "mov.u32 %s, %%tid.x;" r_tid ;
-        let r_bid = new_u32 alloc in
-        emit buf "mov.u32 %s, %%ctaid.x;" r_bid ;
-        let r_bdim = new_u32 alloc in
-        emit buf "mov.u32 %s, %%ntid.x;" r_bdim ;
-        let r_off = new_u32 alloc in
-        emit buf "mul.lo.u32 %s, %s, %s;" r_off r_bid r_bdim ;
-        let r_gid = new_u32 alloc in
-        emit buf "add.u32 %s, %s, %s;" r_gid r_tid r_off ;
-        Some r_gid );
+    (["global_thread_id"; "global_idx"; "global_idx_x"], global_idx_axis "x");
     (["global_idx_y"], global_idx_axis "y");
     (["global_idx_z"], global_idx_axis "z");
     ( ["global_size"],
