@@ -135,7 +135,10 @@ let check_buffer ~buffers ~buf (f : C.fragment) =
              buf
              (elttype_name elt))
 
-(** Element types of the kernel's array parameters and shared arrays. *)
+(** Element types of the kernel's array parameters and shared arrays. A shared
+    array is declared either in [kern_locals] ([DShared]) or in the body, as
+    [SLet (v, EArrayCreate (elt, _, Shared), _)] (how the matrix rewrite
+    declares its staging arrays); private arrays are not buffers. *)
 let kernel_buffers (k : kernel) =
   let of_param = function
     | DParam (v, Some {arr_elttype; _}) -> Some (v.var_name, arr_elttype)
@@ -143,7 +146,23 @@ let kernel_buffers (k : kernel) =
     | DParam _ | DLocal _ -> None
     | DShared (name, elt, _) -> Some (name, elt)
   in
-  List.filter_map of_param (k.kern_params @ k.kern_locals)
+  let declared =
+    Sarek_ir_analysis.kernel_fold
+      {
+        fe = (fun acc _ -> acc);
+        ft = (fun acc _ -> acc);
+        fs =
+          (fun acc -> function
+            | SLet (v, EArrayCreate (elt, _, Shared), _) ->
+                (v.var_name, elt) :: acc
+            | _ -> acc);
+        fnative = (fun acc -> acc);
+        visit_lvalue = false;
+      }
+      []
+      k
+  in
+  List.filter_map of_param (k.kern_params @ k.kern_locals) @ List.rev declared
 
 (** The layout every [CM_load] of an operand fragment uses, by fragment name.
     [nvcuda::wmma] fixes an operand's layout in its fragment TYPE, so the CUDA
