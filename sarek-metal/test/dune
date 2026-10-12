@@ -149,7 +149,6 @@
  (action
   (run %{dep:bench_metal_matrix_rewrite.exe})))
 
-
 ; R-24 on Metal: waitUntilCompleted releases the OCaml runtime lock. The
 ; structural check reads Metal_bindings.ml, so it runs on any host.
 
