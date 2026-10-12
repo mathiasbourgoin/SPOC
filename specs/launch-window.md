@@ -87,7 +87,7 @@ operation, and check that it observes the write.
 As a caller or benchmark, I want to turn the window off, flush it explicitly,
 and count launches.
 **Acceptance Scenarios**:
-1. **Given** `SAREK_LAUNCH_WINDOW=0` in the environment,
+1. **Given** `SAREK_OPT_DISABLE=window` in the environment,
    `set_enabled false` or `Sarek_policy.restrict Launch_window`, **When** a kernel is launched, **Then** it is issued
    immediately (pre-change behaviour).
 2. **Given** a run, **When** `stats ()` is read, **Then** it reports the
@@ -170,7 +170,7 @@ and count launches.
 - **FR-020** [US-3]: The window MUST be enabled by default on HIP, OpenCL, Vulkan,
   CUDA (framework names `CUDA/PTX` and `CUDA/C`) and Metal, and never on CPU
   devices. A group MUST NOT
-  be grown past a backend's kernel argument slots (Metal: 31) or push-constant block (Vulkan: 128 bytes). `SAREK_LAUNCH_WINDOW=0` MUST disable it globally.
+  be grown past a backend's kernel argument slots (Metal: 31) or push-constant block (Vulkan: 128 bytes). `SAREK_OPT_DISABLE=window` MUST disable it globally (the replaced `SAREK_LAUNCH_WINDOW` was removed in M3).
   `Launch_window.set_enabled` and `set_backend_enabled` MUST control it at run
   time (each first flushes).
 - **FR-021** [US-3]: `Launch_window.stats` MUST report submitted launches, issued

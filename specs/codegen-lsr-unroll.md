@@ -31,7 +31,7 @@ results must be opt-in.
 | Operator names? *(agent decision)* | `Lshr32` and `Lshr64` in both `Sarek_ir_ppx.binop` and `Sarek_ir_types.binop`. The width is part of the operator because the C-family emitters must spell the unsigned type and cannot recover it from the operands. |
 | Spelling per backend? | CUDA/HIP `((int)((unsigned int)(a) >> (b)))`, 64-bit `((long long)((unsigned long long)(a) >> (b)))`. OpenCL and Metal `((int)((uint)(a) >> (b)))`, 64-bit `((long)((ulong)(a) >> (b)))`. GLSL `int(uint(a) >> uint(b))`, 64-bit `int64_t(uint64_t(a) >> uint(b))`. WGSL `bitcast<i32>(bitcast<u32>(a) >> u32(b))`; 64-bit is refused (WGSL has no 64-bit integers, as for every other int64 construct). PTX `shr.b32` / `shr.b64`. Interpreter `Int32/Int64.shift_right_logical`. Native already used `Int32/Int64.shift_right_logical` and is unchanged. |
 | Shift amounts outside `0..width-1`? | Unspecified, as in OCaml (`Int32.shift_right_logical`: "unspecified if y < 0 or y >= 32") and as before this change (the old expansion also shifted by the raw amount). Tests cover `0..31` (and `0..63` for int64) exhaustively; nothing is promised outside. |
-| Unroll: default or opt-in? *(agent decision)* | Default. Unrolling a loop whose trip count is a compile-time constant does not change the order or the set of operations, so results are identical; the risk is code size and register pressure only, bounded by the threshold below. Opt-out: an explicit `pragma [...]` on the loop wins (e.g. `pragma ["unroll 1"]`), and `SAREK_AUTO_UNROLL=0` disables the pass (read at code generation; `Execute` memoises generated source per kernel, so set it before the first launch). |
+| Unroll: default or opt-in? *(agent decision)* | Default. Unrolling a loop whose trip count is a compile-time constant does not change the order or the set of operations, so results are identical; the risk is code size and register pressure only, bounded by the threshold below. Opt-out: an explicit `pragma [...]` on the loop wins (e.g. `pragma ["unroll 1"]`), and `SAREK_OPT_DISABLE=unroll` disables the pass (read when the program starts; `Execute` memoises generated source per kernel keyed on the policy). |
 | Threshold? *(agent decision)* | A loop is hinted when both bounds are integer constants (literals, or `+ - *` of literals), its trip count is between 1 and 16, and trip count × the largest expansion of the hinted loops nested in its body is at most 64. q5_K's `for wi = 0 to 7` around `for k = 0 to 3` gives 32; q6_K's `for i = 0 to 15` gives 16. A loop with an unknown or zero trip count is never hinted. |
 | Which backends get a hint? | CUDA, HIP (through the CUDA generator), OpenCL and Metal: `#pragma unroll`. GLSL/Vulkan: `[[unroll]]` under `GL_EXT_control_flow_attributes`. WGSL and PTX have no source-level unroll hint: nothing is emitted. Native and the Interpreter do not compile source. |
 | Where does the pass run? *(agent decision)* | At code generation (`Sarek_ir_unroll.annotate`), called by the CUDA, OpenCL, Metal and GLSL generators on the kernel body and helper bodies. The IR built by the PPX is unchanged, so IR golden tests and the interpreter are unaffected. |
@@ -59,7 +59,7 @@ As a kernel author, I want small constant-trip loops unrolled without writing a 
 3. **Given** `for i = 0 to 31` (trip 32), **Then** no hint.
 4. **Given** three nested loops of trip 8, **Then** the innermost two are hinted (8, 64) and the outer is not (512).
 5. **Given** `pragma ["unroll 2"] (for i = 0 to 7 ...)`, **Then** only the user's pragma is emitted.
-6. **Given** `SAREK_AUTO_UNROLL=0`, **Then** no automatic hint is emitted.
+6. **Given** `SAREK_OPT_DISABLE=unroll`, **Then** no automatic hint is emitted.
 7. **Given** a hinted loop, **When** GLSL is generated, **Then** it has `[[unroll]]` and the extension line, and glslangValidator accepts it.
 
 ## Requirements
@@ -68,7 +68,7 @@ As a kernel author, I want small constant-trip loops unrolled without writing a 
 - **FR-002**: Every backend that matches on `binop` emits a logical shift for `Lshr32`/`Lshr64` with the spellings in Clarifications; WGSL refuses `Lshr64` with a codegen error.
 - **FR-003**: `Ir.Shr` stays arithmetic everywhere (`asr` unchanged).
 - **FR-004**: The Interpreter evaluates `Lshr32`/`Lshr64` with `Int32/Int64.shift_right_logical`.
-- **FR-005**: `Sarek_ir_unroll.annotate` wraps each qualifying `SFor` in `SPragma (["unroll"], _)` per the threshold; loops already under an explicit `SPragma` are left alone; `SAREK_AUTO_UNROLL=0` makes it the identity.
+- **FR-005**: `Sarek_ir_unroll.annotate` wraps each qualifying `SFor` in `SPragma (["unroll"], _)` per the threshold; loops already under an explicit `SPragma` are left alone; `SAREK_OPT_DISABLE=unroll` (`Sarek_policy.restrict Auto_unroll`) makes it the identity (the replaced `SAREK_AUTO_UNROLL` was removed in M3).
 - **FR-006**: CUDA, OpenCL, Metal and GLSL generators apply the pass to the kernel body and to helper bodies; GLSL turns an `["unroll"]` pragma on a loop into `[[unroll]]` and declares `GL_EXT_control_flow_attributes`.
 - **FR-007**: Generated sources and results are tested per the user stories; HIP measurements before/after are recorded in the PR.
 

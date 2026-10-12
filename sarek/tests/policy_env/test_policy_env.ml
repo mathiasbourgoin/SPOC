@@ -434,7 +434,7 @@ let test_removed () =
   Cm.accept_operand_rounding ~precision:Cm.Operands_f16 ~reason:"env scenario" ;
   Cm.accept_automatic_float_rewrite ~reason:"env scenario" ;
   Alcotest.(check bool)
-    "float rewrite allowed (SAREK_MATRIX_REWRITE=off/exact ignored)"
+    "float rewrite allowed (the removed mode variable is ignored)"
     true
     (is_ok (lowering ~explicit:false Adv.F16_inputs)) ;
   match

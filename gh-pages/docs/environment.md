@@ -13,16 +13,15 @@ Test and benchmark programs read further variables of their own (for example `SA
 
 | Convention | Variables |
 |---|---|
-| Only the exact string `1` has an effect | `SPOC_DISABLE_*`, `SAREK_MATRIX_REPORT` |
-| Only the exact string `0` switches off | `SAREK_AUTO_UNROLL`, `SAREK_HIP_IGPU_UNCACHED`, `SAREK_DISK_CACHE` |
-| Exactly `0`, `false`, `off` or `no` (lowercase) switches off; anything else leaves it on | `SAREK_LAUNCH_WINDOW`, `SAREK_LAUNCH_EPILOGUE` |
+| Only the exact string `1` has an effect | `SPOC_DISABLE_*`, `SAREK_EXPLAIN` (any other value is off; an unknown one warns once) |
+| Only the exact string `0` switches off | `SAREK_HIP_IGPU_UNCACHED`, `SAREK_DISK_CACHE` |
+| A comma-separated list of names, case-insensitive, spaces and empty items ignored; an unknown item warns and is ignored | `SAREK_OPT_DISABLE` |
 | `1`, `true` or `yes` (lowercase) switches on | `SAREK_PPX_DEBUG` |
-| A mode name, case-insensitive; an unknown value warns once | `SAREK_MATRIX_REWRITE` |
 | A positive number (surrounding spaces ignored, except for `SPOC_METAL_BATCH` and `SPOC_VULKAN_BATCH`); an invalid value falls back to the default without a message | `SAREK_DOMAIN_COUNT`, `SAREK_CPU_POOL_MAX_DOMAINS`, `SAREK_CPU_POOL_IDLE_MS`, `SPOC_METAL_BATCH`, `SPOC_VULKAN_BATCH` |
 | A positive number; an invalid value is an error | `SPOC_VULKAN_FENCE_TIMEOUT_S` |
 | Set to anything, even empty | `SPOC_GPU_STATS` |
 
-So `SPOC_DISABLE_GPU=true` and `SAREK_LAUNCH_WINDOW=OFF` do nothing.
+So `SPOC_DISABLE_GPU=true` does nothing.
 
 "Read at" says when the value is taken: **PPX** is compile time (the environment of the `dune build` that expands `[%kernel ...]`), **start** is when the library or plugin module is loaded at program start, and **launch** or **code generation** is later, while the program runs.
 
@@ -46,32 +45,62 @@ So `SPOC_DISABLE_GPU=true` and `SAREK_LAUNCH_WINDOW=OFF` do nothing.
 
 Device selection is explained in [Device and backend selection](device_selection.html); the Metal batch in [Memory and transfers](memory.html); the Vulkan batch in [Launch window and fusion](performance.html); the fence bound in the [Vulkan README](https://github.com/mathiasbourgoin/Sarek/blob/main/sarek-vulkan/README.md).
 
-## Launch window and fusion
+## Optimisation policy: restrict and explain
+
+SPOC applies some optimisations on its own (the launch window, epilogue fusion, the matrix-unit rewrite, the exact-narrowing proof, loop unrolling), and some only after the program has accepted a deviation from the interpreter's result (a grant, see [Matrix units](matrix.html) and [Launch window and fusion](performance.html)). The environment can **only restrict**: no variable grants precision, turns an optimisation on that the program or the backend does not allow, or accepts a deviation. Both variables are read once, when the program starts, and a restriction is one-way for the process.
 
 | Variable | Accepted values | Default | Read at | Effect |
 |---|---|---|---|---|
-| `SAREK_LAUNCH_WINDOW` | `0`, `false`, `off`, `no` turn it off | on for HIP, OpenCL, Vulkan, CUDA and Metal; never on CPU devices | start | Switches the launch window (deferred launches and horizontal fusion) off for all backends. |
-| `SAREK_LAUNCH_EPILOGUE` | `0`, `false`, `off`, `no` turn it off | on for HIP and Metal | start | Switches epilogue fusion off. The variable cannot turn it on for another backend. |
+| `SAREK_OPT_DISABLE` | comma-separated items, below | unset | start | Takes the named optimisations away, and revokes the named grants, for the whole process. |
+| `SAREK_EXPLAIN` | `1` | unset (off) | start | Writes one line on stderr for every distinct decision of every optimisation. Any other value is off; a value other than empty or `0` warns once. A reporter installed with `Sarek_policy.set_reporter` replaces the stderr one. |
 
-Both are explained in [Launch window and fusion](performance.html).
+### `SAREK_OPT_DISABLE`
+
+Items are separated by commas, compared case-insensitively, and surrounding spaces and empty items are ignored (`Window, ,Unroll` works). An unknown item prints one line on stderr naming the item and the valid items, and is ignored; the other items apply.
+
+| Item | Effect |
+|---|---|
+| `window` | No deferred launches and no horizontal fusion, on every backend. `Execute.Window.set_enabled` stays for programs that need the window off in part of their run. |
+| `epilogue` | No epilogue fusion, on every backend. |
+| `matrix` | No matrix-unit rewrite, for `Execute.run_vectors` and `Sarek_matrix.run`. |
+| `narrowing-proof` | The f32 to f16 narrowing keeps its barrier everywhere, even where one rounding is provably equal to two. |
+| `unroll` | No automatic `#pragma unroll` hint on small constant-trip loops. |
+| `accumulation-order`, `operand-rounding-f16`, `operand-rounding-bf16`, `operand-rounding-bf16x3`, `single-rounding`, `cross-kernel-contraction`, `automatic-float-rewrite` | Revokes that grant for the whole process, whatever scope the program grants it at. The program's call still succeeds and is recorded, but no decision sees the grant. `SAREK_EXPLAIN` prints `grant-revoked` for it. |
+
+There is no `all`. Other variables that used to switch these off are gone (see `CHANGES.md`): `SAREK_LAUNCH_WINDOW`, `SAREK_LAUNCH_EPILOGUE`, `SAREK_MATRIX_REWRITE`, `SAREK_AUTO_UNROLL` and `SAREK_MATRIX_REPORT` are no longer read, and setting them does nothing.
+
+The generated source and the launch memo follow the policy: a restriction cannot make an earlier check stale.
+
+### `SAREK_EXPLAIN`
+
+One line per distinct (kernel, device, optimisation, decision); a repeated launch adds none. Fields are separated by single spaces; spaces inside a kernel or device name are written `_`, and an epilogue pair `p + c` is written `p+c`. Decisions made by a code generator (narrowing proof, unroll) have no device: the field is the generator, `cuda-c` (HIP and CUDA/C), `opencl`, `metal` or `glsl`.
+
+```
+sarek-explain <kernel> <device> <optimisation> applied proof=<text>
+sarek-explain <kernel> <device> <optimisation> applied granted=<grant>[,<grant>] reason="<reason>"
+sarek-explain <kernel> <device> <optimisation> applied exact
+sarek-explain <kernel> <device> <optimisation> refused <reason>
+sarek-explain <kernel> - policy refused grant-on-generated-name <grant>
+sarek-explain <kernel> - policy refused grant-revoked <grant>
+```
+
+`<optimisation>` is `window`, `epilogue`, `matrix`, `narrowing-proof` or `unroll`; `<grant>` is one of the grant names above; `<reason>` is what the program gave when it granted. `matrix` also reports the explicit cooperative-matrix gate of a kernel the program wrote with `Sarek_gemm.Coopmat`. The last two forms say that a grant the program made has no effect: a `Kernel` grant on a generated name (a fused, derived or static-fusion kernel) is never counted, and a revoked grant is not obeyed. Sample lines from a run on an AMD RX 7900 XTX (HIP) are in `CHANGES.md`.
+
+## Launch window and fusion
+
+The launch window and epilogue fusion have no variable of their own. `SAREK_OPT_DISABLE=window` and `=epilogue` take them away; they are explained in [Launch window and fusion](performance.html).
 
 ## Matrix units
 
 | Variable | Accepted values | Default | Read at | Effect |
 |---|---|---|---|---|
-| `SAREK_MATRIX_REWRITE` | `off`, `0`, `false`, `no`; `exact`; `auto`, `on`, `1`, `true`, `yes` (any case); other values warn once on stderr and mean `auto` | `auto` (unset or empty) | start | Mode of the automatic matrix-unit rewrite in `Execute.run_vectors`: none, `int32` only, or `int32` plus the float products the program has opted into. |
-| `SAREK_MATRIX_REPORT` | `1` | unset | start | Prints each distinct rewrite decision once on stderr. |
 | `SAREK_MATRIX_SCAN` | a file path | unset | PPX | Appends one line per analysed kernel and finding to the file. |
 
-A value such as `0` or `OFF` switches the rewrite off. See [Matrix units](matrix.html).
+The rewrite is restricted with `SAREK_OPT_DISABLE=matrix` or `=automatic-float-rewrite` and reported with `SAREK_EXPLAIN=1`. See [Matrix units](matrix.html).
 
 ## Code generation
 
-| Variable | Accepted values | Default | Read at | Effect |
-|---|---|---|---|---|
-| `SAREK_AUTO_UNROLL` | `0` turns it off | on | code generation (the generated source is memoised per kernel, so set it before the kernel's first launch) | Switches off the automatic unroll hint on small constant-trip `for` loops in the CUDA, HIP, OpenCL, Metal and GLSL generators. |
-
-See [Kernel language notes](kernel_language.html).
+`SAREK_OPT_DISABLE=unroll` switches off the automatic unroll hint on small constant-trip `for` loops in the CUDA, HIP, OpenCL, Metal and GLSL generators. See [Kernel language notes](kernel_language.html).
 
 ## CPU backends
 
