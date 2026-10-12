@@ -35,6 +35,8 @@
 
 (copy_files "../Launch_window.ml")
 
+(copy_files "../Launch_policy.ml")
+
 (copy_files "../Epilogue_policy.ml")
 
 (copy_files "../Launch_epilogue.ml")
@@ -59,6 +61,7 @@
   Fusion_epilogue
   Launch_limits
   Launch_window
+  Launch_policy
   Matrix_admission
   Matrix_specialise
   Epilogue_policy

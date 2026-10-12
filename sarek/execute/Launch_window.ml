@@ -156,12 +156,7 @@ let max_members = ref 8
 
 let max_cached = 4096
 
-let env_enabled () =
-  match Sys.getenv_opt "SAREK_LAUNCH_WINDOW" with
-  | Some ("0" | "false" | "off" | "no") -> false
-  | _ -> true
-
-let enabled = Atomic.make (env_enabled ())
+let enabled = Atomic.make true
 
 (** Backends deferred by default (specs/launch-window.md); Native, Interpreter
     and WebGPU stay immediate. {!set_backend_enabled} opts in or out. *)

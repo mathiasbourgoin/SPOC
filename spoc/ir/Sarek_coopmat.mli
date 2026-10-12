@@ -164,3 +164,12 @@ val policy_verdict : config -> Sarek_capability.verdict
     only (the launch gate, the interpreter). *)
 val policy_verdict_for :
   Sarek_policy.Budget.t -> config -> Sarek_capability.verdict
+
+(** [policy_decision_for budget cfg]: the same judgement as a decision for the
+    explain report. [Refused] names the missing capability (the [cap_name] of
+    the refusal); [Applied] says [Exact_by_construction] for an integer
+    configuration and otherwise [Granted] with the grants it rests on
+    ([Accumulation_order], and the operand rounding of a bf16 operand) and their
+    reasons. *)
+val policy_decision_for :
+  Sarek_policy.Budget.t -> config -> Sarek_policy.decision

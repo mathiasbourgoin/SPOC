@@ -20,41 +20,6 @@ module Adm = Matrix_admission
 
 let ( let* ) = Result.bind
 
-(* ---- Mode ------------------------------------------------------------------ *)
-
-type mode = Off | Exact | Auto
-
-let mode_name = function Off -> "off" | Exact -> "exact" | Auto -> "auto"
-
-let accepted_modes = "off/0/false/no, exact, auto/on/1/true/yes"
-
-let parse_mode = function
-  | None -> (Auto, None)
-  | Some raw -> (
-      match String.lowercase_ascii (String.trim raw) with
-      | "off" | "0" | "false" | "no" -> (Off, None)
-      | "exact" -> (Exact, None)
-      | "auto" | "on" | "1" | "true" | "yes" | "" -> (Auto, None)
-      | _ ->
-          ( Auto,
-            Some
-              (Printf.sprintf
-                 "[sarek matrix] SAREK_MATRIX_REWRITE=%S is not recognised \
-                  (accepted: %s); using auto"
-                 raw
-                 accepted_modes) ))
-
-let mode_of_env () =
-  let mode, warning = parse_mode (Sys.getenv_opt "SAREK_MATRIX_REWRITE") in
-  Option.iter (Printf.eprintf "%s\n%!") warning ;
-  mode
-
-let current_mode = Atomic.make (mode_of_env ())
-
-let set_mode m = Atomic.set current_mode m
-
-let mode () = Atomic.get current_mode
-
 (* ---- Outcome ------------------------------------------------------------ *)
 
 type variant = Staged | Direct of int
@@ -68,6 +33,7 @@ type specialised = {
   block : int * int * int;
   grid : int * int * int;
   via_interpreter : bool;
+  evidence : Sarek_policy.evidence;
 }
 
 type outcome = Specialised of specialised | Original of string
@@ -241,34 +207,55 @@ let float32_lowering ~budget precision =
    only after its own opt-in; the accuracy opt-ins are checked with the
    configuration ([device_admits]) and by [float32_lowering]. *)
 let automatic_float_optin ~budget ~explicit =
-  if
-    explicit
-    || Sarek_policy.Budget.permits
-         budget
-         (Sarek_policy.Consent Sarek_policy.Automatic_float_rewrite)
-  then Ok ()
+  let consent = Sarek_policy.Consent Sarek_policy.Automatic_float_rewrite in
+  if explicit || Sarek_policy.Budget.permits budget consent then Ok ()
+  else if Sarek_policy.revoked consent then
+    Error
+      "float products are not rewritten automatically: \
+       automatic-float-rewrite is revoked (SAREK_OPT_DISABLE); \
+       Sarek_matrix.run does not need it"
   else
     Error
       "float products are rewritten automatically only after \
        Sarek_coopmat.accept_automatic_float_rewrite (plus the accuracy \
        opt-ins); Sarek_matrix.run does not need it"
 
-let lowering_for ~budget ~mode ~explicit case precision =
-  match (mode, case) with
-  | (Off | Exact | Auto), Adv.Int32_inputs -> Ok Rw.Int32_byte_planes
-  | (Off | Exact), (Adv.F16_inputs | Adv.F32_inputs) ->
-      Error
-        (Printf.sprintf
-           "mode %s: float products are not rewritten"
-           (mode_name mode))
-  | Auto, Adv.F16_inputs ->
+let lowering_for ~budget ~explicit case precision =
+  match case with
+  | Adv.Int32_inputs -> Ok Rw.Int32_byte_planes
+  | Adv.F16_inputs ->
       let* () = automatic_float_optin ~budget ~explicit in
       Ok Rw.F16_operands
-  | Auto, Adv.F32_inputs ->
+  | Adv.F32_inputs ->
       let* () = automatic_float_optin ~budget ~explicit in
       float32_lowering ~budget precision
-  | (Off | Exact | Auto), Adv.No_case ->
-      Error "no matrix-unit configuration for these element types"
+  | Adv.No_case -> Error "no matrix-unit configuration for these element types"
+
+(* What justifies a rewrite, for the explain report: int32 is bit-identical;
+   a float one rests on the grants it was admitted under (the consent only for
+   the automatic path), with their reasons. *)
+let evidence_for ~budget ~explicit ~case lowering ~description =
+  match lowering with
+  | Rw.Int32_byte_planes ->
+      Sarek_policy.Proof (description ^ ": bit-identical modulo 2^32")
+  | Rw.F16_operands | Rw.Bf16_operands | Rw.Bf16x3_operands ->
+      let rounding p =
+        Sarek_policy.Deviation (Sarek_policy.Operand_rounding p)
+      in
+      let grants =
+        (if explicit then []
+         else [Sarek_policy.Consent Sarek_policy.Automatic_float_rewrite])
+        @ [Sarek_policy.Deviation Sarek_policy.Accumulation_order]
+        @
+        match (case, lowering) with
+        | _, Rw.Bf16_operands -> [rounding Sarek_policy.Operands_bf16]
+        | _, Rw.Bf16x3_operands -> [rounding Sarek_policy.Operands_bf16x3]
+        | Adv.F32_inputs, _ -> [rounding Sarek_policy.Operands_f16]
+        | _ -> []
+      in
+      let reasons = List.filter_map (Sarek_policy.Budget.reason budget) grants in
+      Sarek_policy.Granted
+        {grants; reason = String.concat "; " (description :: reasons)}
 
 let subgroup_override_for_tests = Adm.subgroup_override_for_tests
 
@@ -351,11 +338,9 @@ let device_possible (device : Device.t) ~explicit ~stream =
   | fw -> Error (Printf.sprintf "no matrix-unit rewrite on %s" fw)
 
 let decide ?precision ~explicit ~stream ~(device : Device.t) ~ir ~launch () =
-  let mode = mode () in
   let* () =
     if Sarek_policy.restricted Sarek_policy.Matrix_rewrite then
-      Error "disabled (SAREK_OPT_DISABLE)"
-    else if mode = Off then Error "matrix rewrite switched off"
+      Error Sarek_policy.disabled_reason
     else Ok ()
   in
   let* () = device_possible device ~explicit ~stream in
@@ -369,7 +354,7 @@ let decide ?precision ~explicit ~stream ~(device : Device.t) ~ir ~launch () =
   in
   (* The grants of this kernel: a Kernel-scoped opt-in is read for it only. *)
   let budget = Sarek_policy.budget ~kernels:[ir.kern_name] in
-  let* lowering = lowering_for ~budget ~mode ~explicit plan.case precision in
+  let* lowering = lowering_for ~budget ~explicit plan.case precision in
   let operand_elt = plan.gemm.a.elt in
   let frag = Adm.fragment_of device lowering ~operand_elt in
   let cfg = Rw.config_of ~frag lowering ~operand_elt in
@@ -401,26 +386,25 @@ let decide ?precision ~explicit ~stream ~(device : Device.t) ~ir ~launch () =
       block;
       grid;
       via_interpreter = device.framework = "Interpreter";
+      evidence =
+        evidence_for
+          ~budget
+          ~explicit
+          ~case:plan.case
+          lowering
+          ~description:
+            (Printf.sprintf
+               "%s, %s, %s"
+               (Rw.lowering_name lowering)
+               (variant_name variant)
+               (Sarek_coopmat.config_name cfg));
     }
 
 (* ---- Report ---------------------------------------------------------------- *)
 
-type report = {kernel : string; device : string; outcome : outcome}
-
-let reporter : (report -> unit) option Atomic.t = Atomic.make None
-
-let set_reporter r = Atomic.set reporter r
-
-let env_report = Sys.getenv_opt "SAREK_MATRIX_REPORT" = Some "1"
-
-let reported : (string * string * string, unit) Hashtbl.t = Hashtbl.create 16
-
-(* The same decision for the policy's explain report. *)
+(* The outcome as a policy decision, for the explain report. *)
 let policy_decision = function
-  | Specialised {lowering = Rw.Int32_byte_planes; _} ->
-      Sarek_policy.Applied Sarek_policy.Exact_by_construction
-  | Specialised _ ->
-      Sarek_policy.Applied (Sarek_policy.Granted "float matrix rewrite opt-ins")
+  | Specialised s -> Sarek_policy.Applied s.evidence
   | Original why -> Sarek_policy.Refused why
 
 let report ~kernel ~device outcome =
@@ -430,20 +414,12 @@ let report ~kernel ~device outcome =
       device;
       optimisation = Sarek_policy.Matrix_rewrite;
       decision = policy_decision outcome;
-    } ;
-  Option.iter (fun f -> f {kernel; device; outcome}) (Atomic.get reporter) ;
-  if env_report then
-    let text = outcome_text outcome in
-    Mutex.protect memo_lock (fun () ->
-        if not (Hashtbl.mem reported (kernel, device, text)) then (
-          Hashtbl.replace reported (kernel, device, text) () ;
-          Printf.eprintf "[sarek matrix] %s on %s: %s\n%!" kernel device text))
+    }
 
-(* A kernel with no matrix product, a device that can never rewrite, and mode
-   Off are the common cases: not reported. *)
+(* A kernel with no matrix product, and a device that can never rewrite, are
+   the common cases: not reported. *)
 let reportable (device : Device.t) ~explicit ir =
-  mode () <> Off
-  && (not (Sarek_policy.restricted Sarek_policy.Matrix_rewrite))
+  Sarek_policy.reporting ()
   && Result.is_ok (device_possible device ~explicit ~stream:false)
   && Result.is_ok (entry ir).plan
 

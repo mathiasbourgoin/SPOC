@@ -27,6 +27,7 @@
   Fusion_epilogue
   Launch_limits
   Launch_window
+  Launch_policy
   Epilogue_policy
   Launch_epilogue
   Matrix_admission

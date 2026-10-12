@@ -25,18 +25,6 @@
     the rewrite [Execute.run_vectors] applies on its own to a program's own
     kernels. *)
 
-(** Which matrix rewrites [Execute] applies by default
-    ({!Sarek_execute.Matrix_specialise.mode}): [Off] none, [Exact] the int32 one
-    only, [Auto] (default) the int32 one plus the float ones the program has
-    opted into ({!Sarek_coopmat.accept_automatic_float_rewrite} and the accuracy
-    opt-ins). Initialised from [SAREK_MATRIX_REWRITE] (an unrecognised value
-    warns and gives [Auto]). *)
-type mode = Sarek_execute.Matrix_specialise.mode = Off | Exact | Auto
-
-val set_mode : mode -> unit
-
-val mode : unit -> mode
-
 type outcome =
   | Rewritten of {
       lowering : Sarek_matrix_rewrite.lowering;

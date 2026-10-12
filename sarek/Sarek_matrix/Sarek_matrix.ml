@@ -20,12 +20,6 @@ type outcome =
   | Rewritten of {lowering : Rw.lowering; config : Sarek_coopmat.config}
   | Original of string
 
-type mode = Spec.mode = Off | Exact | Auto
-
-let set_mode = Spec.set_mode
-
-let mode = Spec.mode
-
 let run ?precision ~device ~ir ~args ~block ~grid () =
   match
     Execute.run_vectors_outcome

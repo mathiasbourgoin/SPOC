@@ -47,7 +47,6 @@ let automatic = Sarek_policy.Consent Sarek_policy.Automatic_float_rewrite
 let lowering name ~explicit case precision =
   Spec.lowering_for
     ~budget:(Sarek_policy.budget ~kernels:[name])
-    ~mode:Spec.Auto
     ~explicit
     case
     precision

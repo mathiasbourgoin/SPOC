@@ -19,21 +19,15 @@
 
     What this module adds to that decision is a per-backend switch that only
     restricts: every backend is on by default, {!set_backend_enabled}[ false]
-    switches one off and [true] only undoes that; [SAREK_LAUNCH_EPILOGUE=0]
+    switches one off and [true] only undoes that; [SAREK_OPT_DISABLE=epilogue]
     restricts epilogue fusion for the whole process, for good. Neither grants
     anything. *)
 
 (* Backends switched off with {!set_backend_enabled}; only a switch-off made
-   there is undone by [true]. [SAREK_LAUNCH_EPILOGUE=0] is not in this list: it
-   is a process restriction of {!Sarek_policy.Epilogue_fusion} (one-way, like
-   [SAREK_OPT_DISABLE=epilogue] in M3), so no later [true] brings fusion back. *)
+   there is undone by [true]. [SAREK_OPT_DISABLE=epilogue] is not in this list:
+   it is a process restriction of {!Sarek_policy.Epilogue_fusion} (one-way), so
+   no later [true] brings fusion back. *)
 let switched_off : string list Atomic.t = Atomic.make []
-
-let () =
-  match Sys.getenv_opt "SAREK_LAUNCH_EPILOGUE" with
-  | Some ("0" | "false" | "off" | "no") ->
-      Sarek_policy.restrict Sarek_policy.Epilogue_fusion
-  | _ -> ()
 
 (* A backend stays off once its plugin reported that it lost the exactness the
    fusion relies on ({!Spoc_framework_registry.Fp_exactness}: Metal without

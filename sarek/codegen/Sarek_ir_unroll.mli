@@ -15,14 +15,11 @@
     A loop already governed by an explicit [SPragma] (any hint other than
     Sarek's own [sarek.*] directives) is left alone, so [pragma ["unroll 1"]]
     opts a loop out (a loop under such a pragma with a known trip count is
-    counted as fully unrolled when the enclosing nest is bounded). Setting
-    [SAREK_AUTO_UNROLL=0] in the environment makes {!annotate} the identity. The
-    variable is read at each code generation, but [Execute] memoises the
-    generated source per kernel, so set it before a kernel's first launch (or
-    call [Execute.clear_launch_cache]) for a change to take effect.
-    [Sarek_policy.restrict Auto_unroll] has the same effect and is tracked by
-    the memo (a restriction made after a kernel's first launch is honoured by
-    its next one).
+    counted as fully unrolled when the enclosing nest is bounded).
+    [SAREK_OPT_DISABLE=unroll] in the environment
+    ([Sarek_policy.restrict Auto_unroll]) makes {!annotate} the identity.
+    [Execute] memoises the generated source per kernel, keyed on the policy: a
+    restriction made after a kernel's first launch is honoured by its next one.
 
     Unrolling a constant-trip loop does not change which operations run or their
     order, so results are unchanged; only code size and register use can grow,
@@ -35,8 +32,15 @@ val max_trip : int
 (** 64 *)
 val max_expansion : int
 
-(** Annotates the kernel body and every helper body. *)
-val annotate : Sarek_ir_types.kernel -> Sarek_ir_types.kernel
+(** Annotates the kernel body and every helper body. With [~generator] (the code
+    generator's name: ["cuda-c"], ["opencl"], ["metal"], ["glsl"]) and a
+    reporter installed ({!Sarek_policy.set_reporter}), reports the decision once
+    per kernel and generator as an {!Sarek_policy.Auto_unroll} record whose
+    device is [generator]: applied when a loop was hinted, refused when the
+    restriction took away a hint. A kernel with no qualifying loop is not
+    reported. *)
+val annotate :
+  ?generator:string -> Sarek_ir_types.kernel -> Sarek_ir_types.kernel
 
 (** The same rule on one statement (exposed for tests). *)
 val annotate_stmt : Sarek_ir_types.stmt -> Sarek_ir_types.stmt

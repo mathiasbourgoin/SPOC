@@ -58,6 +58,9 @@ type state = {
   narrowing : narrowing;
       (** which f32 -> f16 narrowings of the function being emitted go through
           [sarek_f32_barrier] *)
+  sites : narrowing_sites;
+      (** the narrowings met so far in this generation (kernel and helpers), for
+          the explain report; shared by the states of its helpers *)
 }
 
 (** [Barrier_unless_exact facts]: every narrowing keeps the barrier unless
@@ -71,6 +74,8 @@ and narrowing =
   | Barrier_unless_exact of Sarek_ir_f16_narrowing.facts
   | Barrier_always
   | Single_rounding
+
+and narrowing_sites = {mutable total : int; mutable proven : int}
 
 (* The kernel's budget, so that a fused kernel holds the grant only if all its
    members do (Sarek_policy.register_fused). *)
@@ -90,6 +95,7 @@ let state (k : kernel) : state =
     coopmat = Sarek_ir_cuda_coopmat.kernel_context k;
     narrowing =
       (if single_rounding k then Single_rounding else proven_narrowing k);
+    sites = {total = 0; proven = 0};
   }
 
 (** The state for emitting helper [hf] of the kernel whose state is [st]. *)
@@ -103,10 +109,62 @@ let helper_state st (hf : helper_func) =
       }
 
 let narrowing_form st e : Sarek_ir_f16_narrowing.form =
-  match st.narrowing with
-  | Single_rounding -> Plain
-  | Barrier_always -> Barrier
-  | Barrier_unless_exact facts -> Sarek_ir_f16_narrowing.form facts e
+  let form : Sarek_ir_f16_narrowing.form =
+    match st.narrowing with
+    | Single_rounding -> Plain
+    | Barrier_always -> Barrier
+    | Barrier_unless_exact facts -> Sarek_ir_f16_narrowing.form facts e
+  in
+  st.sites.total <- st.sites.total + 1 ;
+  (match form with
+  | Barrier -> ()
+  | Plain | Signed_product _ -> st.sites.proven <- st.sites.proven + 1) ;
+  form
+
+(* The explain record of one kernel generation, once the narrowings are counted.
+   A kernel with no f32 -> f16 narrowing is not reported. *)
+let report_narrowing (k : kernel) st =
+  if st.sites.total > 0 && Sarek_policy.reporting () then
+    let decision =
+      match st.narrowing with
+      | Single_rounding ->
+          let grant = Sarek_policy.Deviation Sarek_policy.Single_rounding in
+          Sarek_policy.Applied
+            (Sarek_policy.Granted
+               {
+                 grants = [grant];
+                 reason =
+                   Option.value
+                     ~default:""
+                     (Sarek_policy.Budget.reason
+                        (Sarek_policy.budget ~kernels:[k.kern_name])
+                        grant);
+               })
+      | Barrier_always ->
+          Sarek_policy.decide
+            (Sarek_policy.effective ~kernel:k.kern_name)
+            Sarek_policy.Narrowing_proof
+            ~backend:"cuda-c"
+      | Barrier_unless_exact _ when st.sites.proven = 0 ->
+          Sarek_policy.Refused
+            (Printf.sprintf
+               "0/%d narrowings proven exact, the barrier is kept"
+               st.sites.total)
+      | Barrier_unless_exact _ ->
+          Sarek_policy.Applied
+            (Sarek_policy.Proof
+               (Printf.sprintf
+                  "%d/%d narrowings proven exact"
+                  st.sites.proven
+                  st.sites.total))
+    in
+    Sarek_policy.report
+      {
+        kernel = k.kern_name;
+        device = "cuda-c";
+        optimisation = Sarek_policy.Narrowing_proof;
+        decision;
+      }
 
 (** {1 Type Mapping} *)
 
@@ -1058,7 +1116,7 @@ let generate_with_types ?block
   (* A [for] bound is evaluated once (Sarek_ir_for_bound), then unroll hints
      for small constant-trip loops (Sarek_ir_unroll). *)
   let k = Sarek_ir_for_bound.hoist k in
-  let k = Sarek_ir_unroll.annotate k in
+  let k = Sarek_ir_unroll.annotate ~generator:"cuda-c" k in
   let st = state k in
   let buf = Buffer.create 4096 in
 
@@ -1104,6 +1162,7 @@ let generate_with_types ?block
   (* Close extern "C" *)
   Buffer.add_string buf "}\n" ;
 
+  report_narrowing k st ;
   Buffer.contents buf
 
 (** Generate complete CUDA source for a kernel.

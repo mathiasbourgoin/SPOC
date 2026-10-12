@@ -910,6 +910,7 @@ let check_device_capabilities ~(device : Device.t) (ir : Sarek_ir_types.kernel)
                   r)
             (Sarek_ir_analysis.kernel_coopmat_ops ir)))
   in
+  Launch_policy.coopmat_gate ~device ir ;
   match
     Sarek_capability.first_refusal
       (List.map (Sarek_capability.device_verdict ~provided) required
@@ -986,7 +987,7 @@ let check_interpreter_capabilities (ir : Sarek_ir_types.kernel) : unit =
     kernel whose intrinsic is missing fails codegen (not memoised). Replacing an
     intrinsic's implementation AFTER a kernel using it has launched is not seen
     by that kernel until {!clear_launch_cache} is called, nor is backend debug
-    logging or [SAREK_AUTO_UNROLL] (first launch only). The POLICY is tracked
+    logging (first launch only). The POLICY is tracked
     ({!Policy_stamp}): a later grant or restriction is honoured at once.
 
     LIFETIME AND CONCURRENCY. The entry is a slot of the IR's {!Ir_memo} record,
@@ -1231,7 +1232,7 @@ module Window = struct
   let enabled () = Atomic.get Launch_window.enabled
 
   (** Turn deferral on or off for every backend (flushes first).
-      [SAREK_LAUNCH_WINDOW=0] in the environment turns it off at start-up. *)
+      [SAREK_OPT_DISABLE=window] in the environment turns it off at start-up. *)
   let set_enabled b = Launch_window.set_enabled window b
 
   (** Turn deferral on or off for one backend (flushes first). On by default for
@@ -1346,12 +1347,6 @@ let jit_source (module B : Framework_sig.BACKEND) ~(device : Device.t) ~name
                ^ ": generate_source returned None (kernel may use unsupported \
                   IR nodes)";
            })
-
-(* Whether JIT launches on [device] are deferred. Host-pointer buffers
-   (Host_ptr_buffer, accepted on OpenCL CPU devices only) alias host memory, and
-   distinct vectors can alias each other through it, so buffer identity is no
-   longer the vector's there: launches on CPU devices are not deferred. *)
-let defers_on = Window.defers_device
 
 (* The buffers the kernel touches, with how it uses each. *)
 let launch_accesses (info : Launch_window.ir_info) (ir : Sarek_ir_types.kernel)
@@ -1473,7 +1468,15 @@ let run_jit (module B : Framework_sig.BACKEND) ?stream ~(device : Device.t)
           ~shared_mem
           args
       in
-      if stream = None && soa_params = [] && defers_on device then
+      (* CPU devices never defer (host-pointer buffers alias host memory);
+         the decision is reported for SAREK_EXPLAIN. *)
+      if
+        Launch_policy.deferred
+          ~kernel:ir.Sarek_ir_types.kern_name
+          ~device
+          ~streamed:(stream <> None)
+          ~soa_params
+      then
         submit_deferred
           (module B)
           ~device
@@ -1954,7 +1957,7 @@ let run_vectors_outcome ?(stream : Transfer.stream option) ?precision ?explicit
   outcome
 
 (** Launch [ir] on [device]. When [ir] is a matrix product that matrix units can
-    compute under the current {!Matrix_specialise.mode} and accuracy opt-ins,
+    compute under the current restrictions and accuracy opt-ins,
     the rewritten kernel runs instead, writing exactly the same outputs
     (specs/matrix-pattern-dynamic.md). *)
 let run_vectors ?stream ~device ~ir ~args ~block ~grid ?shared_mem () : unit =

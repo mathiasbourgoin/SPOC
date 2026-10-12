@@ -50,7 +50,7 @@ Sarek: kernel 'matmul_naive' contains a matrix product (GEMM) that matrix units 
   Metal (Apple GPU): float16 operands, or float32 rounded to float16, onto 8x8x8 fragments (explicit request, or the automatic opt-in); the bfloat16 lowerings: none
   OpenCL, WGSL, PTX, Native: no matrix-unit lowering
   accuracy: relaxed beyond the accumulation order: no matrix unit takes float32 operands, so they are rounded (float16: relative error up to 2^-11 each; bfloat16; or a three-term bfloat16 split, near float32); a rewrite needs Sarek_coopmat.accept_operand_rounding ~precision and accept_relaxed_accumulation
-  Execute.run_vectors rewrites it onto matrix units only after the opt-in above AND Sarek_coopmat.accept_automatic_float_rewrite (and SAREK_MATRIX_REWRITE not off or exact); Sarek_matrix.run needs the opt-in above only.
+  Execute.run_vectors rewrites it onto matrix units only after the opt-in above AND Sarek_coopmat.accept_automatic_float_rewrite (and neither SAREK_OPT_DISABLE=matrix nor =automatic-float-rewrite); Sarek_matrix.run needs the opt-in above only.
   Silence with [@alert "-sarek_matrix"] on the kernel expression or its binding.
 ```
 
@@ -86,24 +86,17 @@ The attribute also works on the kernel expression, as `([%kernel ...] [@alert "-
 
 `Execute.run_vectors` asks `Matrix_specialise` before every launch whether to run a rewritten kernel instead of the one it was given. The rewritten kernel writes exactly the outputs the original launch writes, with one subgroup per output tile instead of one thread per output. `Execute.run` and raw launches never specialise. `Execute.run_vectors_plain` launches the kernel as given.
 
-### Modes
+### Restricting the rewrite
 
-`SAREK_MATRIX_REWRITE` sets the mode when the program starts, and `Sarek_matrix.set_mode` changes it later:
+The environment can only take the rewrite away, never grant it (see [Environment variables](environment.html)). `SAREK_OPT_DISABLE` is read when the program starts:
 
-| Mode | `int32` product | float product |
+| `SAREK_OPT_DISABLE=` | `int32` product | float product |
 |---|---|---|
-| `off` | original | original |
-| `exact` | rewritten, bit-identical | original |
-| `auto` (default) | rewritten, bit-identical | rewritten after the opt-ins below |
+| (unset) | rewritten, bit-identical | rewritten after the opt-ins below |
+| `automatic-float-rewrite` | rewritten, bit-identical | original, for `Execute.run_vectors` (the revoked consent); `Sarek_matrix.run` needs no consent and still rewrites after the accuracy opt-ins |
+| `matrix` | original | original (also for `Sarek_matrix.run`) |
 
-Accepted values of the variable, case-insensitively and ignoring surrounding spaces: `off`, `0`, `false`, `no`; `exact`; `auto`, `on`, `1`, `true`, `yes`. Unset or empty means `auto`; any other value prints one warning on stderr and means `auto` (`parse_mode` in `Matrix_specialise.ml`). A value such as `0` or `OFF` therefore switches the rewrite off.
-
-```ocaml
-(* Disable the rewrite for the rest of the process. *)
-let () = Sarek_matrix.set_mode Sarek_matrix.Off
-```
-
-The mode also applies to `Sarek_matrix.run`: `Off` never rewrites and `Exact` rewrites only `int32` (`Matrix_specialise.ml:238-253`, and `:337-338` where `off` is checked first).
+`accumulation-order`, `operand-rounding-f16` (also `-bf16`, `-bf16x3`) revoke the accuracy opt-ins the same way: the program's call is recorded and has no effect. A restriction is one-way and process-wide, so there is no API to set it in code.
 
 ### Which kernels are rewritten
 
@@ -158,7 +151,7 @@ let () =
     ~reason:"let Execute rewrite the model's float GEMMs"
 ```
 
-The two accuracy opt-ins alone admit matrix-unit configurations for code that asks for them (`Sarek_gemm.Coopmat`, `Sarek_matrix.run`); they do not enable the automatic rewrite. Without `accept_automatic_float_rewrite`, a float launch through `Execute.run_vectors` runs the original kernel and the report names the missing call (`automatic_float_optin` in `Matrix_specialise.ml`). The `int32` rewrite needs none of them.
+The two accuracy opt-ins alone admit matrix-unit configurations for code that asks for them (`Sarek_gemm.Coopmat`, `Sarek_matrix.run`); they do not enable the automatic rewrite. Without `accept_automatic_float_rewrite`, a float launch through `Execute.run_vectors` runs the original kernel and the explain line names the missing call. The `int32` rewrite needs none of them.
 
 Precision of a `float32` product: if the program asks for one (`~precision` on `Sarek_matrix.run` or `Execute.run_vectors_outcome`), that precision must have been accepted. Otherwise `float16` is used when accepted, else `bfloat16`. The `bfloat16x3` split reaches near-float32 accuracy but was measured no faster than the scalar kernel, so it is used only on request (`Matrix_specialise.ml:206-227`). Bounds measured on gfx1100 for each precision are in the Results of [`specs/matrix-pattern-rewrite.md`](https://github.com/mathiasbourgoin/Sarek/blob/main/specs/matrix-pattern-rewrite.md); they assume finite operands within the narrower type's range (`float16` overflows above 65504).
 
@@ -189,16 +182,17 @@ let launch_and_say ~device ~ir ~args ~block ~grid =
   print_endline (Sarek_execute.Matrix_specialise.outcome_text outcome)
 ```
 
-`Matrix_specialise.set_reporter` registers a callback that receives every decision about a kernel that is a matrix product. `SAREK_MATRIX_REPORT=1` (exactly `1`, read when the program starts) prints each distinct kernel, device and outcome once on stderr:
+Every decision about a kernel that is a matrix product is an `Sarek_policy.Matrix_rewrite` record for `Sarek_policy.set_reporter`. `SAREK_EXPLAIN=1` (exactly `1`, read when the program starts) prints each distinct kernel, device and outcome once on stderr, as one line:
 
 ```
-[sarek matrix] <kernel> on <device>: rewritten: <lowering>, <staged|direct>, <configuration>
-[sarek matrix] <kernel> on <device>: original kernel: <reason>
+sarek-explain <kernel> <device> matrix applied proof=<lowering>, <staged|direct (N waves/block)>, <configuration>: bit-identical modulo 2^32
+sarek-explain <kernel> <device> matrix applied granted=<grants> reason="<lowering>, <variant>, <configuration>; <the program's reasons>"
+sarek-explain <kernel> <device> matrix refused <reason>
 ```
 
-Kernels that are not matrix products, devices that can never rewrite, and mode `off` are not reported (`Matrix_specialise.ml:404-407`, `:422-424`).
+The first form is the `int32` rewrite, the second a float one (the grants it was admitted under: the consent, the accumulation order, the operand rounding). Kernels that are not matrix products and devices that can never rewrite are not reported. `Execute.run_vectors_outcome` and `Sarek_matrix.run` return the outcome to the caller as well.
 
-The analysis result and the rewritten kernels are cached per kernel IR (by physical identity), per lowering and size class, so repeated launches of one kernel analyse it once. Mode, opt-ins and device are checked at every launch. A kernel whose IR is rebuilt for each launch is analysed each time, as it also misses the launch memo.
+The analysis result and the rewritten kernels are cached per kernel IR (by physical identity), per lowering and size class, so repeated launches of one kernel analyse it once. Restrictions, opt-ins and device are checked at every launch. A kernel whose IR is rebuilt for each launch is analysed each time, as it also misses the launch memo.
 
 ## Explicit entry points
 

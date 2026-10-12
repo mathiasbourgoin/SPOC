@@ -224,12 +224,12 @@ let rewrite_note = function
   | Int32_inputs ->
       "Execute.run_vectors rewrites it onto matrix units by default where they \
        exist (HIP gfx11, Vulkan; CUDA/C on request only); \
-       SAREK_MATRIX_REWRITE=off disables it."
+       SAREK_OPT_DISABLE=matrix disables it."
   | F16_inputs | F32_inputs ->
       "Execute.run_vectors rewrites it onto matrix units only after the opt-in \
-       above AND Sarek_coopmat.accept_automatic_float_rewrite (and \
-       SAREK_MATRIX_REWRITE not off or exact); Sarek_matrix.run needs the \
-       opt-in above only."
+       above AND Sarek_coopmat.accept_automatic_float_rewrite (and neither \
+       SAREK_OPT_DISABLE=matrix nor =automatic-float-rewrite); \
+       Sarek_matrix.run needs the opt-in above only."
   | No_case -> "Not rewritten."
 
 let render ?kernel_name (g : P.gemm) adv =
