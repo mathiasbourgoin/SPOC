@@ -241,8 +241,30 @@ let on_all_streams device f =
 let release_deferred device =
   List.iter (fun release -> release ()) (Device.take_deferred device)
 
+(** Forget the awaited events of [stream] whose work has completed (their fence
+    is no longer pending or reads signalled), so a stream that waits on many
+    events does not keep them all. An event whose lock another domain holds is
+    kept: its fence is being recorded or waited and must not be queried. Caller
+    holds [batch_lock]. *)
+let prune_awaited stream =
+  let still_awaited ev =
+    if not (Mutex.try_lock ev.event_lock) then true
+    else
+      Fun.protect
+        ~finally:(fun () -> Mutex.unlock ev.event_lock)
+        (fun () ->
+          ev.event_fence.pending
+          && not
+               (fence_signalled
+                  "vkGetFenceStatus (awaited event)"
+                  stream.device.Device.device
+                  ev.event_fence.handle))
+  in
+  stream.awaited <- List.filter still_awaited stream.awaited
+
 let drain_all device =
   on_all_streams device drain_stream ;
+  on_all_streams device prune_awaited ;
   release_deferred device
 
 let drain_device device =
@@ -385,9 +407,14 @@ let record_dispatch stream ~kernel ~layout ~descriptors ~record =
       else if slot.dispatches >= !batch_limit then
         submit_open ~defer:true stream)
 
-(** Record that [stream] waits for [event]. The event is not added twice. *)
+(** Record that [stream] waits for [event]. The event is not added twice, and
+    events whose work has completed are dropped first, so the list stays bounded
+    by the events actually outstanding. {!synchronize} waits on the event's
+    fence as it is then: an event re-recorded after the wait was issued is
+    waited for too, which over-waits and is safe. *)
 let add_awaited stream event =
   Mutex.protect stream.device.Device.batch_lock (fun () ->
+      prune_awaited stream ;
       if
         not
           (List.exists
