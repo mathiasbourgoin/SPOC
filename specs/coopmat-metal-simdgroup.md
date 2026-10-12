@@ -36,7 +36,7 @@ Evidence tiers: *executed* (on a named device and toolchain), *compiler-output*,
 
 | backend | SCoopmat before | after | evidence tier |
 |---|---|---|---|
-| HIP | WMMA (gfx11) | unchanged | executed on RX 7900 XTX gfx1100, hipcc/hiprtc ROCm 7.2.4 (`test_coopmat_hip_e2e` re-run after the `Sarek_gemm.Coopmat` refactor, `/mnt/ssd-external-2to/spoc-pipeline-logs/pkgH/H3-tlreview-test_coopmat_hip_e2e.txt`, PASS on ed7c5555) |
+| HIP | WMMA (gfx11) | unchanged | executed on RX 7900 XTX gfx1100, hipcc/hiprtc ROCm 7.2.4 (`test_coopmat_hip_e2e` re-run after the `Sarek_gemm.Coopmat` refactor, `/mnt/ssd-external-2to/spoc-pipeline-logs/pkgH/H3-tlreview-test_coopmat_hip_e2e.txt`, PASS on the reviewed branch head) |
 | CUDA | lowered (`nvcuda::wmma`), compile-only | unchanged | unchanged |
 | Vulkan | GLSL coopmat (integer) | unchanged | unchanged |
 | Metal | refused; scalar f16 refused | scalar f16 lowered; `simdgroup_matrix` 8x8x8 `f16*f16+f32->f32` lowered; every other configuration refused with a reason | codegen: compiler-output (goldens on tartarus); numerics: executed on Apple M4, macOS 15 (see Status; executed on Apple M4, macOS 15) |
@@ -152,7 +152,7 @@ hardware from the source this generator emits. Neither needs an opt-in to genera
 `Sarek_coopmat.accept_relaxed_accumulation` for the float configuration stays
 (see above).
 
-Evidence (Apple M4, macOS 15, ladon, 2026-10-12T05:58Z, load 3.6): run on bbbfe546, raw output `/mnt/ssd-external-2to/spoc-pipeline-logs/pkgH/H3-ladon-after.txt`; the `e2e-metal` alias passed (exit 0).
+Evidence (Apple M4, macOS 15, ladon, 2026-10-12T05:58Z, load 3.6): run on the branch head after the opt-in removal, raw output `/mnt/ssd-external-2to/spoc-pipeline-logs/pkgH/H3-ladon-after.txt`; the `e2e-metal` alias passed (exit 0).
 
 | check | result |
 |---|---|
