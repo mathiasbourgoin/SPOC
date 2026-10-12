@@ -447,3 +447,15 @@
  (name test_contraction_bound)
  (modules test_contraction_bound)
  (libraries alcotest))
+
+; SAREK_LAUNCH_EPILOGUE=0 is a one-way restriction of the process.
+
+(test
+ (name test_epilogue_env_off)
+ (modules test_epilogue_env_off)
+ (libraries sarek_execute sarek_ir alcotest)
+ (action
+  (setenv
+   SAREK_LAUNCH_EPILOGUE
+   0
+   (run %{test}))))
