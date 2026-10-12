@@ -177,6 +177,31 @@ let test_grants_sorted () =
     (List.map grant_name atoms)
     (List.map (fun (g, _) -> grant_name g) (B.grants b))
 
+(* Reference model: a budget built from a subset is that subset, whatever the
+   insertion order, and lists its grants in [all_grants] order (which also pins
+   the internal ranking to the position in [all_grants]). *)
+let test_reference_model () =
+  List.iter
+    (fun subset ->
+      List.iter
+        (fun order ->
+          let b = build order in
+          List.iter
+            (fun g ->
+              Alcotest.(check bool)
+                "permits = membership"
+                (List.mem g subset)
+                (B.permits b g))
+            atoms ;
+          Alcotest.(check (list string))
+            "grants = subset in all_grants order"
+            (List.map
+               grant_name
+               (List.filter (fun g -> List.mem g subset) atoms))
+            (List.map (fun (g, _) -> grant_name g) (B.grants b)))
+        [subset; List.rev subset])
+    subsets
+
 let test_no_implication () =
   List.iter
     (fun g ->
@@ -320,6 +345,19 @@ let test_grants_do_not_imply () =
       Deviation Cross_kernel_contraction;
     ]
 
+let test_budget_meet_shared_grant () =
+  let x = Deviation Cross_kernel_contraction in
+  granted (grant (Kernel "kern_d") x ~reason:"d") ;
+  granted (grant (Kernel "kern_e") x ~reason:"e") ;
+  Alcotest.(check bool)
+    "a grant every member holds survives the meet"
+    true
+    (B.permits (budget ~kernels:["kern_d"; "kern_e"]) x) ;
+  Alcotest.(check bool)
+    "but not with a member that lacks it"
+    false
+    (B.permits (budget ~kernels:["kern_d"; "kern_e"; "kern_b"]) x)
+
 let () =
   let case name f = Alcotest.test_case name `Quick f in
   Alcotest.run
@@ -338,6 +376,7 @@ let () =
           case "first reason kept" test_first_reason_kept;
           case "grants are sorted" test_grants_sorted;
           case "no grant implies another" test_no_implication;
+          case "reference model" test_reference_model;
         ] );
       ( "store (in order)",
         [
@@ -349,5 +388,8 @@ let () =
           case "reason precedence" test_reason_precedence;
           case "first grant kept per scope" test_first_grant_kept;
           case "no implication in the store" test_grants_do_not_imply;
+          case
+            "meet keeps a grant all members hold"
+            test_budget_meet_shared_grant;
         ] );
     ]

@@ -9,7 +9,7 @@
  *
  * Prints, to stdout, in a fixed order: the source every pure generator emits
  * for a corpus of named kernels, [Sarek_coopmat.policy_verdict] for a set of
- * configurations, and every precision-grant reader, in four process states
+ * configurations, and every precision-grant reader, in five process states
  * (grants are one-way, so the states are sequential):
  *
  *   S0 no grant

@@ -109,8 +109,11 @@ module type BUDGET = sig
   (** No grant: the bottom of {!leq}. *)
   val exact : t
 
-  (** [add g ~reason b] grants [g]. A blank [reason] is [Error Blank_reason].
-      The first reason for a grant is kept; adding it again is a no-op. *)
+  (** [add g ~reason b] grants [g]. A blank [reason] is [Error Blank_reason],
+      the only refusal [add] can return ([Default_kernel_name] concerns the
+      kernel scope of {!grant}). The error type is shared with {!grant} on
+      purpose. The first reason for a grant is kept; adding it again is a no-op.
+  *)
   val add : grant -> reason:string -> t -> (t, refusal) result
 
   val permits : t -> grant -> bool

@@ -47,7 +47,7 @@ type scope = All_kernels | Kernel of string
 
 (** Why an opt-in was refused. [Default_kernel_name]: [Kernel "sarek_kern"], the
     name every unnamed [[%kernel]] gets, would cover all of them. *)
-type refusal = Blank_reason | Default_kernel_name
+type refusal = Sarek_policy.refusal = Blank_reason | Default_kernel_name
 
 val refusal_message : refusal -> string
 
