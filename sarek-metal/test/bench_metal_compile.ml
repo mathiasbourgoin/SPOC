@@ -99,13 +99,13 @@ let rope =
   [%kernel
     fun (q : float32 vector)
         (pos : int32)
-        (half : int32)
+        (half_dim : int32)
         (theta : float32)
         (n : int32) ->
       let tid = global_thread_id in
       if tid < n then begin
-        let pair = tid mod half in
-        let freq = pow theta (0.0 -. (float pair /. float half)) in
+        let pair = tid mod half_dim in
+        let freq = pow theta (0.0 -. (float pair /. float half_dim)) in
         let angle = float pos *. freq in
         let c = cos angle in
         let s = sin angle in
