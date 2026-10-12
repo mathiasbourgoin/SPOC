@@ -46,7 +46,7 @@
   until the wait returns. The general argument is the note on
   `Hip_bindings.foreign_hip_blocking_lazy`. Test:
   `sarek-metal/test/test_metal_wait_binding.ml` (structural) and alias
-  `e2e-metal` (behavioural, needs a Mac).
+  `e2e-metal` (behavioural, needs a Mac; Apple M4: 1000 minor GCs during a 199 ms wait, 1 before).
 - `Framework_sig.ASYNC` (spec `specs/metal-ranged-copies.md`): device-only
   vectors are shared-storage MTLBuffers with no host mirror; ranged copies are
   a bounds-checked `memcpy` at `contents + offset` that first waits for the

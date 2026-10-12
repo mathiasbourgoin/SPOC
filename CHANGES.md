@@ -119,7 +119,7 @@
   | Backend | Before | After | Evidence |
   |---|---|---|---|
   | HIP, CUDA, OpenCL, Vulkan | lock released (R-24) | unchanged | executed (RX 7900 XTX; CUDA via ZLUDA) |
-  | Metal | lock held during `waitUntilCompleted` | released | structural test on tartarus; behaviour pending ladon run (tech lead) |
+  | Metal | lock held during `waitUntilCompleted` | released | structural test on tartarus; behaviour executed on Apple M4, macOS 15 (ladon, 2026-10-12): the other domain completed 1000 minor GCs during a 199 ms wait, against 1 on origin/main 1808a9a5 |
   | Native, Interpreter | no blocking driver call | unchanged | by-construction |
 
 - CUDA kernel launches marshal all arguments into one 8-byte-slot block plus one
