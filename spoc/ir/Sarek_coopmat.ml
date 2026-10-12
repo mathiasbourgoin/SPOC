@@ -69,64 +69,72 @@ let verdict ~support cfg =
 (* The accuracy policy: docs/design/f16-relaxed-accuracy.md §6.1             *)
 (* ------------------------------------------------------------------------ *)
 
-(* One-way, process-wide. An [Atomic] rather than a [ref] because launches run
-   on several domains and the value is read on every capability check; there is
-   deliberately no way to withdraw the opt-in, so a capability check that passed
-   (and that Execute memoises) can never become stale. *)
-let relaxed_reason : string option Atomic.t = Atomic.make None
+(* The opt-ins are grants of {!Sarek_policy}, which keeps them one-way and
+   process-wide (an [Atomic] there: launches run on several domains and the
+   value is read on every capability check; there is deliberately no way to
+   withdraw an opt-in, so a capability check that passed, and that Execute
+   memoises, can never become stale). The first non-empty reason wins. These
+   functions keep their historical contract of raising on a blank reason. *)
+let accept_process grant ~message ~reason =
+  match Sarek_policy.grant Sarek_policy.Process grant ~reason with
+  | Ok () -> ()
+  (* Process scope cannot be refused as [Default_kernel_name]. *)
+  | Error (Sarek_policy.Blank_reason | Sarek_policy.Default_kernel_name) ->
+      invalid_arg message
 
 let accept_relaxed_accumulation ~reason =
-  if String.trim reason = "" then
-    invalid_arg
+  accept_process
+    (Sarek_policy.Deviation Sarek_policy.Accumulation_order)
+    ~reason
+    ~message:
       "Sarek_coopmat.accept_relaxed_accumulation: the reason must not be empty \
-       (it is the record that the bounded deviation was understood)" ;
-  (* First reason wins: a second call does not overwrite the record. *)
-  ignore (Atomic.compare_and_set relaxed_reason None (Some reason))
+       (it is the record that the bounded deviation was understood)"
 
-let relaxed_accumulation_reason () = Atomic.get relaxed_reason
+let relaxed_accumulation_reason () =
+  Sarek_policy.reason (Sarek_policy.Deviation Sarek_policy.Accumulation_order)
 
-type operand_precision = Operands_f16 | Operands_bf16 | Operands_bf16x3
+type operand_precision = Sarek_policy.operand_precision =
+  | Operands_f16
+  | Operands_bf16
+  | Operands_bf16x3
 
 let operand_precision_name = function
   | Operands_f16 -> "f16"
   | Operands_bf16 -> "bf16"
   | Operands_bf16x3 -> "bf16x3"
 
-let rounding_f16 : string option Atomic.t = Atomic.make None
-
-let rounding_bf16 : string option Atomic.t = Atomic.make None
-
-let rounding_bf16x3 : string option Atomic.t = Atomic.make None
-
-let rounding_cell = function
-  | Operands_f16 -> rounding_f16
-  | Operands_bf16 -> rounding_bf16
-  | Operands_bf16x3 -> rounding_bf16x3
+let rounding_grant precision =
+  Sarek_policy.Deviation (Sarek_policy.Operand_rounding precision)
 
 let accept_operand_rounding ~precision ~reason =
-  if String.trim reason = "" then
-    invalid_arg
+  accept_process
+    (rounding_grant precision)
+    ~reason
+    ~message:
       "Sarek_coopmat.accept_operand_rounding: the reason must not be empty (it \
-       is the record that the operand rounding was understood)" ;
-  ignore (Atomic.compare_and_set (rounding_cell precision) None (Some reason))
+       is the record that the operand rounding was understood)"
 
-let operand_rounding_reason precision = Atomic.get (rounding_cell precision)
+let operand_rounding_reason precision =
+  Sarek_policy.reason (rounding_grant precision)
 
 (* The opt-in for the AUTOMATIC float matrix rewrite (Matrix_specialise). Same
    contract as the accuracy opt-ins above; it grants no accuracy deviation by
    itself, only the permission to apply the accepted ones to a program's own
    kernels. *)
-let automatic_float_reason : string option Atomic.t = Atomic.make None
+let automatic_float_grant =
+  Sarek_policy.Consent Sarek_policy.Automatic_float_rewrite
 
 let accept_automatic_float_rewrite ~reason =
-  if String.trim reason = "" then
-    invalid_arg
+  accept_process
+    automatic_float_grant
+    ~reason
+    ~message:
       "Sarek_coopmat.accept_automatic_float_rewrite: the reason must not be \
        empty (it is the record that rewriting the program's own float kernels \
-       was understood)" ;
-  ignore (Atomic.compare_and_set automatic_float_reason None (Some reason))
+       was understood)"
 
-let automatic_float_rewrite_reason () = Atomic.get automatic_float_reason
+let automatic_float_rewrite_reason () =
+  Sarek_policy.reason automatic_float_grant
 
 (* The float configurations a bound has been derived for: f16 x f16 + f32 ->
    f32 (§5.2) and bf16 x bf16 + f32 -> f32 (specs/matrix-pattern-rewrite.md:

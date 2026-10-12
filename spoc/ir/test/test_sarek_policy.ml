@@ -36,7 +36,9 @@ let build ?(tag = "r") subset =
 let budgets = List.map build subsets
 
 let grant_t =
-  Alcotest.testable (fun ppf g -> Format.pp_print_string ppf (grant_name g)) ( = )
+  Alcotest.testable
+    (fun ppf g -> Format.pp_print_string ppf (grant_name g))
+    ( = )
 
 let test_atoms () =
   Alcotest.(check int) "seven atoms" 7 (List.length atoms) ;
@@ -193,7 +195,9 @@ let test_no_implication () =
 (* ------------------------------------------------------------------------ *)
 
 let refusal_t =
-  Alcotest.testable (fun ppf r -> Format.pp_print_string ppf (refusal_message r)) ( = )
+  Alcotest.testable
+    (fun ppf r -> Format.pp_print_string ppf (refusal_message r))
+    ( = )
 
 let granted = Alcotest.(check (result unit refusal_t)) "granted" (Ok ())
 
