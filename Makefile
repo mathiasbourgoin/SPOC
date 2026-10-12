@@ -8,6 +8,7 @@
 #   make e2e-hip           - Run the sarek-hip suite (needs a HIP device; not run in CI)
 #   make e2e-hip-bench     - Run the HIP bandwidth report (information only)
 #   make e2e-gpu           - Run the Vulkan tests that have no CPU fallback (needs a Vulkan GPU)
+#   make test-vulkan-gpu   - Run the Vulkan backend suite, failing on GPU faults in the kernel log
 #   make e2e-metal         - Run the Metal device-buffers suite (needs a Mac; not run in CI)
 #   make e2e-metal-bench   - Run the Metal bandwidth report (information only)
 #   make benchmarks        - Run standalone benchmark suite (benchmarks/ directory, JSON output)
@@ -503,7 +504,7 @@ e2e-fast:
 
 # sarek-hip suite (ROCm/HIP AMD device)
 e2e-hip:
-	dune build --force @sarek-hip/test/e2e-hip
+	./scripts/gpu-kernel-log-gate.sh -- dune build --force @sarek-hip/test/e2e-hip
 
 # HIP host<->device bandwidth report (information only, never a gate)
 e2e-hip-bench:
@@ -516,7 +517,20 @@ bench-launch-window:
 
 # Vulkan tests with no Native/Interpreter fallback
 e2e-gpu:
-	dune build --force @sarek/tests/e2e/e2e-gpu
+	./scripts/gpu-kernel-log-gate.sh -- dune build --force @sarek/tests/e2e/e2e-gpu
+
+# Vulkan backend suite on a real device, failed when the kernel log shows a GPU
+# fault since the run started (scripts/gpu-kernel-log-gate.sh; Sarek #503/#504).
+# On a machine with several GPUs select the device first (RADV:
+# MESA_VK_DEVICE_SELECT=<vendor>:<device>). Host-memory import stays off unless
+# SPOC_VULKAN_HOST_IMPORT=1 and is refused on AMD drivers.
+.PHONY: test-vulkan-gpu test-gpu-kernel-log-gate
+test-vulkan-gpu:
+	./scripts/gpu-kernel-log-gate.sh -- dune build --force @sarek-vulkan/test/runtest
+
+# Red-path harness of the kernel-log gate (no GPU, no journal).
+test-gpu-kernel-log-gate:
+	./scripts/gpu-kernel-log-gate.test.sh
 
 # Metal device-buffers suite (Apple GPU; run on a Mac)
 e2e-metal:

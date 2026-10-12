@@ -157,7 +157,7 @@ let tests =
     Alcotest.test_case
       "event_query tracks pending work"
       `Quick
-      (with_device test_query_tracks_pending_work);
+      (with_batching_device test_query_tracks_pending_work);
     Alcotest.test_case
       "event_query does not block"
       `Quick
