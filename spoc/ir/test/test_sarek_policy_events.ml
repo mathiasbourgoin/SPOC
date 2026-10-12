@@ -153,12 +153,36 @@ let test_seen_set_is_bounded () =
           report
             {(record "env_cap_a") with decision = Refused (string_of_int i)}
         done ;
-        report {(record "env_cap_a") with decision = Refused "5000"})
+        (* the first decision again: the set was reset, so it is printed again *)
+        report {(record "env_cap_a") with decision = Refused "1"})
   in
+  let ones =
+    List.filter
+      (function
+        | Decision {decision = Refused "1"; _} -> true
+        | Decision _ | Gate _ | Ignored_grant _ -> false)
+      events
+  in
+  Alcotest.(check int)
+    "bounded memory: the set resets after its cap, and forgets"
+    2
+    (List.length ones)
+
+(* With no reporter, report and report_gate return before building the key:
+   nothing is allocated, whatever the size of the decision text. *)
+let test_no_reporter_costs_nothing () =
+  set_reporter None ;
+  let r = {(record "env_hot_a") with decision = Refused (String.make 500 'x')} in
+  let before = Gc.minor_words () in
+  for _ = 1 to 10_000 do
+    report r ;
+    report_gate ~kernel:"env_hot_a" ~target:"HIP:0" r.decision
+  done ;
+  let words = Gc.minor_words () -. before in
   Alcotest.(check bool)
-    "bounded memory: the set resets after its cap, never fails"
+    (Printf.sprintf "no allocation without a reporter (%.0f words)" words)
     true
-    (List.length events >= 5000)
+    (words < 1000.)
 
 let test_no_reporter_no_event () =
   set_reporter None ;
@@ -183,5 +207,6 @@ let () =
           case "alternating decisions" test_alternating_decisions_print_twice;
           case "join reasons" test_join_reasons;
           case "seen set is bounded" test_seen_set_is_bounded;
+          case "no reporter, no cost" test_no_reporter_costs_nothing;
         ] );
     ]

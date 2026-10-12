@@ -173,6 +173,64 @@ let test_float_after_automatic_optin () =
         true
         (contains ~needle:"accept_operand_rounding" why)
 
+(* The evidence of a rewrite: the grants it rests on (the consent only on the
+   automatic path), the program's reasons once each, the description of what
+   was done as the trailing lowering field. *)
+let test_evidence () =
+  let cfg =
+    {
+      Sarek_coopmat.cfg_shape = {Sarek_coopmat.m = 16; n = 16; k = 16};
+      cfg_a = Sarek_coopmat.Float16;
+      cfg_b = Sarek_coopmat.Float16;
+      cfg_c = Sarek_coopmat.Float32;
+      cfg_result = Sarek_coopmat.Float32;
+      cfg_saturating = false;
+      cfg_scope = Sarek_coopmat.Subgroup;
+    }
+  in
+  let budget = Sarek_policy.budget ~kernels:[] in
+  let described lowering =
+    Printf.sprintf
+      "%s, %s, %s"
+      (Rw.lowering_name lowering)
+      (Spec.variant_name Spec.Staged)
+      (Sarek_coopmat.config_name cfg)
+  in
+  let evidence ~explicit ~case lowering =
+    Spec.evidence_for ~budget ~explicit ~case lowering Spec.Staged cfg
+  in
+  let granted grants lowering =
+    Sarek_policy.Granted
+      {grants; reason = "test"; lowering = Some (described lowering)}
+  in
+  let acc = Sarek_policy.Deviation Sarek_policy.Accumulation_order in
+  let consent = Sarek_policy.Consent Sarek_policy.Automatic_float_rewrite in
+  let rounding =
+    Sarek_policy.Deviation
+      (Sarek_policy.Operand_rounding Sarek_coopmat.Operands_f16)
+  in
+  Alcotest.(check bool)
+    "automatic f16: the consent and the accumulation order, one reason"
+    true
+    (evidence ~explicit:false ~case:Adv.F16_inputs Rw.F16_operands
+    = granted [consent; acc] Rw.F16_operands) ;
+  Alcotest.(check bool)
+    "explicit f16: no consent"
+    true
+    (evidence ~explicit:true ~case:Adv.F16_inputs Rw.F16_operands
+    = granted [acc] Rw.F16_operands) ;
+  Alcotest.(check bool)
+    "explicit f32 rounded to f16: the rounding too"
+    true
+    (evidence ~explicit:true ~case:Adv.F32_inputs Rw.F16_operands
+    = granted [acc; rounding] Rw.F16_operands) ;
+  Alcotest.(check bool)
+    "int32: a proof, bit-identical"
+    true
+    (evidence ~explicit:false ~case:Adv.Int32_inputs Rw.Int32_byte_planes
+    = Sarek_policy.Proof
+        (described Rw.Int32_byte_planes ^ ": bit-identical modulo 2^32"))
+
 let () =
   Alcotest.run
     "Matrix_specialise policy"
@@ -191,5 +249,6 @@ let () =
             "after the automatic opt-in"
             `Quick
             test_float_after_automatic_optin;
+          Alcotest.test_case "evidence of a rewrite" `Quick test_evidence;
         ] );
     ]
