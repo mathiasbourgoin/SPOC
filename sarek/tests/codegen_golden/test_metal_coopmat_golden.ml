@@ -294,6 +294,29 @@ let test_available_without_opt_in () =
   if not (contains ~needle:"simdgroup_multiply_accumulate" tile_src) then
     Alcotest.fail "the tile did not generate simdgroup_multiply_accumulate"
 
+(* ---- 5. the launch block ---------------------------------------------- *)
+
+let test_block_shape () =
+  let k = tile f16_cfg in
+  ignore
+    (Sarek_ir_metal.generate_with_types ~block:(32, 1, 1) ~types:k.kern_types k) ;
+  match
+    Sarek_ir_metal.generate_with_types ~block:(16, 1, 1) ~types:k.kern_types k
+  with
+  | (_ : string) -> Alcotest.fail "a 16-thread block was accepted"
+  | exception
+      Sarek_backend_error.Backend_error.Backend_error
+        (Sarek_backend_error.Backend_error.Codegen
+           {
+             error =
+               Sarek_backend_error.Backend_error.Unsupported_construct
+                 {reason; _};
+             _;
+           }) ->
+      if not (contains ~needle:"32-wide" reason) then
+        Alcotest.failf "block refusal does not name the 32-wide rule: %s" reason
+  | exception e -> Alcotest.failf "wrong exception %s" (Printexc.to_string e)
+
 let () =
   Alcotest.run
     "metal_coopmat_golden"
@@ -321,6 +344,9 @@ let () =
           Alcotest.test_case "buffer mismatch" `Quick test_buffer_mismatch;
           Alcotest.test_case "refusals" `Quick test_refusals;
         ] );
+      ( "block",
+        [Alcotest.test_case "32-wide SIMD-groups only" `Quick test_block_shape]
+      );
       ( "opencl",
         [
           Alcotest.test_case
