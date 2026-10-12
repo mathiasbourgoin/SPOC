@@ -84,6 +84,24 @@
 
 ### Changed
 
+- Epilogue fusion is on by default on Metal as well as HIP (H9,
+  `specs/epilogue-fusion.md` FR-104; it was opt-in). Every Metal kernel, fused
+  ones included, starts with `#pragma METAL fp contract(off)`, which on an
+  Apple M4 turned 8773 of 8773 contracted `a*b+c` into 0
+  (`docs/fp-contraction-policy.md` section 10), so the fused kernel equals the
+  unfused pair. Opt out with `SAREK_LAUNCH_EPILOGUE=0` or
+  `Execute.Window.set_epilogue_backend ~backend:"Metal" false`.
+  `test_epilogue_exact` now asserts fused == unfused AND fused == Interpreter
+  bit for bit on every default backend (HIP: executed on an RX 7900 XTX,
+  passes), with controls (inputs separate fma from mul-then-add in 1109 of 4099
+  elements; the Interpreter and the fused result differ from the fma
+  reference), and checks on any host that the fused MSL carries the pragma and
+  that the same check fails on a source without it. Backend coverage
+  (epilogue): HIP on and executed; Metal off to on, compiler-output (pragma in
+  the fused MSL) plus the M4 pragma measurement, fused == Interpreter on a
+  Metal device pending ladon run (tech lead); CUDA, OpenCL, Vulkan opt-in
+  (contract in kernels); Native and Interpreter never.
+
 - The launch window (deferral and horizontal fusion) is on by default on Metal
   (H9, `specs/launch-window.md` FR-020); it was opt-in. Opt out with
   `SAREK_LAUNCH_WINDOW=0` or `Execute.Window.set_backend_enabled

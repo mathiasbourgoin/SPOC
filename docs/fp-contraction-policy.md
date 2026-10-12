@@ -2700,7 +2700,7 @@ that backend compiles *every* kernel without contraction:
 | backend | every kernel uncontracted? | epilogue default |
 |---|---|---|
 | HIP | yes, `-ffp-contract=off` forced last (§2) | **on**; executed fused == unfused, both pairs, RX 7900 XTX gfx1100 |
-| Metal | yes, `#pragma METAL fp contract(off)` (§10), by construction | off (opt-in); **not executed** on Apple hardware |
+| Metal | yes, `#pragma METAL fp contract(off)` (§10), by construction | **on** (package H9); pragma effect executed on Apple M4 (§10), fused == unfused == Interpreter on a Metal device: pending ladon run (tech lead) |
 | CUDA/PTX, CUDA/C | no: nvrtc `--fmad=true` | off (opt-in); executed via ZLUDA on gfx1100 (not NVIDIA hardware) shows no deviation, but ZLUDA is not ptxas |
 | OpenCL | no: executed 2026-10-12, rusticl/radeonsi contracts `o[i] <- a[i]*b[i] + c[i]` (1109 of 1109 sensitive elements equal `fma`) | off (opt-in); the two pairs showed no deviation on rusticl |
 | Vulkan | no: executed 2026-10-12, RADV contracts the same kernel (1109 of 1109) | off (opt-in); the shared pair deviates, 4099 of 4099 |
@@ -2708,7 +2708,7 @@ that backend compiles *every* kernel without contraction:
 
 Opting in on a backend that contracts is a precision grant (a result changes by
 an ulp), recorded by `sarek/tests/e2e/test_epilogue_exact.ml`: it asserts
-fused == unfused on the default backends and only *records* the pairs above
+fused == unfused and fused == Interpreter on the default backends (HIP, Metal) and only *records* the pairs above
 elsewhere. It cannot detect a deviation on other inputs or shapes, nor on
 hardware this host does not have. Inputs: 1109 of 4099 elements where
 `fma(a,b,c)` differs from `round(round(a*b)+c)` (the positive control).

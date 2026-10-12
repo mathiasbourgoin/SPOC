@@ -1231,12 +1231,13 @@ module Window = struct
   let set_backend_enabled ~backend b =
     Launch_window.set_backend_enabled window ~backend b
 
-  (** [true] when epilogue fusion runs on this backend (HIP by default). *)
+  (** [true] when epilogue fusion runs on this backend (HIP and Metal by
+      default). *)
   let epilogue_on backend = Launch_epilogue.enabled backend
 
   (** Turn epilogue fusion on or off for one backend (flushes first). Off by
-      default except on HIP: elsewhere the device compiler may contract across
-      the merged kernels (specs/epilogue-fusion.md). *)
+      default except on HIP and Metal: elsewhere the device compiler may
+      contract across the merged kernels (specs/epilogue-fusion.md). *)
   let set_epilogue_backend ~backend b =
     Launch_window.flush window ;
     Launch_epilogue.set_backend_enabled ~backend b
