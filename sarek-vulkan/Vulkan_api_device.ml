@@ -130,7 +130,8 @@ type t = {
       (** [Some a] when [VK_EXT_external_memory_host] is enabled on this logical
           device: a range of host memory whose address and size are multiples of
           [a] can be imported as device memory ({!Vulkan_api_host}). [None]
-          otherwise, so pinned and registered host memory are refused. *)
+          otherwise, so registered host memory is refused; pinned memory is
+          allocated by the driver and does not depend on it. *)
   queue_lock : Mutex.t;
       (** External synchronization of [compute_queue], which Vulkan requires for
           [vkQueueSubmit] and [vkQueueWaitIdle]. Taken only through

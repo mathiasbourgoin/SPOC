@@ -5,17 +5,24 @@
 
 (** Pinned and registered host memory (specs/vulkan-async-api.md).
 
-    A range of host memory is imported into the driver as device memory
-    ([VK_EXT_external_memory_host]) and wrapped in a [VkBuffer]. A copy between
-    such a range and a device buffer is then one [vkCmdCopyBuffer] with no
-    staging buffer and no host [memcpy]: the DMA engine reads or writes the host
-    pages. The driver, not [mlock], keeps the pages resident for the life of the
-    import.
+    Two sources of a host range that a [VkBuffer] covers:
 
-    The import covers whole pages: the registered range rounded outwards to the
-    device's [minImportedHostPointerAlignment]. A copy whose host range lies
-    inside an import uses it, whether or not it names the registered bytes
-    exactly. A device without the extension refuses both entry points. *)
+    - {!alloc_pinned}: memory the driver allocates ([vkAllocateMemory] from a
+      HOST_VISIBLE | HOST_COHERENT type, HOST_CACHED when there is one), mapped
+      once for the life of the block. The mapped pointer is the pinned address.
+      No host page reaches the driver, so there is no userptr object and no
+      kernel invalidation callback (the Sarek #503 path), and no extension is
+      needed.
+    - {!register}: the pages of a caller's range imported into the driver as
+      device memory ([VK_EXT_external_memory_host]). The import covers whole
+      pages: the range rounded outwards to the device's
+      [minImportedHostPointerAlignment]. Opt-in, and refused on AMD drivers
+      ({!Vulkan_host_import_policy}); a device without the extension refuses it.
+
+    A copy between such a range and a device buffer is one [vkCmdCopyBuffer]
+    with no staging buffer and no host [memcpy]: the DMA engine reads or writes
+    the host pages. A copy whose host range lies inside a buffer's range uses
+    it, whether or not it names the allocated or registered bytes exactly. *)
 
 open Ctypes
 open Vulkan_types
@@ -26,20 +33,24 @@ module Ffi = Vulkan_api_host_ffi
 
 type import = {
   device : Device.t;
-  base : nativeint;  (** First imported byte, a multiple of the alignment. *)
-  length : int;  (** Imported bytes, a multiple of the alignment. *)
+  base : nativeint;
+      (** First covered byte: the mapped pointer of a driver allocation, or the
+          first imported byte (a multiple of the alignment). *)
+  length : int;  (** Covered bytes. *)
   buffer : vk_buffer;
   memory : vk_device_memory;
 }
 
-(** One import per (device, address). [import = None] once the device is gone: a
+(** One buffer per (device, address). [import = None] once the device is gone: a
     [registered] entry then stays as a tombstone so a late {!unregister}
     succeeds quietly. *)
 type entry = {mutable import : import option; registered : bool}
 
 let entries : (int * nativeint, entry) Hashtbl.t = Hashtbl.create 8
 
-(** Live {!alloc_pinned} blocks, whichever devices import them. *)
+(** Live {!alloc_pinned} blocks. A block is driver memory owned by the device
+    that allocated it: it is unmapped when that device is destroyed, but stays
+    listed until {!free_pinned}, which then succeeds without touching it. *)
 let owned_blocks : (nativeint, unit) Hashtbl.t = Hashtbl.create 8
 
 let lock = Mutex.create ()
@@ -53,7 +64,7 @@ let unavailable_reason (device : Device.t) =
   with
   | Some reason -> reason
   | None ->
-      "pinned and registered host memory (the device does not offer \
+      "registered host memory (the device does not offer \
        VK_EXT_external_memory_host)"
 
 let alignment_of (device : Device.t) =
@@ -286,50 +297,124 @@ let unregister (device : Device.t) addr =
       invalid_arg "Vulkan.Async.unregister_host: not a registered range"
   | None -> invalid_arg "Vulkan.Async.unregister_host: not a registered range"
 
-let posix_memalign =
-  lazy
-    (Foreign.foreign
-       "posix_memalign"
-       (ptr (ptr void) @-> size_t @-> size_t @-> returning int))
-
-let free_c = lazy (Foreign.foreign "free" (ptr void @-> returning void))
-
-let alloc_aligned ~alignment ~byte_size =
-  let out = allocate (ptr void) null in
-  let rc =
-    (Lazy.force posix_memalign)
-      out
-      (Unsigned.Size_t.of_int alignment)
-      (Unsigned.Size_t.of_int byte_size)
+(** The first memory type of [bits] that is HOST_VISIBLE | HOST_COHERENT, with
+    [extra] flags, and not DEVICE_LOCAL: on a discrete GPU the DEVICE_LOCAL
+    host-visible type is the BAR window onto VRAM, write-combined and read at
+    0.03 GB/s. A UMA device has only DEVICE_LOCAL types; those are the last
+    resort. *)
+let find_host_memory_type (device : Device.t) bits ~extra =
+  let required =
+    vk_memory_property_host_visible_bit lor vk_memory_property_host_coherent_bit
+    lor extra
   in
-  if rc <> 0 || is_null !@out then
-    Vulkan_error.raise_error
-      (Vulkan_error.context_error
-         "alloc_pinned"
-         (Printf.sprintf "posix_memalign failed (error %d)" rc))
-  else raw_address_of_ptr !@out
+  match
+    Vulkan_api_memory.find_memory_type_excluding
+      device
+      bits
+      ~required
+      ~excluded:vk_memory_property_device_local_bit
+  with
+  | Some _ as found -> found
+  | None -> Vulkan_api_memory.find_memory_type device bits required
 
-let free_aligned addr = (Lazy.force free_c) (ptr_of_raw_address addr)
+let pinned_memory_type device bits =
+  let cached =
+    find_host_memory_type device bits ~extra:vk_memory_property_host_cached_bit
+  in
+  match cached with
+  | Some _ -> cached
+  | None -> find_host_memory_type device bits ~extra:0
 
-(** Host memory aligned and padded to the import granule, imported for the
-    device. *)
+let create_pinned_buffer (device : Device.t) byte_size =
+  let info = make vk_buffer_create_info in
+  setf info buf_create_sType (u32 vk_structure_type_buffer_create_info) ;
+  setf info buf_create_pNext null ;
+  setf info buf_create_flags (u32 0) ;
+  setf info buf_create_size (Unsigned.UInt64.of_int byte_size) ;
+  setf
+    info
+    buf_create_usage
+    (u32
+       (vk_buffer_usage_transfer_src_bit lor vk_buffer_usage_transfer_dst_bit)) ;
+  setf info buf_create_sharingMode (u32 0) ;
+  setf info buf_create_queueFamilyIndexCount (u32 0) ;
+  setf info buf_create_pQueueFamilyIndices (from_voidp uint32_t null) ;
+  let buffer = allocate vk_buffer vk_null_handle in
+  check
+    "vkCreateBuffer (pinned)"
+    (vkCreateBuffer device.Device.device (addr info) null buffer) ;
+  !@buffer
+
+(** Driver memory for [buffer], bound and mapped. The mapping lasts until the
+    memory is freed. *)
+let allocate_mapped_memory (device : Device.t) buffer =
+  let reqs = make vk_memory_requirements in
+  vkGetBufferMemoryRequirements device.Device.device buffer (addr reqs) ;
+  let bits = Unsigned.UInt32.to_int (getf reqs mem_req_memoryTypeBits) in
+  let type_index =
+    match pinned_memory_type device bits with
+    | Some index -> index
+    | None ->
+        Vulkan_error.raise_error
+          (Vulkan_error.context_error
+             "alloc_pinned"
+             "no HOST_VISIBLE | HOST_COHERENT memory type accepts a transfer \
+              buffer")
+  in
+  let info = make vk_memory_allocate_info in
+  setf info mem_alloc_sType (u32 vk_structure_type_memory_allocate_info) ;
+  setf info mem_alloc_pNext null ;
+  setf info mem_alloc_allocationSize (getf reqs mem_req_size) ;
+  setf info mem_alloc_memoryTypeIndex (u32 type_index) ;
+  let memory = allocate vk_device_memory vk_null_handle in
+  check
+    "vkAllocateMemory (pinned)"
+    (vkAllocateMemory device.Device.device (addr info) null memory) ;
+  let memory = !@memory in
+  try
+    check
+      "vkBindBufferMemory (pinned)"
+      (vkBindBufferMemory
+         device.Device.device
+         buffer
+         memory
+         (Unsigned.UInt64.of_int 0)) ;
+    let mapped = allocate (ptr void) null in
+    check
+      "vkMapMemory (pinned)"
+      (vkMapMemory
+         device.Device.device
+         memory
+         (Unsigned.UInt64.of_int 0)
+         Unsigned.UInt64.max_int
+         (u32 0)
+         mapped) ;
+    (memory, raw_address_of_ptr !@mapped)
+  with e ->
+    vkFreeMemory device.Device.device memory null ;
+    raise e
+
+(** A driver allocation of [byte_size] bytes, mapped: no host memory crosses to
+    the driver, whatever the device or the import policy. *)
+let allocate_pinned (device : Device.t) ~byte_size =
+  let buffer = create_pinned_buffer device byte_size in
+  match allocate_mapped_memory device buffer with
+  | memory, base -> {device; base; length = byte_size; buffer; memory}
+  | exception e ->
+      vkDestroyBuffer device.Device.device buffer null ;
+      raise e
+
+(** Driver-allocated, mapped host memory that DMA copies address directly. *)
 let alloc_pinned (device : Device.t) ~byte_size =
   if byte_size <= 0 then
     invalid_arg "Vulkan.Async.alloc_pinned: byte_size must be positive" ;
-  let alignment = alignment_of device in
-  let addr =
-    alloc_aligned ~alignment ~byte_size:(round_up byte_size alignment)
-  in
-  match import_range device ~addr ~byte_size with
-  | import ->
-      Mutex.protect lock (fun () -> Hashtbl.replace owned_blocks addr ()) ;
-      add_entry device addr {import = Some import; registered = false} ;
-      addr
-  | exception e ->
-      free_aligned addr ;
-      raise e
+  let import = allocate_pinned device ~byte_size in
+  Mutex.protect lock (fun () -> Hashtbl.replace owned_blocks import.base ()) ;
+  add_entry device import.base {import = Some import; registered = false} ;
+  import.base
 
-(** Releases the block's imports on every device, then the memory. *)
+(** Releases the block's buffer and memory, which unmaps it. A block whose
+    device was destroyed has nothing left to release. *)
 let free_pinned (_device : Device.t) addr =
   let owned =
     Mutex.protect lock (fun () ->
@@ -352,12 +437,12 @@ let free_pinned (_device : Device.t) addr =
         List.iter (fun (key, _) -> Hashtbl.remove entries key) found ;
         found)
   in
-  List.iter (fun (_, entry) -> release_entry entry) imports ;
-  free_aligned addr
+  List.iter (fun (_, entry) -> release_entry entry) imports
 
-(* The imports are children of the VkDevice and go before it. A registered
-   range keeps a tombstone (a late [unregister] succeeds); a pinned
-   allocation stays valid host memory until [free_pinned]. *)
+(* The buffers are children of the VkDevice and go before it. A registered
+   range keeps a tombstone (a late [unregister] succeeds); a pinned block is
+   unmapped with its device and stays listed, so a late [free_pinned]
+   succeeds. *)
 let () =
   Spoc_framework.Cache_hooks.on_device_destroy (fun ~backend index ->
       if String.equal backend "Vulkan" then begin

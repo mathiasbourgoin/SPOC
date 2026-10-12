@@ -238,9 +238,11 @@ module Vulkan = struct
      stream also waits for the event, which is what core's transitive release
      of keep-alive entries relies on.
 
-     Pinned and registered memory are host ranges imported into the driver
-     ([VK_EXT_external_memory_host]); a device without the extension, one not opted in (SPOC_VULKAN_HOST_IMPORT=1) or an AMD driver (Sarek #503) refuses
-     them with [Feature_not_supported] (per call, not through [support]). *)
+     Pinned memory is allocated by the driver and mapped, on every device.
+     Registered memory is a host range imported into the driver
+     ([VK_EXT_external_memory_host]); a device without the extension, one not
+     opted in (SPOC_VULKAN_HOST_IMPORT=1) or an AMD driver (Sarek #503) refuses
+     it with [Feature_not_supported] (per call, not through [support]). *)
   module Async = struct
     type device = Device.t
 

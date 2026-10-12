@@ -6,8 +6,9 @@
 (******************************************************************************
  * Pinned and registered host memory across a device's destruction on Vulkan
  * (specs/vulkan-async-api.md): imports are destroyed with their device; a late
- * [unregister] of a dropped registration succeeds; a pinned allocation made on
- * the old device can be registered on, and freed through, the re-created one.
+ * [unregister] of a dropped registration succeeds; a pinned allocation is
+ * driver memory owned by its device, unmapped with it, and a late [free_pinned]
+ * through the re-created device succeeds quietly.
  * Skips when no Vulkan device is present.
  ******************************************************************************)
 
@@ -62,22 +63,36 @@ let test_across_device_destroy device =
   Bigarray.Array1.fill reg 'r' ;
   let reg_addr = address_of reg in
   Host.register device reg_addr ~byte_size:size ;
-  let pinned = Host.alloc_pinned device ~byte_size:size in
   Device.destroy device ;
   (* The registration was dropped with the device: a late unregister is quiet. *)
   Host.unregister device reg_addr ;
   let fresh = Device.get 0 in
-  (* The pinned block belongs to no device now; the new one can register it. *)
-  Host.register fresh pinned ~byte_size:size ;
-  Host.unregister fresh pinned ;
   Host.register fresh reg_addr ~byte_size:size ;
   Alcotest.(check int)
     "copies through a range registered on the re-created device"
     0
     (roundtrip fresh reg) ;
   Host.unregister fresh reg_addr ;
-  Host.free_pinned fresh pinned ;
   ignore (Sys.opaque_identity reg)
+
+(* Pinned memory needs no import: it is driver memory, mapped for the host. It
+   goes with its device; the late free must neither raise nor touch it. *)
+let test_pinned_across_device_destroy device =
+  let pinned = Host.alloc_pinned device ~byte_size:size in
+  let bytes =
+    Ctypes.from_voidp Ctypes.char (Ctypes.ptr_of_raw_address pinned)
+  in
+  Ctypes.(bytes <-@ 'p') ;
+  Alcotest.(check char) "writable before the destroy" 'p' Ctypes.(!@bytes) ;
+  Device.destroy device ;
+  let fresh = Device.get 0 in
+  Host.free_pinned fresh pinned ;
+  let again = Host.alloc_pinned fresh ~byte_size:size in
+  Alcotest.(check bool) "the re-created device allocates" true (again <> 0n) ;
+  Host.free_pinned fresh again ;
+  match Host.free_pinned fresh pinned with
+  | () -> Alcotest.fail "a second free of the dropped block was accepted"
+  | exception Invalid_argument _ -> ()
 
 (* The properties function is the owning driver's entry point: every device
    record resolves its own, none is shared through a process-wide cache. *)
@@ -114,6 +129,10 @@ let () =
             "import granule"
             `Quick
             (with_device test_import_alignment);
+          Alcotest.test_case
+            "pinned memory across a device destroy"
+            `Quick
+            (with_device test_pinned_across_device_destroy);
           Alcotest.test_case
             "per-device properties function"
             `Quick

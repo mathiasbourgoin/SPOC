@@ -108,22 +108,14 @@ let range_off = 4097
 
 let range_len = 300_001
 
-(* Host import is opt-in and refused on AMD drivers (Sarek #503): without it only
-   pageable memory is exercised. *)
+(* Host import is opt-in and refused on AMD drivers (Sarek #503): without it
+   registered memory is not exercised. Pinned memory is allocated by the driver
+   and needs no import, so it is exercised on every device. *)
 let imports device = device.Device.host_import_alignment <> None
 
 let host_kinds device =
   if imports device then [pageable; registered device; pinned device]
-  else [pageable]
-
-let with_import_device f =
-  with_device (fun device ->
-      if imports device then f device
-      else begin
-        print_endline
-          "[SKIP] host-memory import is off on this device (Sarek #503)" ;
-        Alcotest.skip ()
-      end)
+  else [pageable; pinned device]
 
 let check_zero what blank out ~off ~len =
   Alcotest.(check int)
@@ -343,12 +335,14 @@ let test_refusals device =
       Host.free_pinned device host.addr) ;
   expect_invalid "unregister of an unknown address" (fun () ->
       Host.unregister device host.addr) ;
-  let reg = registered device 5000 in
-  expect_invalid "double registration" (fun () ->
-      Host.register device reg.addr ~byte_size:5000) ;
-  expect_invalid "free_pinned of a registered range" (fun () ->
-      Host.free_pinned device reg.addr) ;
-  reg.release () ;
+  if imports device then begin
+    let reg = registered device 5000 in
+    expect_invalid "double registration" (fun () ->
+        Host.register device reg.addr ~byte_size:5000) ;
+    expect_invalid "free_pinned of a registered range" (fun () ->
+        Host.free_pinned device reg.addr) ;
+    reg.release ()
+  end ;
   let alloc = Host.alloc_pinned device ~byte_size:5000 in
   expect_invalid "unregister of an allocation" (fun () ->
       Host.unregister device alloc) ;
@@ -392,15 +386,12 @@ let tests =
     Alcotest.test_case
       "pinned write above the DMA threshold"
       `Quick
-      (with_import_device test_large_dma_write_into_mapped);
+      (with_device test_large_dma_write_into_mapped);
     Alcotest.test_case
       "ordering against unsynchronised launches"
       `Quick
-      (with_import_device test_ordering_with_launches);
-    Alcotest.test_case
-      "misuse is refused"
-      `Quick
-      (with_import_device test_refusals);
+      (with_device test_ordering_with_launches);
+    Alcotest.test_case "misuse is refused" `Quick (with_device test_refusals);
     Alcotest.test_case "event_query" `Quick (with_device test_event_query);
   ]
 
