@@ -126,6 +126,32 @@ let test_awaited_pruned_after_idle device =
   Stream.destroy waiter ;
   Memory.free buf
 
+(* A wait that fails (here an injected device error) must not forget the event:
+   the retried synchronize still waits for it. *)
+let test_failed_wait_is_retried device =
+  let waiter = Stream.create device in
+  let buf = launch_chain device in
+  let e = Event.create_with_device device in
+  Event.record e (Stream.default device) ;
+  Event.wait_on e waiter ;
+  Vulkan_api_base.inject_wait_failure := Some Vulkan_types.VK_ERROR_DEVICE_LOST ;
+  Fun.protect
+    ~finally:(fun () -> Vulkan_api_base.inject_wait_failure := None)
+    (fun () ->
+      match Stream.synchronize waiter with
+      | () -> Alcotest.fail "the injected wait failure did not surface"
+      | exception _ -> ()) ;
+  Alcotest.(check int) "the event is still awaited" 1 (awaited_count waiter) ;
+  Stream.synchronize waiter ;
+  Alcotest.(check bool)
+    "the retried synchronize waited for it"
+    true
+    (Event.query e) ;
+  Alcotest.(check int) "and forgot it afterwards" 0 (awaited_count waiter) ;
+  Event.destroy e ;
+  Stream.destroy waiter ;
+  Memory.free buf
+
 let tests =
   [
     Alcotest.test_case
@@ -148,6 +174,10 @@ let tests =
       "awaited events are pruned once the device is idle"
       `Quick
       (with_device test_awaited_pruned_after_idle);
+    Alcotest.test_case
+      "a failed wait on an awaited event is retried"
+      `Quick
+      (with_device test_failed_wait_is_retried);
   ]
 
 let () = Alcotest.run "vulkan_event_wait" [("events", tests)]

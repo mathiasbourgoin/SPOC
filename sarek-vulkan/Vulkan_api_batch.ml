@@ -428,6 +428,7 @@ let add_awaited stream event =
     takes an event's lock after releasing it, never the reverse). *)
 let await_events stream events =
   let first_error = ref None in
+  let failed = ref [] in
   List.iter
     (fun ev ->
       try
@@ -436,8 +437,12 @@ let await_events stream events =
               "vkWaitForFences (stream wait on event)"
               stream.device.Device.device
               ev.event_fence)
-      with e -> if !first_error = None then first_error := Some e)
+      with e ->
+        failed := ev :: !failed ;
+        if !first_error = None then first_error := Some e)
     events ;
+  (* An event whose wait failed is still owed: a retried synchronize waits again. *)
+  List.iter (fun ev -> add_awaited stream ev) (List.rev !failed) ;
   Option.iter raise !first_error
 
 (** Complete everything launched on [stream] and the events it awaits; also reap
