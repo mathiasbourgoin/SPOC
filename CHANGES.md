@@ -2,6 +2,28 @@
 
 ### Added
 
+- The float matrix-product rewrite runs on Metal (H4b,
+  `specs/matrix-pattern-rewrite.md`, "Fragment shape and Metal"). The rewrite
+  templates take the fragment edge (`Sarek_matrix_rewrite.kernel ?frag`,
+  `config_of ?frag`; 16 by default with byte-identical output, 8 for Metal's
+  `simdgroup_matrix`): a wave still computes a 32x32 tile, as 4x4 fragments of
+  8x8, two chained 8-wide multiply-accumulates per step of 16. `Matrix_specialise`
+  reads the edge from the device's advertised configurations and admits Metal
+  for the float16 operands (f16 x f16 + f32 -> f32) under the unchanged float
+  opt-ins (`accept_relaxed_accumulation`; automatically also
+  `accept_automatic_float_rewrite`, #440). **The integer rewrite is not ported:
+  MSL has no integer `simdgroup_matrix`**, so an integer product runs as the
+  original on Metal and the report says why; the bfloat16 lowerings are declined
+  too. The advice text lists Metal. The direct float16 size class stays
+  16x16-only. Coverage: HIP/Vulkan/CUDA IR byte-identical (golden digests
+  unchanged); interpreter at fragment 8 and 16 executed
+  (`test_matrix_fragment`: bit-identical to the original kernel and the host
+  chain over k, with a positive control); Metal codegen: compiler-output
+  (`test_metal_matrix_rewrite`, MSL digest); Apple M4: pending the ladon run of
+  `test_matrix_rewrite_metal` (alias `e2e-metal`) and
+  `bench_metal_matrix_rewrite` (`e2e-metal-bench`). Like the other Metal paths
+  it needs `Sarek_ir_metal.accept_unexecuted_lowering` until that run.
+
 - Vulkan supports the memory API that HIP, CUDA and Metal had
   (H7 slice 1, `specs/vulkan-async-api.md`): device-only vectors, ranged
   host<->device copies, `copy_bytes_to_host`, `stage_to_device` (synchronous),

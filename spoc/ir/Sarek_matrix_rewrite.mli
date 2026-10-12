@@ -5,13 +5,14 @@
 
 (** The rewritten kernel of a GEMM nest (specs/matrix-pattern-rewrite.md).
 
-    A 64 x 64 output tile per block of 128 invocations (4 waves of 32, each 2 x
-    2 fragments of 16 x 16). Each step of 16 along the reduction stages the A
-    and B tiles from global memory into shared memory — converted to the
-    configuration's operand type, zero outside the region, either layout — then
-    loads fragments from shared memory and multiplies. Every output the region
-    covers is written with the original's initial value and epilogue; nothing
-    else is written.
+    A 64 x 64 output tile per block of 128 invocations (4 waves of 32, each a 32
+    x 32 tile of fragments: 2 x 2 of 16 x 16, or 4 x 4 of 8 x 8 for devices
+    whose matrix unit has 8 x 8 x 8 fragments only, i.e. Metal). Each step of 16
+    along the reduction stages the A and B tiles from global memory into shared
+    memory — converted to the configuration's operand type, zero outside the
+    region, either layout — then loads fragments from shared memory and
+    multiplies. Every output the region covers is written with the original's
+    initial value and epilogue; nothing else is written.
 
     The rewritten kernel takes the original's parameters, in order, followed by
     the five int32 parameters of {!extra_names}: the region
@@ -32,17 +33,23 @@ type lowering = Sarek_matrix_scheme.lowering =
 val lowering_name : lowering -> string
 
 (** The cooperative-matrix configuration a lowering multiplies with, for the
-    device gate. *)
-val config_of : lowering -> operand_elt:elttype -> Sarek_coopmat_types.config
+    device gate; [frag] is the fragment edge (m = n = k), 16 by default. *)
+val config_of :
+  ?frag:int -> lowering -> operand_elt:elttype -> Sarek_coopmat_types.config
 
 val extra_names : string list
 
 (** [Error reason] when an operand address, a bound, the initial value or the
     epilogue cannot be expressed in the rewritten launch, or when [subgroup] is
     a width without a template ({!Sarek_matrix_scheme.supported_subgroup}: 32,
-    the default, and 64). A block has four waves of [subgroup] lanes. *)
+    the default, and 64) or [frag] is an edge without a template
+    ({!Sarek_matrix_scheme.supported_fragment}: 16, the default, and 8). A block
+    has four waves of [subgroup] lanes. With 8 the reduction runs as two chained
+    8-wide multiply-accumulates per step of 16, in k order, into the same
+    accumulator. *)
 val kernel :
   ?subgroup:int ->
+  ?frag:int ->
   kernel ->
   Sarek_matrix_pattern.gemm ->
   lowering ->

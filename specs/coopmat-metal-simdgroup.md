@@ -186,12 +186,13 @@ rejected` / `(red)` line shows a non-zero difference count. Record `uptime` and
 
 ## Open decisions
 
-- **16x16x16 on Metal.** A 16x16 fragment is four 8x8 tiles and a 16x16x16
-  multiply-add is eight `simdgroup_multiply_accumulate`. It would let
-  `Sarek_gemm.Coopmat` and the matrix rewrite run on Metal with their 16x16
-  shape. Not built: nobody asked, and the C-first order over `k = 16` would have
-  to be re-established (two chained 8-step multiply-adds give the same
-  sequential chain, but that is a claim to test, not assume).
+- **16x16x16 on Metal.** Resolved for the matrix rewrite (H4b): the rewrite
+  templates are parameterised by the fragment edge and run on 8x8x8 fragments
+  (`specs/matrix-pattern-rewrite.md`, "Fragment shape and Metal"); the
+  generator composes no 16x16 statement. Two chained 8-wide multiply-accumulates
+  are tested to equal the sequential C-first chain (`test_matrix_fragment`, and
+  `test_matrix_rewrite_metal` on the GPU). A 16x16x16 `SCoopmat` written by hand
+  is still refused on Metal.
 - **f32 x f32 + f32 -> f32** on `simdgroup_float8x8` is available; its numerics
   are unmeasured and `policy_verdict` has no derived bound for float operands.
 - **Dropping the opt-in on Metal** (Regime A): needs the backend threaded through
