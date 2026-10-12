@@ -139,6 +139,7 @@ let report_narrowing (k : kernel) st =
                      (Sarek_policy.Budget.reason
                         (Sarek_policy.budget ~kernels:[k.kern_name])
                         grant);
+                 lowering = None;
                })
       | Barrier_always ->
           Sarek_policy.decide
@@ -161,7 +162,7 @@ let report_narrowing (k : kernel) st =
     Sarek_policy.report
       {
         kernel = k.kern_name;
-        device = "cuda-c";
+        target = "gen:cuda-c";
         optimisation = Sarek_policy.Narrowing_proof;
         decision;
       }

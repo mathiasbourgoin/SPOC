@@ -3,10 +3,10 @@
 (* SPDX-FileCopyrightText: 2026 Mathias Bourgoin <mathias.bourgoin@gmail.com> *)
 (******************************************************************************)
 
-(* The vocabulary of Sarek_policy, in its own file so that the pure text half
-   of the environment ({!Sarek_policy_env}) can use it without depending on the
-   store. Sarek_policy re-exports these types and names; see its interface for
-   what each one means. Not part of the public interface. *)
+(* INTERNAL: use Sarek_policy, which re-exports all of this. The vocabulary of
+   Sarek_policy, in its own file so that the pure text half of the environment
+   (Sarek_policy_env) can use it without depending on the store. See
+   Sarek_policy.mli for what each type and name means. *)
 
 type operand_precision = Operands_f16 | Operands_bf16 | Operands_bf16x3
 
@@ -33,14 +33,14 @@ type refusal = Blank_reason | Default_kernel_name
 
 type evidence =
   | Proof of string
-  | Granted of {grants : grant list; reason : string}
+  | Granted of {grants : grant list; reason : string; lowering : string option}
   | Exact_by_construction
 
 type decision = Applied of evidence | Refused of string
 
 type record = {
   kernel : string;
-  device : string;
+  target : string;
   optimisation : optimisation;
   decision : decision;
 }
@@ -49,11 +49,22 @@ type ignored = Generated_name | Revoked
 
 type event =
   | Decision of record
+  | Gate of {kernel : string; target : string; decision : decision}
   | Ignored_grant of {kernel : string; grant : grant; cause : ignored}
 
 type restriction = Disable of optimisation | Revoke of grant
 
 type explain = Explain_off | Explain_stderr | Explain_unknown of string
+
+(* The reasons joined by "; ", each once, in order of first appearance. *)
+let join_reasons reasons =
+  String.concat
+    "; "
+    (List.rev
+       (List.fold_left
+          (fun acc r -> if List.mem r acc then acc else r :: acc)
+          []
+          reasons))
 
 let grant_name = function
   | Deviation Accumulation_order -> "accumulation-order"

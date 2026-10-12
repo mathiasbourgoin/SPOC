@@ -139,7 +139,7 @@ let report ~generator (k : kernel) ~would_hint =
     Sarek_policy.report
       {
         kernel = k.kern_name;
-        device = generator;
+        target = "gen:" ^ generator;
         optimisation = Sarek_policy.Auto_unroll;
         decision =
           Sarek_policy.decide

@@ -281,9 +281,9 @@ let decide e opt ~backend =
                      {
                        grants = needed;
                        reason =
-                         String.concat
-                           "; "
+                         join_reasons
                            (List.filter_map (Budget.reason e.budget) needed);
+                       lowering = None;
                      })))
 
 (* ------------------------------------------------------------------------ *)
@@ -292,28 +292,33 @@ let decide e opt ~backend =
 
 let reporter : (event -> unit) option Atomic.t = Atomic.make None
 
-let last_outcome : (string * string * optimisation, decision) Hashtbl.t =
-  Hashtbl.create 16
+(* The distinct decisions already reported, by (kernel, target, label, decision
+   text): a decision that comes back after another one is not printed again.
+   Emptied when it reaches [seen_cap] (a program that launches ever new kernels
+   would otherwise grow it for ever); the worst case is a repeated line. *)
+let seen : (string * string * string * string, unit) Hashtbl.t =
+  Hashtbl.create 64
+
+let seen_cap = 4096
 
 (* The grants already reported as having no effect, by (kernel, grant, cause). *)
 let noted : (string * grant * ignored, unit) Hashtbl.t = Hashtbl.create 16
 
-(* Guards [last_outcome] and [noted]. *)
+(* Guards [seen] and [noted]. The sink is never called under it. *)
 let outcome_lock = Mutex.create ()
 
 let set_reporter r =
   Mutex.protect outcome_lock (fun () ->
-      Hashtbl.reset last_outcome ;
+      Hashtbl.reset seen ;
       Hashtbl.reset noted) ;
   Atomic.set reporter r
 
-(* True when [r] differs from the last outcome reported for its key. Under
-   [outcome_lock]. *)
-let is_new r =
-  let key = (r.kernel, r.device, r.optimisation) in
-  if Hashtbl.find_opt last_outcome key = Some r.decision then false
+(* True the first time a decision is seen. Under [outcome_lock]. *)
+let first_time key =
+  if Hashtbl.mem seen key then false
   else (
-    Hashtbl.replace last_outcome key r.decision ;
+    if Hashtbl.length seen >= seen_cap then Hashtbl.reset seen ;
+    Hashtbl.replace seen key () ;
     true)
 
 (* The kernel names a record is about: a pair is written ["p + c"]. *)
@@ -367,22 +372,42 @@ let fresh_ignored_grants record_kernel =
 
 let reporting () = Option.is_some (Atomic.get reporter)
 
-let report r =
+(* Hand [event] to the sink if its decision is new, then the grants of the
+   kernel that have no effect and were not reported yet (also when the decision
+   is not new: a grant can be given after the decisions of its kernel settled).
+   The sink runs outside the lock; lines of different domains may interleave. *)
+let emit ~key ~event kernel =
   match Atomic.get reporter with
   | None -> ()
-  | Some f ->
-      let fresh =
+  | Some sink ->
+      let events =
         Mutex.protect outcome_lock (fun () ->
-            if is_new r then Some (fresh_ignored_grants r.kernel) else None)
+            let fresh = first_time key in
+            let notes = fresh_ignored_grants kernel in
+            (if fresh then [event] else [])
+            @ List.map
+                (fun (kernel, grant, cause) ->
+                  Ignored_grant {kernel; grant; cause})
+                notes)
       in
-      Option.iter
-        (fun notes ->
-          f (Decision r) ;
-          List.iter
-            (fun (kernel, grant, cause) ->
-              f (Ignored_grant {kernel; grant; cause}))
-            notes)
-        fresh
+      List.iter sink events
+
+let report r =
+  emit
+    ~key:
+      ( r.kernel,
+        r.target,
+        optimisation_name r.optimisation,
+        Sarek_policy_env.decision_text r.decision )
+    ~event:(Decision r)
+    r.kernel
+
+let report_gate ~kernel ~target decision =
+  emit
+    ~key:
+      (kernel, target, "coopmat-gate", Sarek_policy_env.decision_text decision)
+    ~event:(Gate {kernel; target; decision})
+    kernel
 
 let refusal_message = function
   | Blank_reason ->

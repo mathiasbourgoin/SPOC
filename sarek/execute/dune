@@ -26,6 +26,7 @@
   Fusion_horizontal
   Fusion_epilogue
   Launch_limits
+  Window_gate
   Launch_window
   Launch_policy
   Epilogue_policy

@@ -3,9 +3,10 @@
 (* SPDX-FileCopyrightText: 2026 Mathias Bourgoin <mathias.bourgoin@gmail.com> *)
 (******************************************************************************)
 
-(* The pure text half of SAREK_OPT_DISABLE and SAREK_EXPLAIN: what the
-   variables say, and how an explain line is written. Reading the environment
-   and acting on it is Sarek_policy's. Re-exported as [Sarek_policy.Env]. *)
+(* INTERNAL: use [Sarek_policy.Env], which re-exports it. The pure text half
+   of SAREK_OPT_DISABLE and SAREK_EXPLAIN: what the variables say, and how an
+   explain line is written. Reading the environment and acting on it is
+   Sarek_policy's. *)
 
 open Sarek_policy_vocab
 
@@ -97,11 +98,12 @@ let quote s =
 
 let decision_text = function
   | Applied (Proof text) -> "applied proof=" ^ flatten text
-  | Applied (Granted {grants; reason}) ->
+  | Applied (Granted {grants; reason; lowering}) ->
       Printf.sprintf
-        "applied granted=%s reason=%s"
+        "applied granted=%s reason=%s%s"
         (String.concat "," (List.map grant_name grants))
         (quote reason)
+        (match lowering with None -> "" | Some l -> " lowering=" ^ quote l)
   | Applied Exact_by_construction -> "applied exact"
   | Refused why -> "refused " ^ flatten why
 
@@ -110,12 +112,18 @@ let cause_name = function
   | Revoked -> "grant-revoked"
 
 let explain_line = function
-  | Decision {kernel; device; optimisation; decision} ->
+  | Decision {kernel; target; optimisation; decision} ->
       Printf.sprintf
         "sarek-explain %s %s %s %s"
         (name_field kernel)
-        (name_field device)
+        (name_field target)
         (optimisation_name optimisation)
+        (decision_text decision)
+  | Gate {kernel; target; decision} ->
+      Printf.sprintf
+        "sarek-explain %s %s coopmat-gate %s"
+        (name_field kernel)
+        (name_field target)
         (decision_text decision)
   | Ignored_grant {kernel; grant; cause} ->
       Printf.sprintf

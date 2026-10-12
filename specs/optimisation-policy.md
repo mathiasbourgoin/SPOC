@@ -42,7 +42,7 @@ inventory records what existed at the audited revision.
 |---|---|---|---|---|---|---|---|
 | 1 (changed) | `SAREK_LAUNCH_WINDOW` (off: exactly `0/false/off/no`) | env | S | on; default backends HIP, OpenCL, Vulkan, CUDA/PTX, CUDA/C, Metal; never CPU devices | user | process, read at init | `sarek/execute/Launch_window.ml:159-172`; `sarek/execute/Execute.ml:1218-1220` |
 | 2 | `Execute.Window.set_enabled` | API | S | env value | program (Katra) | process | `sarek/execute/Execute.ml:1227`; `sarek/execute/Launch_window.ml:488-490` |
-| 3 (changed) | `Execute.Window.set_backend_enabled` | API | S | 6 backends | program | per backend | `sarek/execute/Execute.ml:1231-1232`; `sarek/execute/Launch_window.ml:492-500` |
+| 3 (changed) | `Execute.Window.set_backend_enabled` | API | S | 6 backends | program | per backend | `sarek/execute/Execute.ml:1231-1232`; `sarek/execute/Launch_window.ml (set_backend_enabled)` |
 | 4 | `Launch_window.max_groups` / `max_members` (8/8) | API | T | 8/8 | program | process | `sarek/execute/Launch_window.ml:153`, `sarek/execute/Launch_window.ml:155` |
 | 4b (new) | `Launch_limits.set_arg_slot_limit` / `set_push_constant_limit` | API | T | per backend | program/tests | per backend | `sarek/execute/Launch_limits.ml:25`, `sarek/execute/Launch_limits.ml:53` |
 | 5 (changed) | `SAREK_LAUNCH_EPILOGUE` (off only) | env | S on HIP, Metal; P elsewhere | HIP + Metal | user | process, init | `sarek/execute/Launch_epilogue.ml:46-53` |
@@ -75,9 +75,10 @@ inventory records what existed at the audited revision.
 Decision points and caches (at 5bcb3a8e):
 
 - **Window.** `Execute.run_jit` (`sarek/execute/Execute.ml:1469`) calls
-  `defers_on` (`sarek/execute/Execute.ml:1347`), then `Window.defers_device`
-  (`sarek/execute/Execute.ml:1218-1220`), then `Launch_window.defers`
-  (`sarek/execute/Launch_window.ml:177-178`). The fused-kernel cache is keyed by
+  `defers_on` (`sarek/execute/Execute.ml:1347`; removed in M3, replaced by
+  `Launch_policy.deferred` over `Window_gate.refusal`), then
+  `Window.defers_device` (`sarek/execute/Execute.ml:1218-1220`), then
+  `Launch_window.defers` (`sarek/execute/Launch_window.ml:177-178`). The fused-kernel cache is keyed by
   the members' `ir_id`s and content-named
   (`sarek/execute/Launch_window.ml:300-328`).
 - **Epilogue.** `Launch_window.submit` reads `w.epilogue`
@@ -366,21 +367,32 @@ sarek-explain <kernel> - policy refused grant-on-generated-name <grant>
 sarek-explain <kernel> - policy refused grant-revoked <grant>
 ```
 
-Where each optimisation reports (`json:FILE` of the first draft was dropped):
+The **target** column has one scheme: `<framework>:<device id>` for a decision
+about a device (`window`, `matrix`, `coopmat-gate`; e.g. `HIP:0`),
+`<framework>` for one about a backend (`epilogue`), `gen:<generator>` for code
+generation (`narrowing-proof`, `unroll`; `gen:cuda-c`, `gen:opencl`,
+`gen:metal`, `gen:glsl`). No device names. The report keeps one line per
+**distinct** (kernel, target, optimisation, decision text): a set of 4096
+entries, emptied when full, so a decision that flips back and forth (the window
+per prompt chunk) prints once per distinct outcome. The sink is called outside
+the lock.
 
-| Optimisation | Reported by | `device` |
+Where each optimisation reports:
+
+| Optimisation | Reported by | Target |
 |---|---|---|
-| `window` | `Launch_policy.deferred`, per launch of a JIT kernel: applied exact, or refused (switched off, disabled, CPU device, not on the backend, stream launch, structure-of-arrays arguments) | device name |
-| `epilogue` | `Launch_epilogue` per producer and consumer, kernel `p + c` | backend |
-| `matrix` | `Matrix_specialise.choose` for every matrix product (int32: `proof`, the lowering and bit-identical modulo 2^32; float: `granted` with the consent, accumulation order and operand rounding it rests on; refused with the reason), and `Launch_policy.coopmat_gate` for the explicit cooperative-matrix gate of a kernel the program wrote | device name |
-| `narrowing-proof` | the CUDA-C generator, per kernel that has an f32 to f16 narrowing: `proof=n/m narrowings proven exact`, refused when none is, `granted=single-rounding`, or disabled | `cuda-c` |
-| `unroll` | `Sarek_ir_unroll.annotate`, per kernel and generator, when a loop would be hinted | `cuda-c`, `opencl`, `metal`, `glsl` |
+| `window` | `Launch_policy.deferred`, per launch of a JIT kernel: applied exact, or refused (the `Window_gate.refusal` variant: switched off, disabled, CPU device, not on the backend, stream launch, structure-of-arrays arguments). `Window_gate.refusal` is the one function behind the launch path, `Execute.Window.defers_device` and this report; no text is built when nobody listens | `<framework>:<id>` |
+| `epilogue` | `Launch_epilogue` per producer and consumer, kernel `p + c` | `<framework>` |
+| `matrix` | `Matrix_specialise.choose` for every matrix product (int32: `proof`, the lowering and bit-identical modulo 2^32; float: `granted` with the consent, accumulation order and operand rounding it rests on, `reason` = the program's reasons only, `lowering="..."` the description; refused with the reason) | `<framework>:<id>` |
+| `coopmat-gate` (an event kind, not an optimisation) | `Launch_policy.coopmat_gate` from `Execute.check_device_capabilities`, for a kernel the program wrote; the interpreter gate is not reported | `<framework>:<id>` |
+| `narrowing-proof` | the CUDA-C generator, per kernel that has an f32 to f16 narrowing: `proof=n/m narrowings proven exact`, refused when none is, `granted=single-rounding`, or disabled | `gen:cuda-c` |
+| `unroll` | `Sarek_ir_unroll.annotate`, per kernel and generator, when a loop would be hinted | `gen:<generator>` |
 
 The last two forms of the format come from `Ignored_grant`: a program `Kernel`
 grant whose name is generated (a fused, derived or static-fusion kernel, which
 never counts, rule 3 of 3.2) and a grant revoked by the environment
 (`(process)` for a process-scope one). Each is reported once, right after the
-first decision that sees the kernel, so a user learns that the grant has no
+next report for that kernel (also if its decisions settled before), so a user learns that the grant has no
 effect. The codegen device column is the generator, not a device: code
 generation does not know it.
 

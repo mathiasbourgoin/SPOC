@@ -293,7 +293,10 @@ let test_version () =
 let test_reporter () =
   let seen = ref [] in
   set_reporter
-    (Some (function Decision r -> seen := r :: !seen | Ignored_grant _ -> ())) ;
+    (Some
+       (function
+       | Decision r -> seen := r :: !seen
+       | Gate _ | Ignored_grant _ -> ())) ;
   let r kernel device decision =
     {kernel; target = device; optimisation = Epilogue_fusion; decision}
   in
@@ -319,10 +322,13 @@ let test_reporter () =
     5
     (List.length !seen) ;
   report (r "k" "d" applied) ;
-  Alcotest.(check int) "a change back is a new outcome" 6 (List.length !seen) ;
+  Alcotest.(check int)
+    "a change back is not a new outcome: distinct decisions only"
+    5
+    (List.length !seen) ;
   set_reporter None ;
   report (r "k2" "d" applied) ;
-  Alcotest.(check int) "no reporter, no call" 6 (List.length !seen)
+  Alcotest.(check int) "no reporter, no call" 5 (List.length !seen)
 
 (* ------------------------------------------------------------------------ *)
 (* Restrictions (one-way: this case runs last)                               *)

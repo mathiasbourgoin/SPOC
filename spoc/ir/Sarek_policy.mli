@@ -97,11 +97,12 @@ type scope = Process | Kernel of string
 type refusal = Blank_reason | Default_kernel_name
 
 (** What justifies an applied optimisation, for the explain report. [Granted]:
-    the grants it needed (each held by the kernel) and their reasons joined by
-    ["; "]. *)
+    the grants it needed (each held by the kernel), the program's reasons for
+    them ({!join_reasons}) and, for a rewrite, a description of what it did
+    ([lowering], printed as a trailing field). *)
 type evidence =
   | Proof of string
-  | Granted of {grants : grant list; reason : string}
+  | Granted of {grants : grant list; reason : string; lowering : string option}
   | Exact_by_construction
 
 (** The outcome of one decision point, for the explain report. *)
@@ -286,10 +287,18 @@ val decide : effective -> optimisation -> backend:string -> decision
     read the policy; one atomic read tells it whether anything changed since. *)
 val version : unit -> int
 
-(** One decision at a decision point, for the explain report. *)
+(** The reasons joined by ["; "], each once, in order of first appearance. *)
+val join_reasons : string list -> string
+
+(** One decision at a decision point, for the explain report. [target] says
+    where it was taken, in one scheme: ["<framework>:<device id>"] for a
+    decision about a device (window, matrix), ["<framework>"] for one about a
+    backend (epilogue), ["gen:<generator>"] for code generation (narrowing
+    proof, unroll: ["gen:cuda-c"], ["gen:opencl"], ["gen:metal"], ["gen:glsl"]).
+*)
 type record = {
   kernel : string;
-  device : string;
+  target : string;
   optimisation : optimisation;
   decision : decision;
 }
@@ -299,30 +308,43 @@ type record = {
     never matched). [Revoked]: the environment revoked the grant. *)
 type ignored = Generated_name | Revoked
 
-(** What the sink of {!report} receives: a decision, or a statement of the
-    program that the policy does not obey. [Ignored_grant] comes right after the
-    first decision that sees the kernel, once per [(kernel, grant, cause)]; a
-    grant revoked at [Process] scope is reported once, with the kernel name
-    ["(process)"]. *)
+(** What the sink of {!report} receives: a decision, the outcome of the explicit
+    cooperative-matrix gate, or a statement of the program that the policy does
+    not obey. [Gate] is an event kind of its own, not an {!optimisation}:
+    nothing restricts it and [SAREK_OPT_DISABLE] has no name for it; its target
+    is ["<framework>:<device id>"]. [Ignored_grant] comes right after the report
+    of a kernel, once per [(kernel, grant, cause)], also when the decisions of
+    that kernel settled earlier; a grant revoked at [Process] scope is reported
+    once, with the kernel name ["(process)"]. *)
 type event =
   | Decision of record
+  | Gate of {kernel : string; target : string; decision : decision}
   | Ignored_grant of {kernel : string; grant : grant; cause : ignored}
 
 (** Install (or, with [None], remove) the sink of {!report}. The default is no
     sink, except that [SAREK_EXPLAIN=1] installs one at start-up that writes
     {!Env.explain_line} to stderr; a sink installed by the program replaces it.
-    Installing one forgets which outcomes were already reported. *)
+    Installing one forgets which outcomes were already reported. The sink is
+    called outside the policy's lock, possibly from several domains: lines of
+    different domains may interleave, and the sink must be thread-safe. *)
 val set_reporter : (event -> unit) option -> unit
 
 (** [true] when a sink is installed: lets a decision point skip building a
     record (and its strings) when nobody listens. *)
 val reporting : unit -> bool
 
-(** [report r]: with a sink installed, calls it if [r.decision] differs from the
-    last one reported for [(r.kernel, r.device, r.optimisation)]; otherwise does
-    nothing. Without a sink it is one atomic read. Safe to call from any domain.
-*)
+(** [report r]: with a sink installed, calls it with [Decision r] the first time
+    this decision is seen for [(r.kernel, r.target, r.optimisation)]: a decision
+    that comes back after another one is not reported again, so a window that is
+    switched off and on per prompt chunk prints two lines, not one per switch.
+    The memory of what was seen is bounded (4096 distinct decisions, then
+    forgotten). Without a sink it is one atomic read. Safe to call from any
+    domain. *)
 val report : record -> unit
+
+(** [report_gate ~kernel ~target decision]: the same for the explicit
+    cooperative-matrix gate of a kernel ([Gate] event). *)
+val report_gate : kernel:string -> target:string -> decision -> unit
 
 (** {1 The environment} *)
 
@@ -349,9 +371,14 @@ module Env : sig
   val unknown_message : string -> string
 
   (** [narrow restrictions e]: [e] with the optimisations disabled and the
-      grants revoked. Never adds a grant or removes a restriction: for every
-      [e], the budget of the result is below that of [e] ({!Budget.leq}) and
-      {!decide} applies nothing on the result that it did not apply on [e]. *)
+      grants revoked. This is the pure model of what the module does to its own
+      state when it reads [SAREK_OPT_DISABLE]: the effective policy of a kernel
+      after start-up equals [narrow] of the parsed value applied to the policy
+      without the variable (checked by the [model] scenario of
+      [sarek/tests/policy_env]). Never adds a grant or removes a restriction:
+      for every [e], the budget of the result is below that of [e]
+      ({!Budget.leq}) and {!decide} applies nothing on the result that it did
+      not apply on [e]. *)
   val narrow : restriction list -> effective -> effective
 
   (** What [SAREK_EXPLAIN] says. Exactly [1] turns the report on; unset, empty

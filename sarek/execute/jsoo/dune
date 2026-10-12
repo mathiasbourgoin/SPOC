@@ -33,6 +33,8 @@
 
 (copy_files "../Launch_limits.ml")
 
+(copy_files "../Window_gate.ml")
+
 (copy_files "../Launch_window.ml")
 
 (copy_files "../Launch_policy.ml")
@@ -60,6 +62,7 @@
   Fusion_horizontal
   Fusion_epilogue
   Launch_limits
+  Window_gate
   Launch_window
   Launch_policy
   Matrix_admission

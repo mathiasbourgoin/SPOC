@@ -153,9 +153,13 @@ let relaxed_not_accepted cfg =
       Printf.sprintf
         "%s accumulates in floating point in an order the hardware chooses, so \
          its result is only BOUNDED (|D - exact| <= gamma_n * (sum|A*B| + \
-         |C|)), not bit-identical to the interpreter, and the program has not \
-         accepted that"
-        (config_name cfg);
+         |C|)), not bit-identical to the interpreter, and %s"
+        (config_name cfg)
+        (if
+           Sarek_policy.revoked
+             (Sarek_policy.Deviation Sarek_policy.Accumulation_order)
+         then "accumulation-order is revoked by SAREK_OPT_DISABLE"
+         else "the program has not accepted that");
     cap_evidence =
       Sarek_capability.Quoted
         "docs/design/f16-relaxed-accuracy.md §5 (the bound) and §6.1 (a \
@@ -196,8 +200,14 @@ let rounding_not_accepted cfg =
     cap_why =
       Printf.sprintf
         "%s rounds float32 operands to bfloat16 on load, which changes results \
-         beyond the accumulation order, and the program has not accepted that"
-        (config_name cfg);
+         beyond the accumulation order, and %s"
+        (config_name cfg)
+        (if
+           List.exists
+             Sarek_policy.revoked
+             [rounding_grant Operands_bf16; rounding_grant Operands_bf16x3]
+         then "operand-rounding-bf16 or -bf16x3 is revoked by SAREK_OPT_DISABLE"
+         else "the program has not accepted that");
     cap_evidence =
       Sarek_capability.Quoted
         "specs/matrix-pattern-rewrite.md (operand rounding is its own opt-in)";
@@ -267,11 +277,11 @@ let policy_decision_for budget cfg =
                {
                  grants;
                  reason =
-                   String.concat
-                     "; "
+                   Sarek_policy.join_reasons
                      (List.filter_map
                         (Sarek_policy.Budget.reason budget)
                         grants);
+                 lowering = None;
                }))
 
 let policy_verdict cfg =
