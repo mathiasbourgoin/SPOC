@@ -49,6 +49,25 @@ let find_memory_type dev type_filter properties =
   in
   find 0
 
+(** Like {!find_memory_type}, for a type that also has none of the [excluded]
+    flags. *)
+let find_memory_type_excluding dev type_filter ~required ~excluded =
+  let props = dev.Device.memory_properties in
+  let count = Unsigned.UInt32.to_int (getf props mem_props_memoryTypeCount) in
+  let types_arr = getf props mem_props_memoryTypes in
+  let rec find i =
+    if i >= count then None
+    else if type_filter land (1 lsl i) <> 0 then
+      let flags =
+        Unsigned.UInt32.to_int
+          (getf (CArray.get types_arr i) mem_type_propertyFlags)
+      in
+      if flags land required = required && flags land excluded = 0 then Some i
+      else find (i + 1)
+    else find (i + 1)
+  in
+  find 0
+
 (** Whether memory type [index] is HOST_CACHED. *)
 let memory_type_is_cached dev index =
   let props = dev.Device.memory_properties in

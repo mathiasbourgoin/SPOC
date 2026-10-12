@@ -7,9 +7,10 @@
  * Host-memory import on Vulkan is explicit opt-in and refused on AMD drivers
  * (Sarek #503: amdgpu_hmm_invalidate_gfx oops after VK_EXT_external_memory_host
  * imports). The decision is checked as a pure function, and on a real device
- * (skipped without one) the default is: no import, both entry points refuse
- * with Feature_not_supported before any host page is handed to the driver. The
- * dune rule clears the opt-in variables, so this never imports.
+ * (skipped without one) the default is: no import, [register] refuses with
+ * Feature_not_supported before any host page is handed to the driver, while
+ * [alloc_pinned] works because it takes driver-allocated memory and imports
+ * nothing. The dune rule clears the opt-in variables, so this never imports.
  ******************************************************************************)
 
 open Sarek_vulkan
@@ -105,6 +106,23 @@ let expect_refused what f =
       BE.Backend_error (BE.Plugin {error = BE.Feature_not_supported _; _}) ->
       ()
 
+(* The pinned block is real, writable host memory that reads back what was
+   written, whatever the import policy says. *)
+let check_pinned_allocation device =
+  let byte_size = 4096 + 17 in
+  let addr = Host.alloc_pinned device ~byte_size in
+  Alcotest.(check bool) "non-null address" true (addr <> 0n) ;
+  let bytes = Ctypes.from_voidp Ctypes.char (Ctypes.ptr_of_raw_address addr) in
+  for i = 0 to byte_size - 1 do
+    Ctypes.(bytes +@ i <-@ Char.chr (i land 255))
+  done ;
+  let bad = ref 0 in
+  for i = 0 to byte_size - 1 do
+    if Ctypes.(!@(bytes +@ i)) <> Char.chr (i land 255) then incr bad
+  done ;
+  Alcotest.(check int) "bytes read back" 0 !bad ;
+  Host.free_pinned device addr
+
 let test_device_default_refuses () =
   if not (Vulkan_api.is_available ()) then Alcotest.skip () ;
   Device.init () ;
@@ -119,8 +137,7 @@ let test_device_default_refuses () =
     true
     (device.Device.host_import_alignment = None
     && device.Device.host_pointer_properties_fn = None) ;
-  expect_refused "alloc_pinned" (fun () ->
-      Host.alloc_pinned device ~byte_size:4096) ;
+  check_pinned_allocation device ;
   let page = Bigarray.Array1.create Bigarray.char Bigarray.c_layout 8192 in
   let addr =
     Ctypes.raw_address_of_ptr (Spoc_core.Memory.borrow_bigarray_ptr page)
@@ -142,8 +159,13 @@ let test_device_optin () =
         true
         (device.Device.host_import_alignment = None
         && device.Device.host_pointer_properties_fn = None) ;
-      expect_refused "alloc_pinned" (fun () ->
-          Host.alloc_pinned device ~byte_size:4096)
+      check_pinned_allocation device ;
+      let page = Bigarray.Array1.create Bigarray.char Bigarray.c_layout 8192 in
+      let addr =
+        Ctypes.raw_address_of_ptr (Spoc_core.Memory.borrow_bigarray_ptr page)
+      in
+      expect_refused "register" (fun () ->
+          Host.register device addr ~byte_size:8192)
   | Policy.Allowed -> ()
   | Policy.Not_opted_in -> Alcotest.fail "opted in but the policy says not"
 
@@ -177,7 +199,7 @@ let () =
         ( "device",
           [
             Alcotest.test_case
-              "default refuses both entry points"
+              "default: register refused, pinned allocation works"
               `Quick
               test_device_default_refuses;
           ] );

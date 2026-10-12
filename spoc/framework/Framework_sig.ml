@@ -224,10 +224,9 @@ type async_support = {
       (** Page-locked host allocation ([alloc_pinned]/[free_pinned]). On a CPU
           backend this is ordinary host memory: pinning has no meaning when
           device memory is host memory. The record is per backend: a backend may
-          still refuse the call on a device that lacks what it needs (Vulkan
-          needs [VK_EXT_external_memory_host]), with [Feature_not_supported]
-          from the call itself. A consumer that must know up front tries the
-          call. *)
+          still refuse the call on a device that lacks what it needs, with
+          [Feature_not_supported] from the call itself. A consumer that must
+          know up front tries the call. *)
   host_register : bool;  (** Page-locking existing host memory. *)
   stream_launch : bool;  (** Kernel launches enqueued on a given stream. *)
   stream_events : bool;

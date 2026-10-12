@@ -2,6 +2,18 @@
 
 ### Changed
 
+- Vulkan `alloc_pinned` no longer imports host memory: it allocates through the driver
+  (`vkAllocateMemory` from a HOST_VISIBLE | HOST_COHERENT type that is not DEVICE_LOCAL,
+  HOST_CACHED when the device has one) and maps it for the life of the block, so it works on
+  every device, AMD included, with no opt-in and no `VK_EXT_external_memory_host`. No host page
+  reaches the driver, hence no userptr object (the #503 path). `register_host` is unchanged:
+  opt-in, refused on AMD. A pinned block now belongs to its device and is unmapped with it
+  (a late `free_pinned` still succeeds). Tests: `test_vulkan_host_import_policy`,
+  `test_vulkan_ranged_copies` and `test_vulkan_host_lifecycle` run the pinned path on the
+  device. Measured on the RX 7900 XTX, 64 MiB: 21.5-22.3 GB/s host-to-device and 21.8-22.0 GB/s
+  device-to-host through a pinned block, against 5.5 and 2.5 GB/s through staging
+  (`bench_vulkan_pinned_copy`, machine under load).
+
 - Vulkan host-memory import (`alloc_pinned`, `register_host`, from #493) is now an explicit opt-in
   (`SPOC_VULKAN_HOST_IMPORT=1`) and is refused on AMD drivers even then
   (`Vulkan_host_import_policy`). On a refused device `VK_EXT_external_memory_host` is not

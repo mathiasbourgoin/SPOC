@@ -4,8 +4,9 @@
 (******************************************************************************)
 
 (** Whether a Vulkan device may import host memory
-    ([VK_EXT_external_memory_host]), i.e. whether [alloc_pinned] and
-    [register_host] work.
+    ([VK_EXT_external_memory_host]), i.e. whether [register_host] works.
+    [alloc_pinned] does not import: it takes memory from the driver and is not
+    subject to this policy.
 
     Importing pageable anonymous memory makes the driver register a userptr
     object with the kernel's MMU notifiers. On amdgpu (RADV, Linux 7.1.2) that
@@ -53,11 +54,11 @@ let refusal_reason = function
   | Not_opted_in ->
       Some
         (Printf.sprintf
-           "pinned and registered host memory are off by default on Vulkan \
-            (set %s=1 to opt in)"
+           "registered host memory (import) is off by default on Vulkan (set \
+            %s=1 to opt in)"
            opt_in_variable)
   | Amdgpu_refused ->
       Some
-        "pinned and registered host memory are refused on AMD Vulkan drivers: \
+        "registered host memory (import) is refused on AMD Vulkan drivers: \
          importing host pages was followed by a kernel oops in \
          amdgpu_hmm_invalidate_gfx (Sarek #503)"
