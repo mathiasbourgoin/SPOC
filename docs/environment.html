@@ -195,6 +195,20 @@
       <td>Most dispatches one Vulkan command buffer collects before it is submitted. <code class="language-plaintext highlighter-rouge">1</code> submits and waits for every launch, and a failed launch then raises at the launch instead of at the first wait.</td>
     </tr>
     <tr>
+      <td><code class="language-plaintext highlighter-rouge">SPOC_VULKAN_HOST_IMPORT</code></td>
+      <td><code class="language-plaintext highlighter-rouge">1</code></td>
+      <td>unset (off)</td>
+      <td>start</td>
+      <td>Allows Vulkan <code class="language-plaintext highlighter-rouge">alloc_pinned</code> and <code class="language-plaintext highlighter-rouge">register_host</code> (import of host memory, <code class="language-plaintext highlighter-rouge">VK_EXT_external_memory_host</code>). Refused on AMD drivers even when set: importing host pages was followed by a kernel oops in <code class="language-plaintext highlighter-rouge">amdgpu_hmm_invalidate_gfx</code> (Sarek #503).</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">SPOC_VULKAN_HOST_IMPORT_AMDGPU_I_ACCEPT_KERNEL_OOPS</code></td>
+      <td><code class="language-plaintext highlighter-rouge">1</code></td>
+      <td>unset</td>
+      <td>start</td>
+      <td>With <code class="language-plaintext highlighter-rouge">SPOC_VULKAN_HOST_IMPORT=1</code>, allows the import on AMD drivers anyway. For disposable sessions only.</td>
+    </tr>
+    <tr>
       <td><code class="language-plaintext highlighter-rouge">SPOC_VULKAN_FENCE_TIMEOUT_S</code></td>
       <td>positive number of seconds</td>
       <td>unset (no bound)</td>
