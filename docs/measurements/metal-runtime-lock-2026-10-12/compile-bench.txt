@@ -1,0 +1,13 @@
+## 2026-10-12T06:25:21Z 23:25  up 55 days, 20:44, 0 users, load averages: 3.06 1.83 1.98
+   (co-running: a curl download, process line elided)
+25300   0.0       00:00 /bin/bash ./run.sh H11 ./_build/default/sarek-metal/test/bench_metal_compile.exe
+## co-running: Flash-MoE download under ~/flashmoe-bench (coordinator)
+## cmd: ./_build/default/sarek-metal/test/bench_metal_compile.exe
+Metal compile time per kernel, new process each, 5 rounds (ms, median [min-max])
+  matvec_q8  library   cold 3.62 [3.11-4.06]  warm1 0.03 [0.02-0.03]  warm2 0.02 [0.02-0.04]
+  matvec_q8  pipeline  cold 5.95 [5.56-6.28]  warm1 0.04 [0.03-0.06]  warm2 0.04 [0.04-0.07]
+  rms_norm   library   cold 3.41 [3.08-3.83]  warm1 0.03 [0.02-0.04]  warm2 0.03 [0.02-0.03]
+  rms_norm   pipeline  cold 3.60 [3.47-4.01]  warm1 0.04 [0.04-0.06]  warm2 0.04 [0.04-0.06]
+  rope       library   cold 2.63 [2.56-3.16]  warm1 0.03 [0.02-0.04]  warm2 0.02 [0.02-0.03]
+  rope       pipeline  cold 9.53 [9.36-10.01]  warm1 0.04 [0.04-0.05]  warm2 0.04 [0.04-0.07]
+## exit=0

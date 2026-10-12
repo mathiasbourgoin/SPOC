@@ -187,7 +187,7 @@ OpenCL compiles a kernel from source the first time a process uses it, and used 
 | rusticl, Mesa shader cache off | 7.7 / 3.8 / 5.3 ms | 2.2 / 1.9 / 4.2 ms |
 | rusticl, Mesa shader cache on (default) | 1.8 / 0.8 / 0.9 ms | 0.7 / 0.5 / 0.6 ms |
 
-Mesa keeps its own cache, so on rusticl the gain is small by default. Metal has no disk cache of ours: not needed, the OS shader cache already serves a new process (measured on Apple M4, macOS 15, 5 rounds, ms median: library 0.45 / 0.03 / 0.02 and pipeline 0.72 / 0.05 / 0.04 for a Q8_0 matvec / RMS norm / RoPE kernel, against 22.4 / 3.1 / 2.3 and 0.86 / 0.08 / 0.06 the first time the source is seen). The results are the same bits as a build from source. See [Compile cache](environment.html#compile-cache) for the key, the fallback and `SAREK_DISK_CACHE=0`.
+Mesa keeps its own cache, so on rusticl the gain is small by default. Metal has no disk cache of ours: not needed, the OS shader cache already serves a new process (measured on Apple M4, macOS 15, 5 rounds, ms median, for a Q8_0 matvec / RMS norm / RoPE kernel: a source new to the machine costs 2.6-3.6 ms library plus 3.6-9.5 ms pipeline, a later process at most 0.04 ms for either). The results are the same bits as a build from source. See [Compile cache](environment.html#compile-cache) for the key, the fallback and `SAREK_DISK_CACHE=0`.
 
 ## See also
 
