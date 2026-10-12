@@ -9,6 +9,7 @@
     PTX ISA that admits that SM: PTX ISA 8.0 does not know sm_120 (issue #506).
     Pure string tests, no device and no libcuda. *)
 
+open Sarek_cuda
 open Alcotest
 
 let generated =
@@ -18,8 +19,12 @@ let generated =
    .visible .entry k() { ret; }\n"
 
 let header ptx =
+  let starts prefix l =
+    String.length l >= String.length prefix
+    && String.sub l 0 (String.length prefix) = prefix
+  in
   String.split_on_char '\n' ptx
-  |> List.filter (fun l -> String.length l > 0 && (l.[1] = 'v' || l.[1] = 't'))
+  |> List.filter (fun l -> starts ".version" l || starts ".target" l)
 
 let rewrite ~major ~minor ptx = Cuda_api.Kernel.with_sm_target ~major ~minor ptx
 
