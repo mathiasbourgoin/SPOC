@@ -134,9 +134,10 @@ let submit_info_of slot =
     armed may have come after the queue accepted the batch. *)
 let submit_slot stream slot =
   let device = stream.device in
-  Vulkan_api_barrier.end_of_batch slot.command_buffer ;
   slot.ended <- true ;
+  Vulkan_api_barrier.end_of_batch slot.command_buffer ;
   check "vkEndCommandBuffer" (vkEndCommandBuffer slot.command_buffer) ;
+  slot.cb_open <- false ;
   reset_fence
     "vkResetFences (launch batch)"
     device.Device.device
@@ -152,23 +153,38 @@ let submit_slot stream slot =
   ignore (Sys.opaque_identity cmd_buf_ptr) ;
   ignore (Sys.opaque_identity submit_info)
 
+(** Put the slot's command buffer back in the initial state, whatever state an
+    interrupted end-of-batch step left it in. A device error is ignored: the
+    buffer is then unusable anyway. *)
+let reset_command_buffer slot =
+  match
+    check
+      "vkResetCommandBuffer"
+      (vkResetCommandBuffer slot.command_buffer (u32 0))
+  with
+  | () -> slot.cb_open <- false
+  | exception Vulkan_error.Vulkan_error _ -> ()
+
 let wait_queue_idle device =
   Device.with_queue_lock device (fun () ->
       ignore (vkQueueWaitIdle device.Device.compute_queue))
 
 (** An exception that is not a Vulkan failure (an asynchronous one: [Sys.Break],
     [Out_of_memory], a raising finaliser or memprof callback) escaped
-    {!submit_slot}. Before [vkEndCommandBuffer] the batch is intact and stays
-    open. After it, the batch may or may not have been accepted by the queue: if
-    the fence was armed, wait for the queue to be idle before the slot's pools
-    are reset, then abandon the slot (its launches may or may not have run).
-    Another exception can land in this recovery itself, so every step is
-    retried, nothing is allocated outside the protected region, and [attempts]
-    bounds the retries. The caller re-raises the original exception as it is. *)
+    {!submit_slot}. Before the end-of-batch step the batch is intact and stays
+    open. After it began, the command buffer may be recording, executable or
+    submitted, and the batch may or may not run: if the fence was armed, wait
+    for the queue to be idle, reset the command buffer so that the next begin is
+    on an initial-state buffer, then abandon the slot (its launches may or may
+    not have run). Another exception can land in this recovery itself, so every
+    step is retried, nothing is allocated outside the protected region, and
+    [attempts] bounds the retries. The caller re-raises the original exception
+    as it is. *)
 let rec recover_from_exception attempts stream slot =
   match
     if slot.ended then begin
       if slot.armed then wait_queue_idle stream.device ;
+      reset_command_buffer slot ;
       abandon stream slot
     end
   with
@@ -307,12 +323,20 @@ let flush_device device =
   Mutex.protect device.Device.batch_lock (fun () ->
       on_all_streams device (submit_open ~defer:true))
 
+(** Test instrumentation: begins attempted on a command buffer still recording.
+*)
+let begin_on_open_buffer = Atomic.make 0
+
 (** Make the active slot of [stream] ready to record: wait for its previous
     submission if it is still in flight, then begin the command buffer. *)
 let open_active stream =
   let slot = stream.slots.(stream.active) in
   if not slot.recording then begin
     await_slot stream slot ;
+    if slot.cb_open then begin
+      Atomic.incr begin_on_open_buffer ;
+      reset_command_buffer slot
+    end ;
     let begin_info = make vk_command_buffer_begin_info in
     setf
       begin_info
@@ -324,6 +348,9 @@ let open_active stream =
       cmd_buf_begin_flags
       (u32 vk_command_buffer_usage_one_time_submit_bit) ;
     setf begin_info cmd_buf_begin_pInheritanceInfo null ;
+    (* Marked open before the call: an exception right after it must not leave a
+       recording buffer unaccounted for. *)
+    slot.cb_open <- true ;
     check
       "vkBeginCommandBuffer"
       (vkBeginCommandBuffer slot.command_buffer (addr begin_info)) ;
