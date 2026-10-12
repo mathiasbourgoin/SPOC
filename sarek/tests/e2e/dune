@@ -2010,6 +2010,8 @@
   test_matrix_rewrite_float
   test_matrix_int64_index
   test_matrix_subgroup
+  test_matrix_fragment
+  test_matrix_rewrite_metal
   bench_matrix_int_rewrite
   test_matrix_cuda_compile
   test_matrix_dynamic
@@ -2029,6 +2031,8 @@
   test_matrix_rewrite_float
   test_matrix_int64_index
   test_matrix_subgroup
+  test_matrix_fragment
+  test_matrix_rewrite_metal
   bench_matrix_int_rewrite
   test_matrix_cuda_compile
   test_matrix_dynamic
@@ -2333,6 +2337,14 @@
  (action
   (run %{dep:test_matrix_subgroup.exe})))
 
+; The same templates laid out for 8x8x8 and 16x16x16 fragments (Metal's
+; simdgroup_matrix is 8x8x8), f16, on the interpreter.
+
+(rule
+ (alias runtest)
+ (action
+  (run %{dep:test_matrix_fragment.exe})))
+
 ; The CUDA/C rewrite is compiler-output evidence: generated wmma source through
 ; NVRTC (sm_80). Skips without libnvrtc and a CUDA include directory.
 
@@ -2426,3 +2438,13 @@
  (alias e2e-metal)
  (action
   (run %{dep:test_metal_f16_narrowing_e2e.exe})))
+
+; The matrix-product rewrite on Metal (specs/matrix-pattern-rewrite.md): f16
+; GEMM rewritten to 8x8x8 fragments, bit-identical to the original, the
+; Interpreter and the host chain over k, with controls. Self-skips without an
+; Apple GPU. Run by hand on a Mac: alias e2e-metal (scripts/unwired-targets.tsv).
+
+(rule
+ (alias e2e-metal)
+ (action
+  (run %{dep:test_matrix_rewrite_metal.exe})))
