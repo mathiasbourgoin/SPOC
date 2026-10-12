@@ -209,8 +209,8 @@ let test_narrow_keeps_existing_disabled () =
 (* Explain lines                                                             *)
 (* ------------------------------------------------------------------------ *)
 
-let decision ?(kernel = "k") ?(device = "d") optimisation decision =
-  Decision {kernel; device; optimisation; decision}
+let decision ?(kernel = "k") ?(target = "d") optimisation decision =
+  Decision {kernel; target; optimisation; decision}
 
 let test_lines () =
   let check name expected event =
@@ -231,6 +231,7 @@ let test_lines () =
              {
                grants = [Deviation Cross_kernel_contraction];
                reason = "profile fast";
+               lowering = None;
              }))) ;
   check
     "several grants"
@@ -244,6 +245,7 @@ let test_lines () =
                grants =
                  [Consent Automatic_float_rewrite; Deviation Accumulation_order];
                reason = "a; b";
+               lowering = None;
              }))) ;
   check
     "exact"
@@ -264,15 +266,39 @@ let test_lines () =
              {
                grants = [Deviation Accumulation_order];
                reason = "say \"hi\"\nnow";
+               lowering = None;
              }))) ;
   check
     "spaces in kernel and device names become underscores, a pair is joined"
     "sarek-explain p+c AMD_Radeon_RX epilogue applied exact"
     (decision
        ~kernel:"p + c"
-       ~device:"AMD Radeon RX"
+       ~target:"AMD Radeon RX"
        Epilogue_fusion
        (Applied Exact_by_construction)) ;
+  check
+    "matrix: the lowering is a trailing field"
+    "sarek-explain k HIP:0 matrix applied granted=accumulation-order \
+     reason=\"profile fast\" lowering=\"f16 operands, staged\""
+    (decision
+       ~target:"HIP:0"
+       Matrix_rewrite
+       (Applied
+          (Granted
+             {
+               grants = [Deviation Accumulation_order];
+               reason = "profile fast";
+               lowering = Some "f16 operands, staged";
+             }))) ;
+  check
+    "coopmat gate has its own label"
+    "sarek-explain k HIP:0 coopmat-gate refused coopmat-relaxed-accumulation"
+    (Gate
+       {
+         kernel = "k";
+         target = "HIP:0";
+         decision = Refused "coopmat-relaxed-accumulation";
+       }) ;
   check
     "grant on a generated name"
     "sarek-explain sarek_efused_1 - policy refused grant-on-generated-name \
@@ -333,7 +359,7 @@ let collect f =
 let record kernel =
   {
     kernel;
-    device = "d";
+    target = "d";
     optimisation = Narrowing_proof;
     decision = Applied Exact_by_construction;
   }
@@ -365,7 +391,7 @@ let test_generated_name_grant () =
     collect (fun () ->
         report (record "env_member_a") ;
         report (record "env_fused_a") ;
-        report {(record "env_fused_a") with device = "other"} ;
+        report {(record "env_fused_a") with target = "other"} ;
         report (record "env_member_a + env_fused_a"))
   in
   Alcotest.(check (list triple_t))
@@ -385,6 +411,85 @@ let test_ordinary_kernel_grant_is_not_ignored () =
   | Error _ -> Alcotest.fail "grant refused") ;
   let events = collect (fun () -> report (record "env_plain_a")) in
   Alcotest.(check (list triple_t)) "nothing ignored" [] (ignored_of events)
+
+
+(* Distinct decisions, not changes: a decision that flips back and forth is
+   printed once per distinct outcome. *)
+let test_alternating_decisions_print_twice () =
+  let decisions r =
+    List.filter_map (function Decision d -> Some d | Ignored_grant _ -> None) r
+  in
+  let events =
+    collect (fun () ->
+        for _ = 1 to 3 do
+          report (record "env_flip_a") ;
+          report
+            {(record "env_flip_a") with decision = Refused "window is off"}
+        done)
+  in
+  Alcotest.(check int) "two distinct decisions, two events" 2
+    (List.length (decisions events))
+
+(* A grant given after the decisions of its kernel settled is still reported,
+   once, at the next report for that kernel. *)
+let test_late_ignored_grant () =
+  let events =
+    collect (fun () ->
+        report (record "env_late_a") ;
+        (match grant (Kernel "env_late_f") single ~reason:"late" with
+        | Ok () -> ()
+        | Error _ -> Alcotest.fail "grant refused") ;
+        register_fused ~name:"env_late_f" ~members:["env_late_a"] ;
+        report (record "env_late_f") ;
+        report (record "env_late_f"))
+  in
+  Alcotest.(check (list triple_t))
+    "reported once"
+    [("env_late_f", "single-rounding", Generated_name)]
+    (ignored_of events) ;
+  let late =
+    collect (fun () ->
+        report (record "env_late_a") ;
+        (match grant (Kernel "env_late_g") single ~reason:"late" with
+        | Ok () -> ()
+        | Error _ -> Alcotest.fail "grant refused") ;
+        register_fused ~name:"env_late_g" ~members:["env_late_a"] ;
+        report (record "env_late_g") ;
+        (* settled: the same decision again, after a new generated grant *)
+        (match grant (Kernel "env_late_h") single ~reason:"late" with
+        | Ok () -> ()
+        | Error _ -> Alcotest.fail "grant refused") ;
+        register_fused ~name:"env_late_h" ~members:["env_late_a"] ;
+        report (record "env_late_h + env_late_g"))
+  in
+  Alcotest.(check bool)
+    "a grant on a kernel whose decisions settled is reported at its next report"
+    true
+    (List.exists (fun (k, _, _) -> k = "env_late_h") (ignored_of late))
+
+let test_join_reasons () =
+  Alcotest.(check string)
+    "de-duplicated in order"
+    "a; b; c"
+    (join_reasons ["a"; "b"; "a"; "c"; "b"]) ;
+  Alcotest.(check string) "empty" "" (join_reasons [])
+
+let test_seen_set_is_bounded () =
+  let events =
+    collect (fun () ->
+        for i = 1 to 5000 do
+          report
+            {
+              (record "env_cap_a") with
+              decision = Refused (string_of_int i);
+            }
+        done ;
+        report {(record "env_cap_a") with decision = Refused "5000"})
+  in
+  Alcotest.(check bool)
+    "bounded memory: the set resets after its cap, never fails"
+    true
+    (List.length events >= 5000)
 
 let test_no_reporter_no_event () =
   set_reporter None ;
@@ -420,5 +525,9 @@ let () =
             "an ordinary kernel grant is not ignored"
             test_ordinary_kernel_grant_is_not_ignored;
           case "no reporter" test_no_reporter_no_event;
+          case "alternating decisions" test_alternating_decisions_print_twice;
+          case "late ignored grant" test_late_ignored_grant;
+          case "join reasons" test_join_reasons;
+          case "seen set is bounded" test_seen_set_is_bounded;
         ] );
     ]

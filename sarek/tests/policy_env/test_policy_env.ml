@@ -19,251 +19,18 @@
    - unknown: an unknown item warns (stderr is compared with a golden) and the
      rest applies.
    - removed: the five replaced variables are set and change nothing.
+   - accumulation-order, operand-rounding-f16: the revoked accuracy grant is
+     named in the refusals it causes.
+   - model: the process state after SAREK_OPT_DISABLE equals [Env.narrow].
    - explain, explain-off, explain-unknown, explain-replaced: SAREK_EXPLAIN. *)
+
 
 [@@@warning "-33"]
 
 [@@@alert "-sarek_matrix"]
 
-open Sarek
 open Sarek_ir_types
-module Spec = Sarek_execute.Matrix_specialise
-module Lp = Sarek_execute.Launch_policy
-module LE = Sarek_execute.Launch_epilogue
-module Cm = Sarek_coopmat
-module Adv = Sarek_matrix_advice
-
-(* ------------------------------------------------------------------------ *)
-(* Fixtures                                                                  *)
-(* ------------------------------------------------------------------------ *)
-
-let var name ty =
-  {var_name = name; var_id = 0; var_type = ty; var_mutable = false}
-
-let vec name elt =
-  DParam (var name (TVec elt), Some {arr_elttype = elt; arr_memspace = Global})
-
-let i32 n = EConst (CInt32 (Int32.of_int n))
-
-let tid = var "tid" TInt32
-
-let read a = EArrayRead (a, EVar tid)
-
-let widen e = ECast (TFloat32, e)
-
-let to_float e = EIntrinsic (["Sarek_stdlib"; "Gpu"], "float", [e])
-
-let ( *: ) a b = EBinop (Mul, a, b)
-
-let ( +: ) a b = EBinop (Add, a, b)
-
-let ( -: ) a b = EBinop (Sub, a, b)
-
-let ( &: ) a b = EBinop (BitAnd, a, b)
-
-let ( >>: ) a b = EBinop (Shr, a, b)
-
-let store e = SAssign (LArrayElem ("out", EVar tid), ECast (TFloat16, e))
-
-let narrowing_kernel name body =
-  {
-    default_kernel with
-    kern_name = name;
-    kern_params =
-      [
-        vec "out" TFloat16;
-        vec "h" TFloat16;
-        vec "g" TFloat16;
-        vec "q" TInt32;
-        vec "x" TFloat32;
-      ];
-    kern_body = SLet (tid, EIntrinsic ([], "global_thread_id", []), body);
-  }
-
-let h = widen (read "h")
-
-let g = widen (read "g")
-
-(* One rounding provably equals two: no barrier with or without a grant. *)
-let t2_f16_sum = narrowing_kernel "t2_f16_sum" (store (h +: g))
-
-(* Not provable: keeps its barrier unless single rounding is granted. *)
-let q4k_like =
-  let m = to_float (read "q" >>: i32 4 &: i32 63) in
-  narrowing_kernel
-    "q4k_like"
-    (store ((h *: to_float (read "q" &: i32 15)) -: (g *: m)))
-
-(* A constant-trip loop: Sarek_ir_unroll hints it. *)
-let unroll_loop =
-  let i = var "i" TInt32 in
-  {
-    default_kernel with
-    kern_name = "unroll_loop";
-    kern_params = [vec "acc" TFloat32; vec "x" TFloat32];
-    kern_body =
-      SLet
-        ( tid,
-          EIntrinsic ([], "global_thread_id", []),
-          SFor
-            ( i,
-              i32 0,
-              i32 8,
-              Upto,
-              SAssign
-                ( LArrayElem ("acc", EVar tid),
-                  EArrayRead ("acc", EVar tid) +: read "x" ) ) );
-  }
-
-(* A float cooperative-matrix multiply-add: the explicit coopmat gate. *)
-let coopmat_kernel =
-  let cfg =
-    {
-      Cm.cfg_shape = {Cm.m = 16; n = 16; k = 16};
-      cfg_a = Cm.Float16;
-      cfg_b = Cm.Float16;
-      cfg_c = Cm.Float32;
-      cfg_result = Cm.Float32;
-      cfg_saturating = false;
-      cfg_scope = Cm.Subgroup;
-    }
-  in
-  {
-    default_kernel with
-    kern_name = "coopmat_f16";
-    kern_body =
-      SCoopmat (CM_muladd {dst = "fc"; a = "fa"; b = "fb"; c = "fc"; cfg});
-  }
-
-let k_f16 =
-  [%kernel
-    fun (a : float16 vector)
-        (b : float16 vector)
-        (c : float32 vector)
-        (m : int32)
-        (n : int32)
-        (k : int32) ->
-      let row = global_idx_y in
-      let col = global_idx_x in
-      if row < m && col < n then begin
-        let sum = mut 0.0 in
-        for i = 0 to k - 1l do
-          sum :=
-            sum
-            +. float32_of_float16 a.((row * k) + i)
-               *. float32_of_float16 b.((i * n) + col)
-        done ;
-        c.((row * n) + col) <- sum
-      end]
-
-let gemm_ir =
-  match (snd k_f16).Sarek.Kirc_types.body_ir with
-  | Some ir -> ir
-  | None -> failwith "no IR"
-
-let fake_device ~framework ~is_cpu : Spoc_core.Device.t =
-  {
-    id = 0;
-    backend_id = 0;
-    name = "fake " ^ framework;
-    framework;
-    capabilities =
-      {
-        max_threads_per_block = 256;
-        max_block_dims = (256, 256, 64);
-        max_grid_dims = (65535, 65535, 65535);
-        shared_mem_per_block = 16384;
-        total_global_mem = 1073741824L;
-        compute_capability = (0, 0);
-        device_features = [];
-        coopmat = None;
-        supports_atomics = false;
-        warp_size = 32;
-        max_registers_per_block = 0;
-        clock_rate_khz = 0;
-        multiprocessor_count = 1;
-        is_cpu;
-      };
-  }
-
-let fake_hip = fake_device ~framework:"HIP" ~is_cpu:false
-
-let fake_native = fake_device ~framework:"Native" ~is_cpu:true
-
-(* ------------------------------------------------------------------------ *)
-(* Helpers                                                                   *)
-(* ------------------------------------------------------------------------ *)
-
-let cuda_c k = Sarek_codegen.Sarek_ir_cuda.generate_with_types ~types:[] k
-
-let opencl k = Sarek_codegen.Sarek_ir_opencl.generate_with_types ~types:[] k
-
-let metal k = Sarek_codegen.Sarek_ir_metal.generate_with_types ~types:[] k
-
-let glsl k = Sarek_codegen.Sarek_ir_glsl.generate_with_types ~types:[] k
-
-let count ~needle s =
-  let n = String.length needle in
-  let rec go i acc =
-    if i + n > String.length s then acc
-    else if String.sub s i n = needle then go (i + n) (acc + 1)
-    else go (i + 1) acc
-  in
-  go 0 0
-
-let contains ~needle s = count ~needle s > 0
-
-let barriers k = count ~needle:"__float2half(sarek_f32_barrier(" (cuda_c k)
-
-let unroll_hints () =
-  List.map
-    (fun gen -> count ~needle:"#pragma unroll\n" (gen unroll_loop))
-    [cuda_c; opencl; metal]
-  @ [count ~needle:"[[unroll]]" (glsl unroll_loop)]
-
-let deferred ?(streamed = false) ?(soa_params = []) ?(kernel = "env_kernel")
-    device =
-  Lp.deferred ~kernel ~device ~streamed ~soa_params
-
-let epilogue backend =
-  LE.decide_pair ~backend ~producer:"env_p" ~consumer:"env_c"
-
-let decision_text = function
-  | Sarek_policy.Applied Sarek_policy.Exact_by_construction -> "exact"
-  | Sarek_policy.Applied (Sarek_policy.Granted {reason; _}) ->
-      "granted: " ^ reason
-  | Sarek_policy.Applied (Sarek_policy.Proof p) -> "proof: " ^ p
-  | Sarek_policy.Refused why -> "refused: " ^ why
-
-let disabled_text = "refused: disabled (SAREK_OPT_DISABLE)"
-
-let check_restricted expected =
-  List.iter
-    (fun o ->
-      Alcotest.(check bool)
-        (Sarek_policy.optimisation_name o)
-        (List.mem o expected)
-        (Sarek_policy.restricted o))
-    Sarek_policy.all_optimisations
-
-let ok_or_fail = function
-  | Ok () -> ()
-  | Error r -> Alcotest.fail (Sarek_policy.refusal_message r)
-
-let single = Sarek_policy.Deviation Sarek_policy.Single_rounding
-
-let contraction = Sarek_policy.Deviation Sarek_policy.Cross_kernel_contraction
-
-let automatic = Sarek_policy.Consent Sarek_policy.Automatic_float_rewrite
-
-let lowering ?precision ~explicit case =
-  Spec.lowering_for
-    ~budget:(Sarek_policy.budget ~kernels:[])
-    ~explicit
-    case
-    precision
-
-let is_ok = function Ok _ -> true | Error _ -> false
+open Policy_env_fixtures
 
 (* ------------------------------------------------------------------------ *)
 (* Scenarios                                                                 *)
@@ -272,6 +39,13 @@ let is_ok = function Ok _ -> true | Error _ -> false
 let test_baseline () =
   check_restricted [] ;
   Alcotest.(check bool) "window defers on HIP" true (deferred fake_hip) ;
+  List.iter
+    (fun device ->
+      Alcotest.(check bool)
+        (device.Spoc_core.Device.name ^ ": one function decides")
+        (Sarek_execute.Execute.Window.defers_device device)
+        (deferred device))
+    [fake_hip; fake_native] ;
   Alcotest.(check string)
     "epilogue on HIP"
     "exact"
@@ -424,6 +198,82 @@ let test_unknown () =
   Alcotest.(check (list int)) "unroll off" [0; 0; 0; 0] (unroll_hints ()) ;
   Alcotest.(check string) "epilogue on" "exact" (decision_text (epilogue "HIP"))
 
+
+(* Revoking an accuracy grant is named in the refusals it causes. *)
+let coopmat_cfg =
+  match Sarek_ir_analysis.kernel_coopmat_configs coopmat_kernel with
+  | [cfg] -> cfg
+  | _ -> failwith "one configuration"
+
+let refusal_text = function
+  | Sarek_capability.Unavailable cap -> cap.Sarek_capability.cap_why
+  | Sarek_capability.Available -> "available"
+  | Sarek_capability.Unknown why -> why
+
+let test_accumulation_order_revoked () =
+  Cm.accept_relaxed_accumulation ~reason:"the program accepts it" ;
+  Alcotest.(check bool)
+    "revoked"
+    true
+    (Sarek_policy.revoked (Sarek_policy.Deviation Sarek_policy.Accumulation_order)) ;
+  let why =
+    refusal_text
+      (Cm.policy_verdict_for
+         (Sarek_policy.budget ~kernels:[coopmat_kernel.kern_name])
+         coopmat_cfg)
+  in
+  Alcotest.(check bool)
+    ("an explicit coopmat kernel is refused and the refusal says why (" ^ why ^ ")")
+    true
+    (contains ~needle:"revoked by SAREK_OPT_DISABLE" why) ;
+  Alcotest.(check bool)
+    "the float lowering is refused too"
+    false
+    (is_ok (lowering ~explicit:true Adv.F16_inputs)) ;
+  Alcotest.(check bool)
+    "int32 is still rewritten"
+    true
+    (is_ok (lowering ~explicit:false Adv.Int32_inputs))
+
+let test_operand_rounding_revoked () =
+  Cm.accept_operand_rounding ~precision:Cm.Operands_f16 ~reason:"the program" ;
+  match lowering ~explicit:true ~precision:Cm.Operands_f16 Adv.F32_inputs with
+  | Ok _ -> Alcotest.fail "rounded to f16 despite the revocation"
+  | Error why ->
+      Alcotest.(check bool)
+        ("the error names the revocation (" ^ why ^ ")")
+        true
+        (contains ~needle:"revoked by SAREK_OPT_DISABLE" why)
+
+(* The process state equals the pure model: every grant at process scope, then
+   the effective policy of a kernel against [Env.narrow] of the parsed value
+   applied to the full budget. *)
+let test_model () =
+  List.iter
+    (fun g ->
+      ok_or_fail
+        (Sarek_policy.grant Sarek_policy.Process g ~reason:("model " ^ Sarek_policy.grant_name g)))
+    Sarek_policy.all_grants ;
+  let full =
+    List.fold_left
+      (fun b g ->
+        match Sarek_policy.Budget.add g ~reason:"model" b with
+        | Ok b -> b
+        | Error _ -> Alcotest.fail "add refused")
+      Sarek_policy.Budget.exact
+      Sarek_policy.all_grants
+  in
+  let restrictions, _ = Sarek_policy.Env.parse "window,Single-Rounding, matrix" in
+  let modelled =
+    Sarek_policy.Env.narrow
+      restrictions
+      {Sarek_policy.budget = full; disabled = []}
+  in
+  Alcotest.(check string)
+    "apply_environment equals narrow"
+    (Sarek_policy.effective_digest modelled)
+    (Sarek_policy.effective_digest (Sarek_policy.effective ~kernel:"model_k"))
+
 (* The five replaced variables are set (dune): none of them does anything. *)
 let test_removed () =
   check_restricted [] ;
@@ -467,6 +317,17 @@ let test_explain_replaced () =
   ignore (cuda_c unroll_loop) ;
   Alcotest.(check int) "the program's reporter gets the record" 1 !seen
 
+(* The launch gate of Execute, on a device that cannot run the kernel: it
+   raises, after the policy half of the gate has been reported. *)
+let gate_through_execute () =
+  match
+    Sarek_execute.Execute.check_device_capabilities
+      ~device:fake_hip
+      coopmat_kernel
+  with
+  | () -> Alcotest.fail "a device without cooperative matrices accepted it"
+  | exception _ -> ()
+
 (* Every decision point that needs no device, once; the lines go to stderr and
    are compared with explain.expected. *)
 let test_explain_golden () =
@@ -491,9 +352,9 @@ let test_explain_golden () =
   (* the matrix rewrite: declined for the missing consent *)
   ignore (Spec.choose ~device:fake_hip ~ir:gemm_ir ~launch:(fun () -> None) ()) ;
   (* the explicit coopmat gate: refused, then granted *)
-  Lp.coopmat_gate ~device:fake_hip coopmat_kernel ;
+  gate_through_execute () ;
   Cm.accept_relaxed_accumulation ~reason:"profile fast" ;
-  Lp.coopmat_gate ~device:fake_hip coopmat_kernel ;
+  gate_through_execute () ;
   (* a grant on a generated name never counts, and the report says so *)
   ok_or_fail
     (Sarek_policy.grant
@@ -519,6 +380,11 @@ let scenarios =
       [case "cross-kernel-contraction revoked" test_contraction] );
     ( "automatic-float-rewrite",
       [case "automatic-float-rewrite revoked" test_automatic_float_rewrite] );
+    ( "accumulation-order",
+      [case "accumulation-order revoked" test_accumulation_order_revoked] );
+    ( "operand-rounding-f16",
+      [case "operand-rounding-f16 revoked" test_operand_rounding_revoked] );
+    ("model", [case "model of the environment" test_model]);
     ("unknown", [case "unknown item" test_unknown]);
     ("removed", [case "replaced variables" test_removed]);
     ("explain", [case "golden" test_explain_golden]);
