@@ -974,7 +974,7 @@ let test_default_backends () =
         (name ^ " is in the default set")
         true
         (List.mem name LW.default_backends))
-    ["HIP"; "OpenCL"; "Vulkan"; "CUDA/PTX"; "CUDA/C"] ;
+    ["HIP"; "OpenCL"; "Vulkan"; "CUDA/PTX"; "CUDA/C"; "Metal"] ;
   List.iter
     (fun name ->
       check
@@ -982,7 +982,7 @@ let test_default_backends () =
         (name ^ " is not in the default set")
         false
         (List.mem name LW.default_backends))
-    ["Native"; "Interpreter"; "Metal"]
+    ["Native"; "Interpreter"]
 
 let test_cpu_device_not_deferred () =
   reset () ;
