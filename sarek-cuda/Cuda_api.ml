@@ -694,22 +694,35 @@ module Kernel = struct
   let with_sm_target = Cuda_ptx_isa.with_sm_target
 
   (* Fail with both versions named when the driver cannot accept the PTX ISA
-     the device's SM needs, instead of an opaque CUDA_ERROR_INVALID_PTX. *)
-  let check_driver_accepts_sm ~major ~minor =
-    let v = allocate int 0 in
-    check "cuDriverGetVersion" (cuDriverGetVersion v) ;
-    let ver = !@v in
-    match
-      Cuda_ptx_isa.check_driver
-        ~driver:(ver / 1000, ver mod 1000 / 10)
-        ~required:(Cuda_ptx_isa.required_version ~major ~minor)
-    with
-    | Ok () -> ()
-    | Error msg ->
-        Cuda_error.raise_error
-          (Cuda_error.module_load_failed
-             0
-             (Printf.sprintf "sm_%d%d: %s" major minor msg))
+     version the (rewritten) PTX declares, instead of an opaque
+     CUDA_ERROR_INVALID_PTX. Skipped on ZLUDA: it parses PTX without enforcing
+     .version, and reports unlisted SMs (sm_88) that the table maps to 9.0. *)
+  let check_driver_accepts ~device_name ~major ~minor ptx =
+    let is_zluda =
+      let n = String.length "ZLUDA" in
+      let rec go i =
+        i + n <= String.length device_name
+        && (String.sub device_name i n = "ZLUDA" || go (i + 1))
+      in
+      go 0
+    in
+    match Cuda_ptx_isa.declared_version ptx with
+    | Some declared when not is_zluda -> (
+        let v = allocate int 0 in
+        check "cuDriverGetVersion" (cuDriverGetVersion v) ;
+        let ver = !@v in
+        match
+          Cuda_ptx_isa.check_driver
+            ~driver:(ver / 1000, ver mod 1000 / 10)
+            ~required:declared
+        with
+        | Ok () -> ()
+        | Error msg ->
+            Cuda_error.raise_error
+              (Cuda_error.module_load_failed
+                 (String.length ptx)
+                 (Printf.sprintf "sm_%d%d: %s" major minor msg)))
+    | _ -> ()
 
   (* Load a PTX string into a CUDA module and retrieve [name] as a function.
      The device context must already be current when this is called. *)
@@ -797,8 +810,8 @@ module Kernel = struct
   let load_from_ptx device ~name ~ptx =
     Device.set_current device ;
     let major, minor = device.Device.compute_capability in
-    check_driver_accepts_sm ~major ~minor ;
     let ptx = with_sm_target ~major ~minor ptx in
+    check_driver_accepts ~device_name:device.Device.name ~major ~minor ptx ;
     Spoc_core.Log.debugf
       Spoc_core.Log.Kernel
       "PTX load_from_ptx: kernel='%s' sm_%d%d (%d bytes)"

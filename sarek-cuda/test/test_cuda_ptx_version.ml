@@ -83,6 +83,39 @@ let test_driver_gate () =
     true
     (Cuda_ptx_isa.check_driver ~driver:(13, 4) ~required = Ok ())
 
+let test_declared_version () =
+  let v ptx =
+    Option.map Cuda_ptx_isa.to_string (Cuda_ptx_isa.declared_version ptx)
+  in
+  check
+    (option string)
+    "rewritten sm_120"
+    (Some "8.7")
+    (v (rewrite ~major:12 ~minor:0 generated)) ;
+  check (option string) "absent" None (v ".target sm_86\n") ;
+  (* sm_86 needs only 7.1, but the generated 8.0 is what the driver sees *)
+  check
+    (option string)
+    "sm_86 keeps 8.0"
+    (Some "8.0")
+    (v (rewrite ~major:8 ~minor:6 generated)) ;
+  check
+    bool
+    "CUDA 11.8 driver (7.8) rejects the declared 8.0"
+    true
+    (Result.is_error
+       (Cuda_ptx_isa.check_driver ~driver:(11, 8) ~required:(8, 0))) ;
+  check
+    bool
+    "CUDA 12.6 driver accepts 8.5"
+    true
+    (Cuda_ptx_isa.check_driver ~driver:(12, 6) ~required:(8, 5) = Ok ()) ;
+  check
+    bool
+    "driver older than 11.8 not gated"
+    true
+    (Cuda_ptx_isa.check_driver ~driver:(11, 0) ~required:(9, 0) = Ok ())
+
 let () =
   run
     "cuda_ptx_version"
@@ -97,5 +130,9 @@ let () =
         [
           test_case "required version per SM" `Quick test_table;
           test_case "driver gate names both versions" `Quick test_driver_gate;
+          test_case
+            "gate uses the declared version"
+            `Quick
+            test_declared_version;
         ] );
     ]
