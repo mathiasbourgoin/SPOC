@@ -253,7 +253,7 @@
   <tbody>
     <tr>
       <td>Whole process, at start</td>
-      <td><code class="language-plaintext highlighter-rouge">SAREK_LAUNCH_WINDOW=0</code> (also <code class="language-plaintext highlighter-rouge">false</code>, <code class="language-plaintext highlighter-rouge">off</code>, <code class="language-plaintext highlighter-rouge">no</code>)</td>
+      <td><code class="language-plaintext highlighter-rouge">SAREK_OPT_DISABLE=window</code> (one-way; see <a href="environment.html">Environment variables</a>)</td>
     </tr>
     <tr>
       <td>Whole process, at run time</td>
@@ -265,7 +265,7 @@
     </tr>
     <tr>
       <td>Epilogue fusion, at start</td>
-      <td><code class="language-plaintext highlighter-rouge">SAREK_LAUNCH_EPILOGUE=0</code> (also <code class="language-plaintext highlighter-rouge">false</code>, <code class="language-plaintext highlighter-rouge">off</code>, <code class="language-plaintext highlighter-rouge">no</code>)</td>
+      <td><code class="language-plaintext highlighter-rouge">SAREK_OPT_DISABLE=epilogue</code> (one-way)</td>
     </tr>
     <tr>
       <td>Epilogue fusion, one backend</td>
@@ -274,7 +274,7 @@
   </tbody>
 </table>
 
-<p>The setters flush held launches first. The backend argument is the framework name shown by <code class="language-plaintext highlighter-rouge">sarek-device-info</code> (<code class="language-plaintext highlighter-rouge">HIP</code>, <code class="language-plaintext highlighter-rouge">OpenCL</code>, <code class="language-plaintext highlighter-rouge">Vulkan</code>, <code class="language-plaintext highlighter-rouge">Metal</code>, <code class="language-plaintext highlighter-rouge">CUDA/PTX</code>, <code class="language-plaintext highlighter-rouge">CUDA/C</code>). Turning the window on for a backend outside the default set (WebGPU, whose codegen is not wired) is an opt-in. Turning epilogue fusion on for OpenCL or Vulkan grants nothing: those kernels fuse only when both hold <code class="language-plaintext highlighter-rouge">Cross_kernel_contraction</code>, which accepts the difference described above (at most half an ulp of the product plus an ulp of the result).</p>
+<p><code class="language-plaintext highlighter-rouge">SAREK_EXPLAIN=1</code> prints, per kernel and device (<code class="language-plaintext highlighter-rouge">&lt;framework&gt;:&lt;id&gt;</code>), whether the window deferred the launch and, per producer and consumer pair, whether epilogue fusion applied (<code class="language-plaintext highlighter-rouge">sarek-explain &lt;kernel&gt; &lt;framework&gt;:&lt;id&gt; window applied exact</code>, <code class="language-plaintext highlighter-rouge">sarek-explain &lt;p&gt;+&lt;c&gt; &lt;framework&gt; epilogue applied granted=cross-kernel-contraction reason="..."</code>, or <code class="language-plaintext highlighter-rouge">refused &lt;why&gt;</code>). The setters flush held launches first. The backend argument is the framework name shown by <code class="language-plaintext highlighter-rouge">sarek-device-info</code> (<code class="language-plaintext highlighter-rouge">HIP</code>, <code class="language-plaintext highlighter-rouge">OpenCL</code>, <code class="language-plaintext highlighter-rouge">Vulkan</code>, <code class="language-plaintext highlighter-rouge">Metal</code>, <code class="language-plaintext highlighter-rouge">CUDA/PTX</code>, <code class="language-plaintext highlighter-rouge">CUDA/C</code>). Turning the window on for a backend outside the default set (WebGPU, whose codegen is not wired) is an opt-in. Turning epilogue fusion on for OpenCL or Vulkan grants nothing: those kernels fuse only when both hold <code class="language-plaintext highlighter-rouge">Cross_kernel_contraction</code>, which accepts the difference described above (at most half an ulp of the product plus an ulp of the result).</p>
 
 <div class="language-ocaml highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">let</span> <span class="n">configure</span> <span class="bp">()</span> <span class="o">=</span>
   <span class="c">(* Keep launches immediate while debugging a device-compile error. *)</span>

@@ -74,23 +74,19 @@
   <tbody>
     <tr>
       <td>Only the exact string <code class="language-plaintext highlighter-rouge">1</code> has an effect</td>
-      <td><code class="language-plaintext highlighter-rouge">SPOC_DISABLE_*</code>, <code class="language-plaintext highlighter-rouge">SAREK_MATRIX_REPORT</code></td>
+      <td><code class="language-plaintext highlighter-rouge">SPOC_DISABLE_*</code>, <code class="language-plaintext highlighter-rouge">SAREK_EXPLAIN</code> (any other value is off; an unknown one warns once)</td>
     </tr>
     <tr>
       <td>Only the exact string <code class="language-plaintext highlighter-rouge">0</code> switches off</td>
-      <td><code class="language-plaintext highlighter-rouge">SAREK_AUTO_UNROLL</code>, <code class="language-plaintext highlighter-rouge">SAREK_HIP_IGPU_UNCACHED</code>, <code class="language-plaintext highlighter-rouge">SAREK_DISK_CACHE</code></td>
+      <td><code class="language-plaintext highlighter-rouge">SAREK_HIP_IGPU_UNCACHED</code>, <code class="language-plaintext highlighter-rouge">SAREK_DISK_CACHE</code></td>
     </tr>
     <tr>
-      <td>Exactly <code class="language-plaintext highlighter-rouge">0</code>, <code class="language-plaintext highlighter-rouge">false</code>, <code class="language-plaintext highlighter-rouge">off</code> or <code class="language-plaintext highlighter-rouge">no</code> (lowercase) switches off; anything else leaves it on</td>
-      <td><code class="language-plaintext highlighter-rouge">SAREK_LAUNCH_WINDOW</code>, <code class="language-plaintext highlighter-rouge">SAREK_LAUNCH_EPILOGUE</code></td>
+      <td>A comma-separated list of names, case-insensitive, spaces and empty items ignored; an unknown item warns and is ignored</td>
+      <td><code class="language-plaintext highlighter-rouge">SAREK_OPT_DISABLE</code></td>
     </tr>
     <tr>
       <td><code class="language-plaintext highlighter-rouge">1</code>, <code class="language-plaintext highlighter-rouge">true</code> or <code class="language-plaintext highlighter-rouge">yes</code> (lowercase) switches on</td>
       <td><code class="language-plaintext highlighter-rouge">SAREK_PPX_DEBUG</code></td>
-    </tr>
-    <tr>
-      <td>A mode name, case-insensitive; an unknown value warns once</td>
-      <td><code class="language-plaintext highlighter-rouge">SAREK_MATRIX_REWRITE</code></td>
     </tr>
     <tr>
       <td>A positive number (surrounding spaces ignored, except for <code class="language-plaintext highlighter-rouge">SPOC_METAL_BATCH</code> and <code class="language-plaintext highlighter-rouge">SPOC_VULKAN_BATCH</code>); an invalid value falls back to the default without a message</td>
@@ -107,7 +103,7 @@
   </tbody>
 </table>
 
-<p>So <code class="language-plaintext highlighter-rouge">SPOC_DISABLE_GPU=true</code> and <code class="language-plaintext highlighter-rouge">SAREK_LAUNCH_WINDOW=OFF</code> do nothing.</p>
+<p>So <code class="language-plaintext highlighter-rouge">SPOC_DISABLE_GPU=true</code> does nothing.</p>
 
 <p>“Read at” says when the value is taken: <strong>PPX</strong> is compile time (the environment of the <code class="language-plaintext highlighter-rouge">dune build</code> that expands <code class="language-plaintext highlighter-rouge">[%kernel ...]</code>), <strong>start</strong> is when the library or plugin module is loaded at program start, and <strong>launch</strong> or <strong>code generation</strong> is later, while the program runs.</p>
 
@@ -220,7 +216,9 @@
 
 <p>Device selection is explained in <a href="device_selection.html">Device and backend selection</a>; the Metal batch in <a href="memory.html">Memory and transfers</a>; the Vulkan batch in <a href="performance.html">Launch window and fusion</a>; the fence bound in the <a href="https://github.com/mathiasbourgoin/Sarek/blob/main/sarek-vulkan/README.md">Vulkan README</a>.</p>
 
-<h2 id="launch-window-and-fusion">Launch window and fusion</h2>
+<h2 id="optimisation-policy-restrict-and-explain">Optimisation policy: restrict and explain</h2>
+
+<p>SPOC applies some optimisations on its own (the launch window, epilogue fusion, the matrix-unit rewrite, the exact-narrowing proof, loop unrolling), and some only after the program has accepted a deviation from the interpreter’s result (a grant, see <a href="matrix.html">Matrix units</a> and <a href="performance.html">Launch window and fusion</a>). The environment can <strong>only restrict</strong>: no variable grants precision, turns an optimisation on that the program or the backend does not allow, or accepts a deviation. Both variables are read once, when the program starts, and a restriction is one-way for the process.</p>
 
 <table>
   <thead>
@@ -234,23 +232,114 @@
   </thead>
   <tbody>
     <tr>
-      <td><code class="language-plaintext highlighter-rouge">SAREK_LAUNCH_WINDOW</code></td>
-      <td><code class="language-plaintext highlighter-rouge">0</code>, <code class="language-plaintext highlighter-rouge">false</code>, <code class="language-plaintext highlighter-rouge">off</code>, <code class="language-plaintext highlighter-rouge">no</code> turn it off</td>
-      <td>on for HIP, OpenCL, Vulkan, CUDA and Metal; never on CPU devices</td>
+      <td><code class="language-plaintext highlighter-rouge">SAREK_OPT_DISABLE</code></td>
+      <td>comma-separated items, below</td>
+      <td>unset</td>
       <td>start</td>
-      <td>Switches the launch window (deferred launches and horizontal fusion) off for all backends.</td>
+      <td>Takes the named optimisations away, and revokes the named grants, for the whole process.</td>
     </tr>
     <tr>
-      <td><code class="language-plaintext highlighter-rouge">SAREK_LAUNCH_EPILOGUE</code></td>
-      <td><code class="language-plaintext highlighter-rouge">0</code>, <code class="language-plaintext highlighter-rouge">false</code>, <code class="language-plaintext highlighter-rouge">off</code>, <code class="language-plaintext highlighter-rouge">no</code> turn it off</td>
-      <td>on for HIP and Metal</td>
+      <td><code class="language-plaintext highlighter-rouge">SAREK_EXPLAIN</code></td>
+      <td><code class="language-plaintext highlighter-rouge">1</code></td>
+      <td>unset (off)</td>
       <td>start</td>
-      <td>Switches epilogue fusion off. The variable cannot turn it on for another backend.</td>
+      <td>Writes one line on stderr for every distinct decision of every optimisation. Any other value is off; a value other than empty or <code class="language-plaintext highlighter-rouge">0</code> warns once. A reporter installed with <code class="language-plaintext highlighter-rouge">Sarek_policy.set_reporter</code> replaces the stderr one.</td>
     </tr>
   </tbody>
 </table>
 
-<p>Both are explained in <a href="performance.html">Launch window and fusion</a>.</p>
+<h3 id="sarek_opt_disable"><code class="language-plaintext highlighter-rouge">SAREK_OPT_DISABLE</code></h3>
+
+<p>Items are separated by commas, compared case-insensitively, and surrounding spaces and empty items are ignored (<code class="language-plaintext highlighter-rouge">Window, ,Unroll</code> works). An unknown item prints one line on stderr naming the item and the valid items, and is ignored; the other items apply.</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Item</th>
+      <th>Effect</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">window</code></td>
+      <td>No deferred launches and no horizontal fusion, on every backend. <code class="language-plaintext highlighter-rouge">Execute.Window.set_enabled</code> stays for programs that need the window off in part of their run.</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">epilogue</code></td>
+      <td>No epilogue fusion, on every backend.</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">matrix</code></td>
+      <td>No matrix-unit rewrite, for <code class="language-plaintext highlighter-rouge">Execute.run_vectors</code> and <code class="language-plaintext highlighter-rouge">Sarek_matrix.run</code>. A kernel the program wrote with <code class="language-plaintext highlighter-rouge">Sarek_gemm.Coopmat</code> is not a rewrite and still runs.</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">narrowing-proof</code></td>
+      <td>The f32 to f16 narrowing keeps its barrier everywhere, even where one rounding is provably equal to two.</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">unroll</code></td>
+      <td>No automatic <code class="language-plaintext highlighter-rouge">#pragma unroll</code> hint on small constant-trip loops.</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">accumulation-order</code>, <code class="language-plaintext highlighter-rouge">operand-rounding-f16</code>, <code class="language-plaintext highlighter-rouge">operand-rounding-bf16</code>, <code class="language-plaintext highlighter-rouge">operand-rounding-bf16x3</code>, <code class="language-plaintext highlighter-rouge">single-rounding</code>, <code class="language-plaintext highlighter-rouge">cross-kernel-contraction</code>, <code class="language-plaintext highlighter-rouge">automatic-float-rewrite</code></td>
+      <td>Revokes that grant for the whole process, whatever scope the program grants it at. The program’s call still succeeds and is recorded, but no decision sees the grant. <code class="language-plaintext highlighter-rouge">SAREK_EXPLAIN</code> prints <code class="language-plaintext highlighter-rouge">grant-revoked</code> for it.</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>There is no <code class="language-plaintext highlighter-rouge">all</code>. Other variables that used to switch these off are gone (see <code class="language-plaintext highlighter-rouge">CHANGES.md</code>): <code class="language-plaintext highlighter-rouge">SAREK_LAUNCH_WINDOW</code>, <code class="language-plaintext highlighter-rouge">SAREK_LAUNCH_EPILOGUE</code>, <code class="language-plaintext highlighter-rouge">SAREK_MATRIX_REWRITE</code>, <code class="language-plaintext highlighter-rouge">SAREK_AUTO_UNROLL</code> and <code class="language-plaintext highlighter-rouge">SAREK_MATRIX_REPORT</code> are no longer read, and setting them does nothing.</p>
+
+<p>The generated source and the launch memo follow the policy: a restriction cannot make an earlier check stale.</p>
+
+<h3 id="sarek_explain"><code class="language-plaintext highlighter-rouge">SAREK_EXPLAIN</code></h3>
+
+<p>One line per <strong>distinct</strong> (kernel, target, optimisation, decision): a decision that comes back after another one is not printed again (a window switched off and on per prompt chunk prints two lines, not one per switch). The memory of what was printed is bounded (4096 distinct decisions, then forgotten). Fields are separated by single spaces; spaces inside a kernel name are written <code class="language-plaintext highlighter-rouge">_</code>, and an epilogue pair <code class="language-plaintext highlighter-rouge">p + c</code> is written <code class="language-plaintext highlighter-rouge">p+c</code>.</p>
+
+<p>The <strong>target</strong> says where the decision was taken, in one scheme:</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Target</th>
+      <th>Used by</th>
+      <th>Example</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">&lt;framework&gt;:&lt;device id&gt;</code></td>
+      <td>decisions about a device: <code class="language-plaintext highlighter-rouge">window</code>, <code class="language-plaintext highlighter-rouge">matrix</code>, <code class="language-plaintext highlighter-rouge">coopmat-gate</code></td>
+      <td><code class="language-plaintext highlighter-rouge">HIP:0</code>, <code class="language-plaintext highlighter-rouge">OpenCL:1</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">&lt;framework&gt;</code></td>
+      <td>decisions about a backend: <code class="language-plaintext highlighter-rouge">epilogue</code></td>
+      <td><code class="language-plaintext highlighter-rouge">HIP</code>, <code class="language-plaintext highlighter-rouge">CUDA/PTX</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">gen:&lt;generator&gt;</code></td>
+      <td>code generation, which does not know the device: <code class="language-plaintext highlighter-rouge">narrowing-proof</code>, <code class="language-plaintext highlighter-rouge">unroll</code></td>
+      <td><code class="language-plaintext highlighter-rouge">gen:cuda-c</code> (HIP and CUDA/C), <code class="language-plaintext highlighter-rouge">gen:opencl</code>, <code class="language-plaintext highlighter-rouge">gen:metal</code>, <code class="language-plaintext highlighter-rouge">gen:glsl</code></td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>sarek-explain &lt;kernel&gt; &lt;target&gt; &lt;optimisation&gt; applied proof=&lt;text&gt;
+sarek-explain &lt;kernel&gt; &lt;target&gt; &lt;optimisation&gt; applied granted=&lt;grant&gt;[,&lt;grant&gt;] reason="&lt;reason&gt;" [lowering="&lt;description&gt;"]
+sarek-explain &lt;kernel&gt; &lt;target&gt; &lt;optimisation&gt; applied exact
+sarek-explain &lt;kernel&gt; &lt;target&gt; &lt;optimisation&gt; refused &lt;reason&gt;
+sarek-explain &lt;kernel&gt; &lt;target&gt; coopmat-gate applied|refused ...
+sarek-explain &lt;kernel&gt; - policy refused grant-on-generated-name &lt;grant&gt;
+sarek-explain &lt;kernel&gt; - policy refused grant-revoked &lt;grant&gt;
+</code></pre></div></div>
+
+<p><code class="language-plaintext highlighter-rouge">&lt;optimisation&gt;</code> is <code class="language-plaintext highlighter-rouge">window</code>, <code class="language-plaintext highlighter-rouge">epilogue</code>, <code class="language-plaintext highlighter-rouge">matrix</code>, <code class="language-plaintext highlighter-rouge">narrowing-proof</code> or <code class="language-plaintext highlighter-rouge">unroll</code>; <code class="language-plaintext highlighter-rouge">&lt;grant&gt;</code> is one of the grant names above. <code class="language-plaintext highlighter-rouge">reason="..."</code> holds only what the program gave when it granted (each reason once, in order, joined with <code class="language-plaintext highlighter-rouge">; </code>). <code class="language-plaintext highlighter-rouge">lowering="..."</code> is the matrix rewrite’s own description (lowering, variant, fragment configuration), present on the float rewrites. <code class="language-plaintext highlighter-rouge">coopmat-gate</code> is an event kind of its own, not an optimisation: it reports the accuracy gate of the <strong>device backends</strong> for a kernel the program wrote with <code class="language-plaintext highlighter-rouge">Sarek_gemm.Coopmat</code> (the interpreter’s gate is not reported), <code class="language-plaintext highlighter-rouge">SAREK_OPT_DISABLE</code> has no name for it, and nothing restricts it. The last two lines say that a grant the program made has no effect: a <code class="language-plaintext highlighter-rouge">Kernel</code> grant on a generated name (a fused, derived or static-fusion kernel) is never counted, and a revoked grant is not obeyed; each is printed once, at the next report for that kernel, also when its decisions settled before. A reporter set with <code class="language-plaintext highlighter-rouge">Sarek_policy.set_reporter</code> is called outside the policy’s lock, possibly from several domains: lines of different domains may interleave. Sample lines from a run on an AMD RX 7900 XTX (HIP) are in <code class="language-plaintext highlighter-rouge">CHANGES.md</code>.</p>
+
+<p><strong>Revoking an accuracy grant has a visible effect.</strong> <code class="language-plaintext highlighter-rouge">accumulation-order</code> is the closest equivalent of the old <code class="language-plaintext highlighter-rouge">SAREK_MATRIX_REWRITE=exact</code> for float paths: it refuses every float matrix-unit path (the rewrite and <code class="language-plaintext highlighter-rouge">Sarek_gemm.Coopmat</code>) and keeps <code class="language-plaintext highlighter-rouge">int32</code>. An explicit cooperative-matrix kernel the program wrote then <strong>fails at launch</strong> with a capability refusal that says <code class="language-plaintext highlighter-rouge">accumulation-order is revoked by SAREK_OPT_DISABLE</code>. Revoking <code class="language-plaintext highlighter-rouge">operand-rounding-bf16</code> or <code class="language-plaintext highlighter-rouge">-bf16x3</code> does the same for bfloat16 kernels. Revoking one operand rounding can make the rewrite pick another precision the program also granted (for example float16 instead of bfloat16), which is less accurate; revoke all of them to rule that out.</p>
+
+<h2 id="launch-window-and-fusion">Launch window and fusion</h2>
+
+<p>The launch window and epilogue fusion have no variable of their own. <code class="language-plaintext highlighter-rouge">SAREK_OPT_DISABLE=window</code> and <code class="language-plaintext highlighter-rouge">=epilogue</code> take them away; they are explained in <a href="performance.html">Launch window and fusion</a>.</p>
 
 <h2 id="matrix-units">Matrix units</h2>
 
@@ -266,20 +355,6 @@
   </thead>
   <tbody>
     <tr>
-      <td><code class="language-plaintext highlighter-rouge">SAREK_MATRIX_REWRITE</code></td>
-      <td><code class="language-plaintext highlighter-rouge">off</code>, <code class="language-plaintext highlighter-rouge">0</code>, <code class="language-plaintext highlighter-rouge">false</code>, <code class="language-plaintext highlighter-rouge">no</code>; <code class="language-plaintext highlighter-rouge">exact</code>; <code class="language-plaintext highlighter-rouge">auto</code>, <code class="language-plaintext highlighter-rouge">on</code>, <code class="language-plaintext highlighter-rouge">1</code>, <code class="language-plaintext highlighter-rouge">true</code>, <code class="language-plaintext highlighter-rouge">yes</code> (any case); other values warn once on stderr and mean <code class="language-plaintext highlighter-rouge">auto</code></td>
-      <td><code class="language-plaintext highlighter-rouge">auto</code> (unset or empty)</td>
-      <td>start</td>
-      <td>Mode of the automatic matrix-unit rewrite in <code class="language-plaintext highlighter-rouge">Execute.run_vectors</code>: none, <code class="language-plaintext highlighter-rouge">int32</code> only, or <code class="language-plaintext highlighter-rouge">int32</code> plus the float products the program has opted into.</td>
-    </tr>
-    <tr>
-      <td><code class="language-plaintext highlighter-rouge">SAREK_MATRIX_REPORT</code></td>
-      <td><code class="language-plaintext highlighter-rouge">1</code></td>
-      <td>unset</td>
-      <td>start</td>
-      <td>Prints each distinct rewrite decision once on stderr.</td>
-    </tr>
-    <tr>
       <td><code class="language-plaintext highlighter-rouge">SAREK_MATRIX_SCAN</code></td>
       <td>a file path</td>
       <td>unset</td>
@@ -289,32 +364,11 @@
   </tbody>
 </table>
 
-<p>A value such as <code class="language-plaintext highlighter-rouge">0</code> or <code class="language-plaintext highlighter-rouge">OFF</code> switches the rewrite off. See <a href="matrix.html">Matrix units</a>.</p>
+<p>The rewrite is restricted with <code class="language-plaintext highlighter-rouge">SAREK_OPT_DISABLE=matrix</code> or <code class="language-plaintext highlighter-rouge">=automatic-float-rewrite</code> and reported with <code class="language-plaintext highlighter-rouge">SAREK_EXPLAIN=1</code>. See <a href="matrix.html">Matrix units</a>.</p>
 
 <h2 id="code-generation">Code generation</h2>
 
-<table>
-  <thead>
-    <tr>
-      <th>Variable</th>
-      <th>Accepted values</th>
-      <th>Default</th>
-      <th>Read at</th>
-      <th>Effect</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td><code class="language-plaintext highlighter-rouge">SAREK_AUTO_UNROLL</code></td>
-      <td><code class="language-plaintext highlighter-rouge">0</code> turns it off</td>
-      <td>on</td>
-      <td>code generation (the generated source is memoised per kernel, so set it before the kernel’s first launch)</td>
-      <td>Switches off the automatic unroll hint on small constant-trip <code class="language-plaintext highlighter-rouge">for</code> loops in the CUDA, HIP, OpenCL, Metal and GLSL generators.</td>
-    </tr>
-  </tbody>
-</table>
-
-<p>See <a href="kernel_language.html">Kernel language notes</a>.</p>
+<p><code class="language-plaintext highlighter-rouge">SAREK_OPT_DISABLE=unroll</code> switches off the automatic unroll hint on small constant-trip <code class="language-plaintext highlighter-rouge">for</code> loops in the CUDA, HIP, OpenCL, Metal and GLSL generators. See <a href="kernel_language.html">Kernel language notes</a>.</p>
 
 <h2 id="cpu-backends">CPU backends</h2>
 

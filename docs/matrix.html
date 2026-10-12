@@ -155,7 +155,7 @@ Sarek: kernel 'matmul_naive' contains a matrix product (GEMM) that matrix units 
   Metal (Apple GPU): float16 operands, or float32 rounded to float16, onto 8x8x8 fragments (explicit request, or the automatic opt-in); the bfloat16 lowerings: none
   OpenCL, WGSL, PTX, Native: no matrix-unit lowering
   accuracy: relaxed beyond the accumulation order: no matrix unit takes float32 operands, so they are rounded (float16: relative error up to 2^-11 each; bfloat16; or a three-term bfloat16 split, near float32); a rewrite needs Sarek_coopmat.accept_operand_rounding ~precision and accept_relaxed_accumulation
-  Execute.run_vectors rewrites it onto matrix units only after the opt-in above AND Sarek_coopmat.accept_automatic_float_rewrite (and SAREK_MATRIX_REWRITE not off or exact); Sarek_matrix.run needs the opt-in above only.
+  Execute.run_vectors rewrites it onto matrix units only after the opt-in above AND Sarek_coopmat.accept_automatic_float_rewrite (and neither SAREK_OPT_DISABLE=matrix nor =automatic-float-rewrite); Sarek_matrix.run needs the opt-in above only.
   Silence with [@alert "-sarek_matrix"] on the kernel expression or its binding.
 </code></pre></div></div>
 
@@ -190,44 +190,38 @@ Sarek: kernel 'matmul_naive' contains a matrix product (GEMM) that matrix units 
 
 <p><code class="language-plaintext highlighter-rouge">Execute.run_vectors</code> asks <code class="language-plaintext highlighter-rouge">Matrix_specialise</code> before every launch whether to run a rewritten kernel instead of the one it was given. The rewritten kernel writes exactly the outputs the original launch writes, with one subgroup per output tile instead of one thread per output. <code class="language-plaintext highlighter-rouge">Execute.run</code> and raw launches never specialise. <code class="language-plaintext highlighter-rouge">Execute.run_vectors_plain</code> launches the kernel as given.</p>
 
-<h3 id="modes">Modes</h3>
+<h3 id="restricting-the-rewrite">Restricting the rewrite</h3>
 
-<p><code class="language-plaintext highlighter-rouge">SAREK_MATRIX_REWRITE</code> sets the mode when the program starts, and <code class="language-plaintext highlighter-rouge">Sarek_matrix.set_mode</code> changes it later:</p>
+<p>The environment can only take the rewrite away, never grant it (see <a href="environment.html">Environment variables</a>). <code class="language-plaintext highlighter-rouge">SAREK_OPT_DISABLE</code> is read when the program starts:</p>
 
 <table>
   <thead>
     <tr>
-      <th>Mode</th>
+      <th><code class="language-plaintext highlighter-rouge">SAREK_OPT_DISABLE=</code></th>
       <th><code class="language-plaintext highlighter-rouge">int32</code> product</th>
       <th>float product</th>
     </tr>
   </thead>
   <tbody>
     <tr>
-      <td><code class="language-plaintext highlighter-rouge">off</code></td>
-      <td>original</td>
-      <td>original</td>
-    </tr>
-    <tr>
-      <td><code class="language-plaintext highlighter-rouge">exact</code></td>
-      <td>rewritten, bit-identical</td>
-      <td>original</td>
-    </tr>
-    <tr>
-      <td><code class="language-plaintext highlighter-rouge">auto</code> (default)</td>
+      <td>(unset)</td>
       <td>rewritten, bit-identical</td>
       <td>rewritten after the opt-ins below</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">automatic-float-rewrite</code></td>
+      <td>rewritten, bit-identical</td>
+      <td>original, for <code class="language-plaintext highlighter-rouge">Execute.run_vectors</code> (the revoked consent); <code class="language-plaintext highlighter-rouge">Sarek_matrix.run</code> needs no consent and still rewrites after the accuracy opt-ins</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">matrix</code></td>
+      <td>original</td>
+      <td>original (also for <code class="language-plaintext highlighter-rouge">Sarek_matrix.run</code>)</td>
     </tr>
   </tbody>
 </table>
 
-<p>Accepted values of the variable, case-insensitively and ignoring surrounding spaces: <code class="language-plaintext highlighter-rouge">off</code>, <code class="language-plaintext highlighter-rouge">0</code>, <code class="language-plaintext highlighter-rouge">false</code>, <code class="language-plaintext highlighter-rouge">no</code>; <code class="language-plaintext highlighter-rouge">exact</code>; <code class="language-plaintext highlighter-rouge">auto</code>, <code class="language-plaintext highlighter-rouge">on</code>, <code class="language-plaintext highlighter-rouge">1</code>, <code class="language-plaintext highlighter-rouge">true</code>, <code class="language-plaintext highlighter-rouge">yes</code>. Unset or empty means <code class="language-plaintext highlighter-rouge">auto</code>; any other value prints one warning on stderr and means <code class="language-plaintext highlighter-rouge">auto</code> (<code class="language-plaintext highlighter-rouge">parse_mode</code> in <code class="language-plaintext highlighter-rouge">Matrix_specialise.ml</code>). A value such as <code class="language-plaintext highlighter-rouge">0</code> or <code class="language-plaintext highlighter-rouge">OFF</code> therefore switches the rewrite off.</p>
-
-<div class="language-ocaml highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c">(* Disable the rewrite for the rest of the process. *)</span>
-<span class="k">let</span> <span class="bp">()</span> <span class="o">=</span> <span class="nn">Sarek_matrix</span><span class="p">.</span><span class="n">set_mode</span> <span class="nn">Sarek_matrix</span><span class="p">.</span><span class="nc">Off</span>
-</code></pre></div></div>
-
-<p>The mode also applies to <code class="language-plaintext highlighter-rouge">Sarek_matrix.run</code>: <code class="language-plaintext highlighter-rouge">Off</code> never rewrites and <code class="language-plaintext highlighter-rouge">Exact</code> rewrites only <code class="language-plaintext highlighter-rouge">int32</code> (<code class="language-plaintext highlighter-rouge">Matrix_specialise.ml:238-253</code>, and <code class="language-plaintext highlighter-rouge">:337-338</code> where <code class="language-plaintext highlighter-rouge">off</code> is checked first).</p>
+<p><code class="language-plaintext highlighter-rouge">accumulation-order</code>, <code class="language-plaintext highlighter-rouge">operand-rounding-f16</code> (also <code class="language-plaintext highlighter-rouge">-bf16</code>, <code class="language-plaintext highlighter-rouge">-bf16x3</code>) revoke the accuracy opt-ins the same way: the program’s call is recorded and has no effect. A restriction is one-way and process-wide, so there is no API to set it in code.</p>
 
 <h3 id="which-kernels-are-rewritten">Which kernels are rewritten</h3>
 
@@ -346,7 +340,7 @@ Sarek: kernel 'matmul_naive' contains a matrix product (GEMM) that matrix units 
     <span class="o">~</span><span class="n">reason</span><span class="o">:</span><span class="s2">"let Execute rewrite the model's float GEMMs"</span>
 </code></pre></div></div>
 
-<p>The two accuracy opt-ins alone admit matrix-unit configurations for code that asks for them (<code class="language-plaintext highlighter-rouge">Sarek_gemm.Coopmat</code>, <code class="language-plaintext highlighter-rouge">Sarek_matrix.run</code>); they do not enable the automatic rewrite. Without <code class="language-plaintext highlighter-rouge">accept_automatic_float_rewrite</code>, a float launch through <code class="language-plaintext highlighter-rouge">Execute.run_vectors</code> runs the original kernel and the report names the missing call (<code class="language-plaintext highlighter-rouge">automatic_float_optin</code> in <code class="language-plaintext highlighter-rouge">Matrix_specialise.ml</code>). The <code class="language-plaintext highlighter-rouge">int32</code> rewrite needs none of them.</p>
+<p>The two accuracy opt-ins alone admit matrix-unit configurations for code that asks for them (<code class="language-plaintext highlighter-rouge">Sarek_gemm.Coopmat</code>, <code class="language-plaintext highlighter-rouge">Sarek_matrix.run</code>); they do not enable the automatic rewrite. Without <code class="language-plaintext highlighter-rouge">accept_automatic_float_rewrite</code>, a float launch through <code class="language-plaintext highlighter-rouge">Execute.run_vectors</code> runs the original kernel and the explain line names the missing call. The <code class="language-plaintext highlighter-rouge">int32</code> rewrite needs none of them.</p>
 
 <p>Precision of a <code class="language-plaintext highlighter-rouge">float32</code> product: if the program asks for one (<code class="language-plaintext highlighter-rouge">~precision</code> on <code class="language-plaintext highlighter-rouge">Sarek_matrix.run</code> or <code class="language-plaintext highlighter-rouge">Execute.run_vectors_outcome</code>), that precision must have been accepted. Otherwise <code class="language-plaintext highlighter-rouge">float16</code> is used when accepted, else <code class="language-plaintext highlighter-rouge">bfloat16</code>. The <code class="language-plaintext highlighter-rouge">bfloat16x3</code> split reaches near-float32 accuracy but was measured no faster than the scalar kernel, so it is used only on request (<code class="language-plaintext highlighter-rouge">Matrix_specialise.ml:206-227</code>). Bounds measured on gfx1100 for each precision are in the Results of <a href="https://github.com/mathiasbourgoin/Sarek/blob/main/specs/matrix-pattern-rewrite.md"><code class="language-plaintext highlighter-rouge">specs/matrix-pattern-rewrite.md</code></a>; they assume finite operands within the narrower type’s range (<code class="language-plaintext highlighter-rouge">float16</code> overflows above 65504).</p>
 
@@ -401,15 +395,16 @@ Sarek: kernel 'matmul_naive' contains a matrix product (GEMM) that matrix units 
   <span class="n">print_endline</span> <span class="p">(</span><span class="nn">Sarek_execute</span><span class="p">.</span><span class="nn">Matrix_specialise</span><span class="p">.</span><span class="n">outcome_text</span> <span class="n">outcome</span><span class="p">)</span>
 </code></pre></div></div>
 
-<p><code class="language-plaintext highlighter-rouge">Matrix_specialise.set_reporter</code> registers a callback that receives every decision about a kernel that is a matrix product. <code class="language-plaintext highlighter-rouge">SAREK_MATRIX_REPORT=1</code> (exactly <code class="language-plaintext highlighter-rouge">1</code>, read when the program starts) prints each distinct kernel, device and outcome once on stderr:</p>
+<p>Every decision about a kernel that is a matrix product is an <code class="language-plaintext highlighter-rouge">Sarek_policy.Matrix_rewrite</code> record for <code class="language-plaintext highlighter-rouge">Sarek_policy.set_reporter</code>. <code class="language-plaintext highlighter-rouge">SAREK_EXPLAIN=1</code> (exactly <code class="language-plaintext highlighter-rouge">1</code>, read when the program starts) prints each distinct kernel, device and outcome once on stderr, as one line:</p>
 
-<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>[sarek matrix] &lt;kernel&gt; on &lt;device&gt;: rewritten: &lt;lowering&gt;, &lt;staged|direct&gt;, &lt;configuration&gt;
-[sarek matrix] &lt;kernel&gt; on &lt;device&gt;: original kernel: &lt;reason&gt;
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>sarek-explain &lt;kernel&gt; &lt;framework&gt;:&lt;id&gt; matrix applied proof=&lt;lowering&gt;, &lt;staged|direct (N waves/block)&gt;, &lt;configuration&gt;: bit-identical modulo 2^32
+sarek-explain &lt;kernel&gt; &lt;framework&gt;:&lt;id&gt; matrix applied granted=&lt;grants&gt; reason="&lt;the program's reasons&gt;" lowering="&lt;lowering&gt;, &lt;variant&gt;, &lt;configuration&gt;"
+sarek-explain &lt;kernel&gt; &lt;framework&gt;:&lt;id&gt; matrix refused &lt;reason&gt;
 </code></pre></div></div>
 
-<p>Kernels that are not matrix products, devices that can never rewrite, and mode <code class="language-plaintext highlighter-rouge">off</code> are not reported (<code class="language-plaintext highlighter-rouge">Matrix_specialise.ml:404-407</code>, <code class="language-plaintext highlighter-rouge">:422-424</code>).</p>
+<p>The first form is the <code class="language-plaintext highlighter-rouge">int32</code> rewrite, the second a float one (the grants it was admitted under: the consent, the accumulation order, the operand rounding). Kernels that are not matrix products and devices that can never rewrite are not reported. <code class="language-plaintext highlighter-rouge">Execute.run_vectors_outcome</code> and <code class="language-plaintext highlighter-rouge">Sarek_matrix.run</code> return the outcome to the caller as well.</p>
 
-<p>The analysis result and the rewritten kernels are cached per kernel IR (by physical identity), per lowering and size class, so repeated launches of one kernel analyse it once. Mode, opt-ins and device are checked at every launch. A kernel whose IR is rebuilt for each launch is analysed each time, as it also misses the launch memo.</p>
+<p>The analysis result and the rewritten kernels are cached per kernel IR (by physical identity), per lowering and size class, so repeated launches of one kernel analyse it once. Restrictions, opt-ins and device are checked at every launch. A kernel whose IR is rebuilt for each launch is analysed each time, as it also misses the launch memo.</p>
 
 <h2 id="explicit-entry-points">Explicit entry points</h2>
 
