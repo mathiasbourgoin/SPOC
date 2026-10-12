@@ -28,6 +28,8 @@ let glslang_available = Vulkan_api_base.glslang_available
 
 module Device = Vulkan_api_device
 module Memory = Vulkan_api_memory
+module Host = Vulkan_api_host
+module Transfer = Vulkan_api_transfer
 module Stream = Vulkan_api_stream
 module Event = Vulkan_api_event
 module Kernel = Vulkan_api_kernel
