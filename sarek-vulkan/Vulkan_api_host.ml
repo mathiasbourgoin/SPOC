@@ -199,10 +199,13 @@ let import_range (device : Device.t) ~addr ~byte_size =
 
 (** Launches and copies that name the import have completed (every copy through
     this module is synchronous), so the objects can go at once. *)
-let release_import import =
-  !Device.drain_pending import.device ;
+let destroy_import import =
   vkDestroyBuffer import.device.Device.device import.buffer null ;
   vkFreeMemory import.device.Device.device import.memory null
+
+let release_import import =
+  !Device.drain_pending import.device ;
+  destroy_import import
 
 let take_entry (device : Device.t) addr =
   Mutex.protect lock (fun () ->
@@ -217,6 +220,12 @@ let add_entry (device : Device.t) addr entry =
 
 let release_entry entry =
   Option.iter release_import entry.import ;
+  entry.import <- None
+
+(* The device is being destroyed and has been drained already; draining again
+   could raise again and skip the destruction. *)
+let destroy_entry entry =
+  Option.iter destroy_import entry.import ;
   entry.import <- None
 
 (** The buffer and byte offset that address the range from [addr] of [byte_size]
@@ -360,7 +369,7 @@ let () =
         let first_error = ref None in
         List.iter
           (fun entry ->
-            try release_entry entry
+            try destroy_entry entry
             with e -> if !first_error = None then first_error := Some e)
           doomed ;
         Mutex.protect lock (fun () ->
