@@ -5,7 +5,8 @@ fragment (int32 or f32) into an f32 accumulator, for quantised GEMMs in the styl
 of llama.cpp's MMQ kernels and for the per-row rescale of online softmax._
 
 **Status:** design only. Implementation is **deferred**: the measurement in §1
-shows that 8-bit WMMA is not faster than f16 WMMA on gfx1100, so the first
+shows that 8-bit WMMA is not measurably faster than f16 WMMA on gfx1100
+(ratio 1.02, inside an 8 % order effect), so the first
 consumer (a Katra int8 prompt path) would gain only the dequantisation work it
 removes, not matrix throughput. **Date:** 2026-10-12. **Requested by:** the Katra
 project (an int8 prompt path in the style of llama.cpp's MMQ).
@@ -13,7 +14,7 @@ project (an int8 prompt path in the style of llama.cpp's MMQ).
 ## 1. Decisive measurement: iu8 vs f16 WMMA peak on gfx1100
 
 The integer path is only worth a new IR operation if the integer matrix unit is
-faster than the f16 one. It is not.
+faster than the f16 one. It is not measurably faster.
 
 **Kernel.** One `SCoopmat` IR kernel per configuration, lowered by the existing
 HIP coopmat code (`sarek/codegen/Sarek_ir_cuda_coopmat.ml`, unchanged): A and B
@@ -40,12 +41,12 @@ the raw output (with date, command and load) are kept outside the repository.
 | f16 first | f16 116.7, iu8 125.4 | f16 128.1, iu8 133.4 |
 | iu8 first | iu8 118.7, f16 122.0 | iu8 129.5, f16 130.8 |
 
-**Result.** Whatever comes second in a pair is faster (the device is still
-clocking up), so the order effect (up to 8 %) is larger than any difference
+**Result.** Whatever comes second in a pair is faster (presumably the clock
+ramping up; clocks were not recorded), so the order effect (up to 8 %) is larger than any difference
 between the configurations. Means over the four positions: iu8 126.8, f16 124.4
 TOPS, a ratio of 1.02. On gfx1100 the 8-bit and f16 WMMA rates are equal within
 this noise; there is no 2x. An earlier run with all-zero f16 operands showed f16
-ahead (iu8/f16 0.87 to 0.97); zero operands draw less power, so that run is not
+ahead (iu8/f16 0.96 to 0.97 at n = 8192); zero operands likely draw less power, so that run is not
 used. RDNA4 (gfx12) has a higher 8-bit rate per AMD's published figures, but
 Sarek's HIP lowering does not cover gfx12 (`specs/coopmat-hip-wmma.md`).
 
@@ -133,7 +134,7 @@ Why this is Strict and needs no `Sarek_policy` grant:
   buy back. If one appears, the fused form becomes a new named deviation in
   `Sarek_policy` with its bound (first order, both forms' final roundings
   included: `|fused - strict| <= u * (|t3| + |t5| + 2|t4| + 2|dst'|)` per
-  element, `u = 2^-24`; to be derived and tested before it becomes a grant),
+  element, `dst'` the final value, `u = 2^-24`; to be derived and tested before it becomes a grant),
   not a silent compiler choice.
 
 ### 2.4 Interpreter reference
