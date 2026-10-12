@@ -1175,9 +1175,18 @@ let get idx =
         if not want_host_import then None
         else
           match Vulkan_api_host_ffi.query_import_alignment phys_dev with
-          | alignment when alignment > 0 ->
-              Some
-                (alignment, Vulkan_api_host_ffi.resolve_properties_fn !@device)
+          | alignment when alignment > 0 -> (
+              match Vulkan_api_host_ffi.resolve_properties_fn !@device with
+              | Some fn -> Some (alignment, fn)
+              | None ->
+                  Spoc_core.Log.debugf
+                    Spoc_core.Log.Device
+                    "Vulkan device %d: VK_EXT_external_memory_host is enabled \
+                     but the driver has no \
+                     vkGetMemoryHostPointerPropertiesEXT; pinned and \
+                     registered host memory are refused"
+                    idx ;
+                  None)
           | _ -> None
       in
       let dev =
