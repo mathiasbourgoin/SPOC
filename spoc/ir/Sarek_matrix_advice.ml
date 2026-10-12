@@ -54,8 +54,9 @@ let others = ("OpenCL, WGSL, PTX, Native", "no matrix-unit lowering")
    integer case cannot be (specs/matrix-pattern-rewrite.md, "Metal"). *)
 let metal_float =
   ( "Metal (Apple GPU)",
-    "float16 operands onto 8x8x8 fragments (explicit request, or the automatic \
-     opt-in); the bfloat16 split: none" )
+    "float16 operands, or float32 rounded to float16, onto 8x8x8 fragments \
+     (explicit request, or the automatic opt-in); the bfloat16 lowerings: none"
+  )
 
 let metal_integer = ("Metal", "none (MSL has no integer simdgroup_matrix)")
 

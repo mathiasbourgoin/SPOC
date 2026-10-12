@@ -47,9 +47,9 @@ that need the original. `Sarek_matrix.run` keeps its PR 2 signature on top.
 Devices: by default HIP (gfx11, 32-wide waves) and Vulkan (RADV, 64-wide
 subgroups) are rewritten, Vulkan the `int32` case only; CUDA/C (sm_72+, 32-wide
 warps, `int32` only) on an explicit request only, like the interpreter, because
-its evidence is compiler output and it has never been executed (H4: `Matrix_specialise.rewrite_backends`, `lowering_refusal`). Metal
+its evidence is compiler output and it has never been executed (H4: `Matrix_admission.rewrite_backends`, `lowering_refusal`). Metal
 (32-wide SIMD-groups) is rewritten for the float16 operands only, on 8x8x8
-fragments (H4b: `fragment_of`, specs/matrix-pattern-rewrite.md, "Fragment shape
+fragments (H4b: `Matrix_admission.fragment_of`, specs/matrix-pattern-rewrite.md, "Fragment shape
 and Metal"); its integer case is declined because MSL has no integer
 `simdgroup_matrix`; the float opt-ins apply unchanged. The
 templates take the subgroup width from the device's cooperative-matrix probe

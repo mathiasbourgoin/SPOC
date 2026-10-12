@@ -107,13 +107,9 @@ let run_zero_c dev ~frag ((m, n, k) as shape) =
   let rewritten, outcome = launch_once dev kernel ~c0 a b shape ~rewrite:true in
   check_shape what ~frag outcome ;
   let model = chain ~m ~n ~k ~init:(fun _ -> 0.0) a b in
-  let same_original =
-    compare_floats (what ^ ": rewrite vs original") original rewritten
-  in
-  let same_model =
-    compare_floats (what ^ ": rewrite vs the chain over k") model rewritten
-  in
-  ignore (same_original && same_model)
+  ignore (compare_floats (what ^ ": rewrite vs original") original rewritten) ;
+  ignore
+    (compare_floats (what ^ ": rewrite vs the chain over k") model rewritten)
 
 (* C accumulated: the rewrite adds C to the finished chain, the original starts
    the chain from C. *)

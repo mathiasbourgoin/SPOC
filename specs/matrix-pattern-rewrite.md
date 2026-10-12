@@ -159,9 +159,9 @@ C-after-chain result differs from the C-first original), and
 `test_matrix_rewrite_metal` on the GPU. Mutation: running one k-step of 8 per
 step of 16 fails 9 of the cases.
 
-`Matrix_specialise` takes the fragment edge from the device: the first of
+The device-admission half lives in `Matrix_admission` (split out of `Matrix_specialise`, which had passed 500 lines). `Matrix_admission.fragment_of` takes the fragment edge from the device: the first of
 `Sarek_matrix_scheme.fragment_edges` (16, then 8) whose configuration the device
-advertises (`fragment_of`); nothing names Metal. The direct float16 variant is
+advertises (`fragment_of`); nothing names Metal there. Admission is stricter than the advertisement: a fragment edge other than 16 has been executed on Metal's f16 operands only, so a Vulkan, CUDA or HIP device advertising 8x8x8 alone is declined with that reason (`fragment_refusal`; the interpreter, which holds whole matrices, is exempt). The direct float16 variant is
 laid out for 16 × 16 fragments and stays staged at 8.
 
 **Metal admission.** Lowered: `F16_operands` (float16 operands, or float32 rounded

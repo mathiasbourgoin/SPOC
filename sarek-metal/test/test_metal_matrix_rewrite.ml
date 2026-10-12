@@ -84,6 +84,25 @@ let k_int =
           c.((row * n) + col) <- sum
         end]
 
+let k_f32 =
+  ir_of
+    [%kernel
+      fun (a : float32 vector)
+          (b : float32 vector)
+          (c : float32 vector)
+          (m : int32)
+          (n : int32)
+          (k : int32) ->
+        let row = global_idx_y in
+        let col = global_idx_x in
+        if row < m && col < n then begin
+          let sum = mut 0.0 in
+          for i = 0 to k - 1l do
+            sum := sum +. (a.((row * k) + i) *. b.((i * n) + col))
+          done ;
+          c.((row * n) + col) <- sum
+        end]
+
 let metal ?(simd_width = 32) ?(probe = Ok ()) () : Device.t =
   {
     id = 0;
@@ -125,10 +144,47 @@ let launch ~m ~n ~k : unit -> Sarek_ir_eval_int.launch option =
       scalar;
     }
 
-let choose ?(explicit = true) ?(device = metal ()) ?(dims = (100, 37, 129)) ir =
+let choose ?(explicit = true) ?(device = metal ()) ?(dims = (100, 37, 129))
+    ?precision ir =
   let m, n, k = dims in
   Spec.set_mode Spec.Auto ;
-  Spec.choose ~explicit ~device ~ir ~launch:(launch ~m ~n ~k) ()
+  Spec.choose ?precision ~explicit ~device ~ir ~launch:(launch ~m ~n ~k) ()
+
+(* A device of another framework whose probe advertises 8x8x8 fragments only:
+   fragments other than 16x16x16 have been executed on Metal alone. *)
+let eight_only framework ~subgroup : Device.t =
+  let m = metal () in
+  let shape = {C.m = 8; n = 8; k = 8} in
+  let cfg a acc =
+    {
+      C.cfg_shape = shape;
+      cfg_a = a;
+      cfg_b = a;
+      cfg_c = acc;
+      cfg_result = acc;
+      cfg_saturating = false;
+      cfg_scope = C.Subgroup;
+    }
+  in
+  {
+    m with
+    name = "fake " ^ framework;
+    framework;
+    capabilities =
+      {
+        m.capabilities with
+        warp_size = subgroup;
+        coopmat =
+          Some
+            {
+              C.ds_configs = [cfg C.Uint8 C.Sint32; cfg C.Float16 C.Float32];
+              ds_robust_buffer_access = false;
+              ds_subgroup_size = subgroup;
+              ds_advertised_count = 2;
+              ds_evidence = "test: 8x8x8 only";
+            };
+      };
+  }
 
 let declined what ~needle = function
   | Spec.Specialised _ -> Alcotest.failf "%s: rewritten" what
@@ -176,6 +232,30 @@ let test_explicit_admitted () =
     ~needle:"accept_automatic_float_rewrite"
     (choose ~explicit:false k_f16)
 
+let test_bf16_declined () =
+  C.accept_operand_rounding
+    ~precision:C.Operands_bf16
+    ~reason:"test_metal_matrix_rewrite" ;
+  declined
+    "bf16 operands"
+    ~needle:"Metal lowers only the f16 operands"
+    (choose ~precision:C.Operands_bf16 k_f32)
+
+let test_other_frameworks_stay_16 () =
+  let needle = "executed on Metal" in
+  declined
+    "Vulkan advertising 8x8x8 only"
+    ~needle
+    (choose ~device:(eight_only "Vulkan" ~subgroup:64) k_int) ;
+  declined
+    "CUDA/C advertising 8x8x8 only"
+    ~needle
+    (choose ~device:(eight_only "CUDA/C" ~subgroup:32) k_int) ;
+  declined
+    "HIP advertising 8x8x8 only"
+    ~needle
+    (choose ~device:(eight_only "HIP" ~subgroup:32) k_f16)
+
 let test_device_limits () =
   declined
     "probe failed"
@@ -183,7 +263,7 @@ let test_device_limits () =
     (choose ~device:(metal ~probe:(Error "no simdgroup_matrix") ()) k_f16) ;
   declined
     "16-wide SIMD-groups"
-    ~needle:"16-wide"
+    ~needle:"SIMD-group width is 16"
     (choose ~device:(metal ~simd_width:16 ()) k_f16)
 
 let test_automatic_after_optin () =
@@ -244,6 +324,11 @@ let () =
             "explicit admitted at 8x8x8"
             `Quick
             test_explicit_admitted;
+          Alcotest.test_case "bf16 declined" `Quick test_bf16_declined;
+          Alcotest.test_case
+            "8x8x8 off Metal declined"
+            `Quick
+            test_other_frameworks_stay_16;
           Alcotest.test_case "device limits" `Quick test_device_limits;
           Alcotest.test_case
             "automatic after the opt-in"
