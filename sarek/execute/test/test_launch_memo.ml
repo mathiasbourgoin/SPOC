@@ -679,6 +679,28 @@ let test_unrelated_grant_keeps_source () =
         true
         (memo_source ir == first))
 
+(* A launch under an unchanged policy computes no digest (one atomic read of
+   the policy version); after a change elsewhere it computes one, and the stamp
+   is refreshed. *)
+let test_unchanged_policy_computes_no_digest () =
+  codegen_mode := `Cuda ;
+  Fun.protect
+    ~finally:(fun () -> codegen_mode := `Ok)
+    (fun () ->
+      let ir = narrowing_kernel "memo_digest_a" in
+      ignore (memo_source ir) ;
+      let digests () = Sarek_execute.Policy_stamp.digests_computed () in
+      let before = digests () in
+      for _ = 1 to 50 do
+        ignore (memo_source ir)
+      done ;
+      check int "no digest while the policy is unchanged" before (digests ()) ;
+      grant_single (Sarek_policy.Kernel "memo_digest_unrelated") ;
+      for _ = 1 to 50 do
+        ignore (memo_source ir)
+      done ;
+      check int "one digest after a change elsewhere" (before + 1) (digests ()))
+
 let () =
   run
     "Launch memo"
@@ -745,5 +767,9 @@ let () =
             "an unrelated grant keeps the source"
             `Quick
             test_unrelated_grant_keeps_source;
+          test_case
+            "an unchanged policy computes no digest"
+            `Quick
+            test_unchanged_policy_computes_no_digest;
         ] );
     ]

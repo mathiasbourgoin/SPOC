@@ -439,3 +439,11 @@
  (name test_epilogue_defaults)
  (modules test_epilogue_defaults)
  (libraries sarek.execute spoc_framework_registry alcotest))
+
+; The bound of epilogue fusion under contraction (specs/epilogue-fusion.md
+; FR-107), on the host.
+
+(test
+ (name test_contraction_bound)
+ (modules test_contraction_bound)
+ (libraries alcotest))

@@ -108,6 +108,22 @@ let test_late_grant () =
     false
     (contains barrier_call (gen (horizontal "pf_l_dc" ["pf_d"; "pf_c"])))
 
+(* The reader the f16 policy exposes agrees with the code generator: both read
+   the kernel's budget, so a fused kernel has a reason iff all its members do. *)
+let test_reason_agrees_with_budget () =
+  grant_kernel "sr_a" ;
+  grant_kernel "sr_b" ;
+  Sarek_policy.register_fused ~name:"sr_ab" ~members:["sr_a"; "sr_b"] ;
+  Sarek_policy.register_fused ~name:"sr_ac" ~members:["sr_a"; "sr_c"] ;
+  Alcotest.(check bool)
+    "fused, all members granted"
+    true
+    (Option.is_some (Sarek_f16_policy.single_rounding_reason ~kernel:"sr_ab")) ;
+  Alcotest.(check bool)
+    "fused, one member lacks it"
+    true
+    (Option.is_none (Sarek_f16_policy.single_rounding_reason ~kernel:"sr_ac"))
+
 let () =
   let case name f = Alcotest.test_case name `Quick f in
   Alcotest.run
@@ -118,5 +134,6 @@ let () =
           case "horizontal" test_horizontal;
           case "nested" test_nested;
           case "late grant" test_late_grant;
+          case "reason agrees with the budget" test_reason_agrees_with_budget;
         ] );
     ]

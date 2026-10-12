@@ -1368,6 +1368,81 @@ let test_no_backend_names_eliminated_length () =
     pipeline ;
   Printf.printf "test_no_backend_names_eliminated_length: PASSED\n"
 
+(** A fusion pass registers the kernels it fuses, so the fused kernel's budget
+    is the meet over its members (Sarek_policy.register_fused): generated names
+    are not statements of the program. Each shape: both members granted gives
+    the grant, one member alone does not. *)
+let single = Sarek_policy.Deviation Sarek_policy.Single_rounding
+
+let grant_kernel name =
+  match Sarek_policy.grant (Sarek_policy.Kernel name) single ~reason:"test" with
+  | Ok () -> ()
+  | Error _ -> assert false
+
+let permits name =
+  Sarek_policy.Budget.permits (Sarek_policy.budget ~kernels:[name]) single
+
+let copy_kernel name =
+  mk_kernel
+    name
+    (SAssign
+       ( LArrayElem ("temp", thread_idx_x),
+         EBinop (Mul, EArrayRead ("input", thread_idx_x), EConst (CInt32 2l)) ))
+
+let read_kernel name =
+  mk_kernel
+    name
+    (SAssign
+       ( LArrayElem ("output", thread_idx_x),
+         EBinop (Add, EArrayRead ("temp", thread_idx_x), EConst (CInt32 1l)) ))
+
+let stencil_kernel name =
+  mk_kernel
+    name
+    (SAssign
+       ( LArrayElem ("output", thread_idx_x),
+         EBinop
+           ( Add,
+             EArrayRead ("temp", EBinop (Sub, thread_idx_x, EConst (CInt32 1l))),
+             EArrayRead ("temp", EBinop (Add, thread_idx_x, EConst (CInt32 1l)))
+           ) ))
+
+let reduce_kernel name =
+  let loop_var = mk_var "i" 1 TInt32 and acc = mk_var "sum" 2 TInt32 in
+  mk_kernel
+    name
+    (SSeq
+       [
+         SAssign (LVar acc, EConst (CInt32 0l));
+         SFor
+           ( loop_var,
+             EConst (CInt32 0l),
+             EConst (CInt32 100l),
+             Upto,
+             SAssign
+               ( LVar acc,
+                 EBinop (Add, EVar acc, EArrayRead ("temp", EVar loop_var)) ) );
+       ])
+
+let test_fusion_budget () =
+  let check what fused ~granted ~ungranted =
+    List.iter grant_kernel granted ;
+    assert (permits ungranted = false) ;
+    assert (permits fused.kern_name = false) ;
+    grant_kernel ungranted ;
+    if not (permits fused.kern_name) then
+      failwith (what ^ ": fused kernel lacks the grant of all its members") ;
+    Printf.printf "test_fusion_budget %s: PASSED\n" what
+  in
+  let f = fuse (copy_kernel "fb_p1") (read_kernel "fb_c1") "temp" in
+  check "fuse" f ~granted:["fb_p1"] ~ungranted:"fb_c1" ;
+  let r = fuse_reduction (copy_kernel "fb_m2") (reduce_kernel "fb_r2") "temp" in
+  check "fuse_reduction" r ~granted:["fb_m2"] ~ungranted:"fb_r2" ;
+  let st =
+    fuse_stencil (copy_kernel "fb_p3") (stencil_kernel "fb_c3") "temp"
+  in
+  check "fuse_stencil" st ~granted:["fb_p3"] ~ungranted:"fb_c3"
+
 let () =
   Printf.printf "=== Fusion Unit Tests ===\n" ;
   test_expr_equal () ;
@@ -1414,4 +1489,6 @@ let () =
   test_auto_fuse_preserves_length_user () ;
   test_fuse_rejects_surviving_intermediate () ;
   test_no_backend_names_eliminated_length () ;
+  Printf.printf "\n=== Fused kernels carry the meet of their members ===\n" ;
+  test_fusion_budget () ;
   Printf.printf "=== All tests passed! ===\n"
