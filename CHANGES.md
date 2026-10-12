@@ -97,9 +97,18 @@
   elements; the Interpreter and the fused result differ from the fma
   reference), and checks on any host that the fused MSL carries the pragma and
   that the same check fails on a source without it. Backend coverage
-  (epilogue): HIP on and executed; Metal off to on, compiler-output (pragma in
-  the fused MSL) plus the M4 pragma measurement, fused == Interpreter on a
-  Metal device pending ladon run (tech lead); CUDA, OpenCL, Vulkan opt-in
+  (epilogue): HIP on and executed; Metal off to on, executed on an Apple M4
+  (macOS 15): forwarding, shared and chain pairs give fused == unfused and
+  fused == Interpreter (0 of 4099 elements differ), the fused forwarding result
+  differs from the fma reference in 1109 of 4099 (control), in-kernel `a*b+c`
+  differs from the rounded value in 0 and from fma in 1109. `bench_epilogue`
+  on Metal (24 layers, 50 tokens, 15 interleaved pairs, launches per token 48
+  to 24, bit-identical): size 128 462.5 us/token median [409.9 to 484.4] off
+  against 414.2 [359.6 to 450.8] on (1.12x); size 512 535.9 [459.5 to 552.1]
+  against 532.5 [438.7 to 628.0] (1.01x); size 2048 4204.2 [4174.2 to 4325.2]
+  against 4218.5 [4171.1 to 4293.1] (1.00x). Neutral to 1.12x, never measurably
+  slower beyond noise (7-pair runs at 512 ranged 0.94x to 1.00x with a
+  download running alongside); CUDA, OpenCL, Vulkan opt-in
   (contract in kernels); Native and Interpreter never.
 
 - The launch window (deferral and horizontal fusion) is on by default on Metal
