@@ -121,6 +121,10 @@ module Vulkan = struct
 
     let create = Vulkan_api.Stream.create
 
+    (* Vulkan streams are independent command pools with no implicit
+       ordering against the default stream: nothing to relax. *)
+    let create_non_blocking = Vulkan_api.Stream.create
+
     let destroy = Vulkan_api.Stream.destroy
 
     let synchronize = Vulkan_api.Stream.synchronize

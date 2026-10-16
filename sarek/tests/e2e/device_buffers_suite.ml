@@ -855,6 +855,101 @@ let busy dev =
   Transfer.record_event e (Transfer.default_stream dev) ;
   e
 
+(* ------------------------------------------------- non-blocking streams *)
+
+let spin_on dev stream =
+  let out = Transfer.create_device_only dev Vector.int32 1 in
+  Execute.run_vectors
+    ~stream
+    ~device:dev
+    ~ir:(Lazy.force spin_ir)
+    ~args:[Execute.Vec out; Execute.Int 100_000_000]
+    ~block:(Execute.dims1d 1)
+    ~grid:(Execute.dims1d 1)
+    () ;
+  out
+
+(* Streams made with [~non_blocking:true]: (1) copy stream + event + compute
+   stream gives the right data; (2) no hidden synchronisation with the default
+   stream (async backends: the copy completes while a long default-stream
+   kernel is still pending); (3) the auto-transfer paths stay correct when the
+   pending write sits on a non-blocking stream, behind a long kernel. *)
+let test_non_blocking dev =
+  let n = 4096 in
+  let pinned = Transfer.alloc_pinned dev Bigarray.int32 n in
+  for i = 0 to n - 1 do
+    Bigarray.Array1.set pinned i (Int32.of_int ((i * 5) + 3))
+  done ;
+  let x = Transfer.create_device_only dev Vector.int32 n in
+  let y = Transfer.create_device_only dev Vector.int32 n in
+  let copy = Transfer.create_stream ~non_blocking:true dev in
+  let compute = Transfer.create_stream ~non_blocking:true dev in
+  let e = Transfer.create_event dev in
+  Transfer.copy_to_device ~stream:copy pinned ~dst:x ~dst_offset:0 ;
+  Transfer.record_event e copy ;
+  Transfer.stream_wait_event compute e ;
+  launch ~stream:compute dev x y n ;
+  Transfer.synchronize_stream compute ;
+  let out = read_all y in
+  let bad = ref 0 in
+  for i = 0 to n - 1 do
+    if Bigarray.Array1.get out i <> Int32.of_int ((i * 5) + 4) then incr bad
+  done ;
+  check
+    (Printf.sprintf
+       "non-blocking: copy stream -> event -> compute stream (%d mismatches)"
+       !bad)
+    (!bad = 0) ;
+  (* (2) *)
+  if is_async dev then begin
+    let busy_event = busy dev in
+    Transfer.copy_to_device ~stream:copy pinned ~dst:x ~dst_offset:0 ;
+    Transfer.synchronize_stream copy ;
+    check
+      "non-blocking: copy completes while the default stream is still busy"
+      (not (Transfer.event_query busy_event)) ;
+    Transfer.synchronize_event busy_event ;
+    Transfer.destroy_event busy_event
+  end ;
+  (* (3) *)
+  let o = Vector.create Vector.int32 n in
+  Vector.fill o 5l ;
+  Transfer.to_device o dev ;
+  let stalled = spin_on dev copy in
+  Transfer.copy_to_device ~stream:copy pinned ~dst:o ~dst_offset:0 ;
+  let yo = Transfer.create_device_only dev Vector.int32 n in
+  launch dev o yo n ;
+  let got_default = read_all yo in
+  check
+    "non-blocking: default-stream launch sees the pending write"
+    (Bigarray.Array1.get got_default 7 = Int32.of_int ((7 * 5) + 4)) ;
+  let o2 = Vector.create Vector.int32 n in
+  Vector.fill o2 5l ;
+  Transfer.to_device o2 dev ;
+  let stalled2 = spin_on dev copy in
+  Transfer.copy_to_device ~stream:copy pinned ~dst:o2 ~dst_offset:0 ;
+  check
+    "non-blocking: auto-sync read-back sees the write"
+    (Vector.get o2 9 = Int32.of_int ((9 * 5) + 3)) ;
+  Transfer.synchronize_stream copy ;
+  Transfer.free_all_buffers stalled ;
+  Transfer.free_all_buffers stalled2 ;
+  Transfer.free_all_buffers yo ;
+  Transfer.destroy_event e ;
+  Transfer.destroy_stream copy ;
+  Transfer.destroy_stream compute ;
+  Transfer.free_pinned pinned ;
+  Transfer.free_all_buffers x ;
+  Transfer.free_all_buffers y
+
+(* Streams of one device sharing semantics: nothing to test beyond creation on
+   a backend that refuses ranged copies. *)
+let test_non_blocking_create dev =
+  let s = Transfer.create_stream ~non_blocking:true dev in
+  Transfer.synchronize_stream s ;
+  Transfer.destroy_stream s ;
+  check "non-blocking stream creates, syncs and destroys" true
+
 (* HIP/CUDA only: staging does not wait for the GPU (FR-003), snapshots a
    source the DMA would otherwise read late (FR-002, pinned source), and keeps
    the destination referenced while the copy is pending. *)
@@ -969,6 +1064,7 @@ let run_on (dev : Device.t) =
   test_device_only dev ;
   test_ranged dev ;
   test_streams_pinned dev ;
+  test_non_blocking dev ;
   test_keep_alive dev ;
   test_device_synchronize_releases dev ;
   test_device_synchronize_keeps_later_work dev ;
@@ -993,6 +1089,7 @@ let check_refused (dev : Device.t) =
     "  [%s] %s (refusing backend)\n%!"
     dev.Device.framework
     dev.Device.name ;
+  test_non_blocking_create dev ;
   check
     "create_device_only refused (Feature_not_supported)"
     (refuses_capability (fun () ->
@@ -1025,3 +1122,11 @@ let check_refused (dev : Device.t) =
   Transfer.destroy_stream s
 
 let exit_code () = if !failures = 0 then 0 else 1
+
+(** The non-blocking stream cases alone, on one device: the full body on
+    backends with ranged copies, creation only on the others (OpenCL). *)
+let run_non_blocking_on (dev : Device.t) =
+  Printf.printf "  [%s] %s\n%!" dev.Device.framework dev.Device.name ;
+  match dev.Device.framework with
+  | "OpenCL" -> test_non_blocking_create dev
+  | _ -> test_non_blocking dev

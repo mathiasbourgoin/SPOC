@@ -205,6 +205,18 @@
  (action
   (run %{dep:test_hip_device_buffers.exe})))
 
+; Non-blocking streams, first HIP device only.
+
+(executable
+ (name test_hip_nonblocking)
+ (modules test_hip_nonblocking)
+ (libraries device_buffers_suite spoc_core sarek_hip))
+
+(rule
+ (alias e2e-hip)
+ (action
+  (run %{dep:test_hip_nonblocking.exe})))
+
 ; Pinned vs pageable host->device bandwidth, 256 MiB. Information only.
 
 (executable

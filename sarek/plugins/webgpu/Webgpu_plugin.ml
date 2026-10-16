@@ -73,6 +73,8 @@ module Backend : Framework_sig.BACKEND = struct
 
     let create _d = not_impl ()
 
+    let create_non_blocking _d = not_impl ()
+
     let destroy _s = not_impl ()
 
     let synchronize _s = not_impl ()

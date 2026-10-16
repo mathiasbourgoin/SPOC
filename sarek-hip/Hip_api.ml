@@ -404,6 +404,16 @@ module Stream = struct
     check "hipStreamCreate" (hipStreamCreate stream) ;
     {handle = !@stream; device}
 
+  (* hipStreamNonBlocking = 0x1: no implicit synchronisation with the NULL
+     stream. *)
+  let create_non_blocking device =
+    Device.set_current device ;
+    let stream = allocate hip_stream_ptr (from_voidp hip_stream null) in
+    check
+      "hipStreamCreateWithFlags"
+      (hipStreamCreateWithFlags stream (Unsigned.UInt.of_int 0x1)) ;
+    {handle = !@stream; device}
+
   let destroy stream =
     Device.set_current stream.device ;
     check "hipStreamDestroy" (hipStreamDestroy stream.handle)

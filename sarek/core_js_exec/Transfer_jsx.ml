@@ -43,3 +43,6 @@ type keep = Keep : 'a -> keep
 let retain_on_stream (_ : stream) ~keep:(_ : keep) ~vec_ids:(_ : int list) :
     unit =
   _ns "retain_on_stream"
+
+(* No streams in the jsoo build: nothing to settle. *)
+let settle_vector (_ : (_, _) Vector_jsx.t) : unit = ()

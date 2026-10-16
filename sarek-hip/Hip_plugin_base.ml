@@ -110,6 +110,8 @@ module Hip : Framework_sig.PLUGIN_BASE = struct
 
     let create = Hip_api.Stream.create
 
+    let create_non_blocking = Hip_api.Stream.create_non_blocking
+
     let destroy = Hip_api.Stream.destroy
 
     let synchronize = Hip_api.Stream.synchronize

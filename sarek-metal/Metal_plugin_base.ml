@@ -259,6 +259,10 @@ module Metal : Framework_sig.PLUGIN_BASE = struct
       let queue = Metal_api.CommandQueue.create device in
       {queue; device_id = device.id}
 
+    (* Each Metal command queue is independent; no implicit ordering against
+       the default queue exists. *)
+    let create_non_blocking = create
+
     let synchronize stream =
       Metal_api.Pending.wait_queue stream.queue.Metal_api.CommandQueue.handle
 

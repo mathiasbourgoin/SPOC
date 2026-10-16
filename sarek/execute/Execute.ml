@@ -320,11 +320,15 @@ let soa_param_names (ir : Sarek_ir_types.kernel) (args : vector_arg list)
     param_names
 
 (** Transfer all V2 Vector args to device *)
-let transfer_vectors_to_device ?(soa_abi = false) (args : vector_arg list)
-    (dev : Device.t) : unit =
+let transfer_vectors_to_device ?(soa_abi = false) ?(settle = true)
+    (args : vector_arg list) (dev : Device.t) : unit =
   List.iter
     (function
       | Vec v -> (
+          (* A default-stream launch cannot rely on the legacy-stream hidden
+             synchronisation for work on a non-blocking stream; a launch on an
+             explicit stream orders itself through events instead. *)
+          if settle then Transfer.settle_vector v ;
           match soa_dispatch ~soa_abi v dev with
           | Some b -> b.Vector.soa_to_device dev
           | None ->
@@ -1844,7 +1848,7 @@ let run_vectors_plain ?(stream : Transfer.stream option) ~(device : Device.t)
   (* 1. Transfer all vectors to device. ~soa_abi:true — this entry point runs a
      Sarek-generated kernel, so an SoA-bound vector's leaves are what the launch
      will read. [Execute.run_source] deliberately does NOT pass it. *)
-  transfer_vectors_to_device ~soa_abi:true args device ;
+  transfer_vectors_to_device ~soa_abi:true ~settle:(stream = None) args device ;
 
   (* 2. Dispatch via run - it handles expansion per backend *)
   run

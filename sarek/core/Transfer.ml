@@ -425,10 +425,17 @@ end
 
 let has_device_data = Read_back.has_device_data
 
+(* Set once the keep-alive ledger exists (below): completes, on the host, the
+   work of every NON-BLOCKING stream that still references the vector with the
+   given id. A blocking stream needs no such step because the default stream
+   waits for it. *)
+let settle_hook : (int -> unit) ref = ref ignore
+
 (* Every read-back observes device work, so pending deferred launches are
    issued first (specs/launch-window.md). *)
 let read_back_to_host vec dev =
   Spoc_framework.Launch_hooks.flush_pending () ;
+  !settle_hook vec.Vector.id ;
   Read_back.read_back_to_host vec dev
 
 let location_name : Vector.location -> string = function
@@ -647,6 +654,11 @@ module Ledger = struct
     mutable pending : entry list;
     mutable waits : (int * stream_state * int) list;
         (** (seq of the wait on this stream, waited stream, its seq) *)
+    nonblocking : bool;
+        (** Created with [~non_blocking:true]: the default stream does not wait
+            for it, so implicit paths must settle it themselves. *)
+    mutable drain : unit -> unit;
+        (** Synchronise the stream; set by [create_stream]. *)
     mutable destroyed : bool;
         (** Set by [destroy_stream]. A destroyed handle is refused: the driver
             may have recycled it, and work enqueued through it would land in a
@@ -659,7 +671,7 @@ module Ledger = struct
 
   let live : (int, stream_state) Hashtbl.t = Hashtbl.create 8
 
-  let new_stream (dev : Device.t) : stream_state =
+  let new_stream ?(nonblocking = false) (dev : Device.t) : stream_state =
     Mutex.protect lock (fun () ->
         incr next_sid ;
         let st =
@@ -669,6 +681,8 @@ module Ledger = struct
             next_seq = 0;
             pending = [];
             waits = [];
+            nonblocking;
+            drain = ignore;
             destroyed = false;
           }
         in
@@ -741,6 +755,19 @@ module Ledger = struct
           live
           false)
 
+  (** Live non-blocking streams with pending work that references [id]. *)
+  let nonblocking_holding (id : int) : stream_state list =
+    Mutex.protect lock (fun () ->
+        Hashtbl.fold
+          (fun _ st acc ->
+            if
+              st.nonblocking && (not st.destroyed)
+              && List.exists (fun e -> List.mem id e.vec_ids) st.pending
+            then st :: acc
+            else acc)
+          live
+          [])
+
   let holds_host_range (addr : nativeint) (bytes : int) : bool =
     let hi = Nativeint.add addr (Nativeint.of_int bytes) in
     let overlaps (a, n) =
@@ -757,6 +784,20 @@ module Ledger = struct
           live
           false)
 end
+
+(** Implicit paths that run on the default stream (host read-back, auto-sync,
+    default-stream launches) cannot rely on the legacy-stream hidden
+    synchronisation for work on a non-blocking stream. [settle_vector vec]
+    waits, on the host, for every non-blocking stream still referencing [vec].
+    Streams from [create_stream] without [~non_blocking] are not touched.
+    Explicit-stream operations never call this: ordering between explicit
+    streams is the caller's, through events. *)
+let settle_id (id : int) : unit =
+  List.iter (fun st -> st.Ledger.drain ()) (Ledger.nonblocking_holding id)
+
+let settle_vector (vec : (_, _) Vector.t) : unit = settle_id vec.id
+
+let () = settle_hook := settle_id
 
 (** Refuse to free device memory that pending stream-ordered work may still
     touch (FR-021): freeing it would put the DMA engine or a kernel on freed
@@ -925,12 +966,13 @@ let refuse_capability ~(backend : string) (feature : string) : 'a =
     ({!Framework_sig.stream_ref}). [state] is this stream's entry in the
     keep-alive {!Ledger}.
 
-    Streams created by {!create_stream} are BLOCKING streams (they synchronise
-    with the device's legacy default stream). The auto-transfer path relies on
-    that: after an async ranged write the vector is [Stale_CPU], and the
-    implicit read-back runs on the default stream, which then waits for the
-    write. Switching to non-blocking streams requires making auto-sync
-    stream-aware first (FR-019). *)
+    Streams created by {!create_stream} are BLOCKING by default (they
+    synchronise with the device's legacy default stream); with
+    [~non_blocking:true] they are not, and order against other streams only
+    through events. The auto-transfer path stays correct for both: after an
+    async ranged write the vector is [Stale_CPU]; a blocking stream is waited
+    for by the default stream, a non-blocking one is settled on the host by
+    {!settle_vector} before the implicit read-back or default-stream launch. *)
 module type STREAM = sig
   val device : Device.t
 
@@ -945,12 +987,18 @@ end
 
 type stream = (module STREAM)
 
-(** Create a new stream on a device *)
-let create_stream (dev : Device.t) : stream =
+(** Create a new stream on a device. [~non_blocking:true] (default [false])
+    creates a stream that does not synchronise implicitly with the default
+    stream; order work across streams with {!record_event} and
+    {!stream_wait_event}. *)
+let create_stream ?(non_blocking = false) (dev : Device.t) : stream =
   let (module B : Framework_sig.BACKEND) = backend_of dev in
   let backend_dev = B.Device.get dev.backend_id in
-  let s = B.Stream.create backend_dev in
-  let st = Ledger.new_stream dev in
+  let s =
+    if non_blocking then B.Stream.create_non_blocking backend_dev
+    else B.Stream.create backend_dev
+  in
+  let st = Ledger.new_stream ~nonblocking:non_blocking dev in
   (module struct
     let device = dev
 
@@ -963,6 +1011,8 @@ let create_stream (dev : Device.t) : stream =
       Ledger.check_live ~op:"Transfer.synchronize_stream" st ;
       B.Stream.synchronize s ;
       Ledger.release_all st
+
+    let () = st.Ledger.drain <- synchronize
 
     (* Synchronise first: the ledger may only let go of what the stream's work
        references once that work has completed. *)

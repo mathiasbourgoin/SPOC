@@ -100,6 +100,8 @@ module Probe_backend : BACKEND = struct
 
     let create () = ()
 
+    let create_non_blocking () = ()
+
     let default () = ()
 
     let synchronize () = ()
