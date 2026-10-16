@@ -2,6 +2,19 @@
 
 ### Changed
 
+- `Transfer.create_stream ?non_blocking:bool` (default `false`, unchanged): `~non_blocking:true`
+  makes a stream the device's default stream does not wait for (HIP `hipStreamNonBlocking`,
+  CUDA `CU_STREAM_NON_BLOCKING`), so a copy stream can overlap kernels on the default stream;
+  order streams with `record_event` / `stream_wait_event`. The implicit paths stay correct: a
+  host read-back (`to_cpu`, `sync`, migration) and a default-stream launch first wait on the
+  host (`Transfer.settle_vector`) for any non-blocking stream still referencing the vector;
+  launches on an explicit stream are never settled, ordering is the caller's through events.
+  **Breaking for out-of-tree backends:** `Framework_sig.BACKEND.Stream` (and `PLUGIN_BASE`) gain
+  `create_non_blocking : Device.t -> t` (one line: `let create_non_blocking = create` when the
+  backend's queues are already independent). Coverage: HIP and CUDA (C and PTX) implemented;
+  OpenCL, Metal, Vulkan: same as `create` (independent queues); Native, Interpreter: unit
+  streams, synchronous; WebGPU: stub, unchanged. Tests: `test_nonblocking_streams`
+  (`runtest` on Native and Interpreter; GPU devices by argument), `test_hip_nonblocking`.
 - `Device.is_gpu` is true for Metal devices (it listed CUDA, OpenCL, Vulkan and HIP only), so a
   selection by GPU predicate finds the Metal GPU on a Mac (#516). Test: `test_device` checks
   the frameworks of the default `Device.init` list.

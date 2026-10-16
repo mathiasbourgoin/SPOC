@@ -143,7 +143,7 @@ As the runtime layer loop, I want to launch kernels on a compute stream that wai
 #### Additions from challenge round 1
 - **FR-017** [US-1, X-3]: On CPU devices the device-only vector's device buffer MUST alias its host storage.
 - **FR-018** [US-1, X-5]: Vector lengths above `Int32.max_int` MUST be refused at device-only creation and at launch-length injection, never wrapped.
-- **FR-019** [US-2, X-9]: Streams created by `Transfer.create_stream` MUST be blocking streams.
+- **FR-019** [US-2, X-9]: Streams created by `Transfer.create_stream` are blocking by default. `~non_blocking:true` creates a stream with no implicit synchronisation with the default stream; the implicit read-back and default-stream launch then settle it on the host (`Transfer.settle_vector`). Amended by the non-blocking stream change.
 - **FR-020** [US-4, X-10]: Completing a stream MUST release, transitively, the keep-alive entries of the work it waited on through events.
 - **FR-021** [US-1, X-7]: Freeing device memory still referenced by pending async work MUST be refused.
 
