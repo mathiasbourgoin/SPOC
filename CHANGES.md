@@ -4,7 +4,7 @@
 
 - `Device.is_gpu` is true for Metal devices (it listed CUDA, OpenCL, Vulkan and HIP only), so a
   selection by GPU predicate finds the Metal GPU on a Mac (#516). Test: `test_device` checks
-  every framework name.
+  the frameworks of the default `Device.init` list.
 - Vulkan `alloc_pinned` no longer imports host memory: it allocates through the driver
   (`vkAllocateMemory` from a HOST_VISIBLE | HOST_COHERENT type that is not DEVICE_LOCAL,
   HOST_CACHED when the device has one) and maps it for the life of the block, so it works on
