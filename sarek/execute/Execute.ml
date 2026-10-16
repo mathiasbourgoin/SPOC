@@ -1529,6 +1529,10 @@ let run ?(stream : Transfer.stream option) ~(device : Device.t) ~(name : string)
        option) ~(block : Framework_sig.dims) ~(grid : Framework_sig.dims)
     ?(shared_mem : int = 0) (args : vector_arg list) : unit =
   check_stream_launch ~device stream ;
+  (* A default-stream launch settles non-blocking streams still using its
+     vectors; a launch on an explicit stream orders through events. *)
+  if Option.is_none stream then
+    List.iter (function Vec v -> Transfer.settle_vector v | _ -> ()) args ;
   match Framework_registry.find_backend device.framework with
   | None ->
       Execute_error.raise_error
@@ -1848,7 +1852,11 @@ let run_vectors_plain ?(stream : Transfer.stream option) ~(device : Device.t)
   (* 1. Transfer all vectors to device. ~soa_abi:true — this entry point runs a
      Sarek-generated kernel, so an SoA-bound vector's leaves are what the launch
      will read. [Execute.run_source] deliberately does NOT pass it. *)
-  transfer_vectors_to_device ~soa_abi:true ~settle:(stream = None) args device ;
+  transfer_vectors_to_device
+    ~soa_abi:true
+    ~settle:(Option.is_none stream)
+    args
+    device ;
 
   (* 2. Dispatch via run - it handles expansion per backend *)
   run

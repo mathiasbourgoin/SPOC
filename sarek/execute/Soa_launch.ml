@@ -358,9 +358,13 @@ let run_soa ~(device : Device.t) ~(ir : Sarek_ir_types.kernel)
           | SA_Soa sv ->
               Soa_vector.scatter sv ;
               Array.iter
-                (fun (Soa_vector.Leaf v) -> Transfer.to_device v device)
+                (fun (Soa_vector.Leaf v) ->
+                  Transfer.settle_vector v ;
+                  Transfer.to_device v device)
                 (Soa_vector.leaves sv)
-          | SA_Reg (Execute.Vec v) -> Transfer.to_device v device
+          | SA_Reg (Execute.Vec v) ->
+              Transfer.settle_vector v ;
+              Transfer.to_device v device
           | SA_Reg _ -> ())
         args ;
       (* Build the run_source args in parameter order. *)

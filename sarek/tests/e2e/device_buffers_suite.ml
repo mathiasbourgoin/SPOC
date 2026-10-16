@@ -863,7 +863,10 @@ let spin_on dev stream =
     ~stream
     ~device:dev
     ~ir:(Lazy.force spin_ir)
-    ~args:[Execute.Vec out; Execute.Int 100_000_000]
+    ~args:
+      [
+        Execute.Vec out; Execute.Int (if is_async dev then 100_000_000 else 1000);
+      ]
     ~block:(Execute.dims1d 1)
     ~grid:(Execute.dims1d 1)
     () ;
@@ -911,6 +914,32 @@ let test_non_blocking dev =
     Transfer.synchronize_event busy_event ;
     Transfer.destroy_event busy_event
   end ;
+  (* settle_vector completes a non-blocking stream that holds the vector (so
+     the ledger lets go of it), and leaves a blocking stream alone. Meaningful
+     on every backend, CPU included: the ledger is backend independent. *)
+  let zs = Transfer.create_device_only dev Vector.int32 n in
+  let ps = Transfer.alloc_pinned dev Bigarray.int32 n in
+  Transfer.copy_to_device ~stream:copy ps ~dst:zs ~dst_offset:0 ;
+  check
+    "settle_vector: pinned buffer held by the non-blocking stream"
+    (refuses_invalid (fun () -> Transfer.free_pinned ps)) ;
+  Transfer.settle_vector zs ;
+  check
+    "settle_vector: releases the non-blocking stream's hold"
+    (match Transfer.free_pinned ps with
+    | () -> true
+    | exception Invalid_argument _ -> false) ;
+  let bs = Transfer.create_stream dev in
+  let pb = Transfer.alloc_pinned dev Bigarray.int32 n in
+  Transfer.copy_to_device ~stream:bs pb ~dst:zs ~dst_offset:0 ;
+  Transfer.settle_vector zs ;
+  check
+    "settle_vector: leaves a blocking stream alone"
+    (refuses_invalid (fun () -> Transfer.free_pinned pb)) ;
+  Transfer.synchronize_stream bs ;
+  Transfer.free_pinned pb ;
+  Transfer.destroy_stream bs ;
+  Transfer.free_all_buffers zs ;
   (* Default behaviour unchanged: a plain create_stream stream still
      synchronises with the default stream. *)
   if is_async dev then begin
@@ -977,6 +1006,27 @@ let test_non_blocking dev =
   check
     "non-blocking: auto-sync read-back sees the write"
     (Vector.get o2 9 = Int32.of_int ((9 * 5) + 3)) ;
+  (* Execute.run on the default stream settles too. *)
+  let o3 = Vector.create Vector.int32 n in
+  Vector.fill o3 5l ;
+  Transfer.to_device o3 dev ;
+  let stalled3 = spin_on dev copy in
+  Transfer.copy_to_device ~stream:copy pinned ~dst:o3 ~dst_offset:0 ;
+  let y3 = Transfer.create_device_only dev Vector.int32 n in
+  Execute.run
+    ~device:dev
+    ~name:(Lazy.force add_one_ir).Sarek_ir_types.kern_name
+    ~ir:(Some add_one_ir)
+    ~native_fn:None
+    ~block:(Execute.dims1d 64)
+    ~grid:(Execute.dims1d (n / 64))
+    [Execute.Vec o3; Execute.Vec y3; Execute.Int n] ;
+  check
+    "non-blocking: Execute.run on the default stream sees the pending write"
+    (Bigarray.Array1.get (read_all y3) 11 = Int32.of_int ((11 * 5) + 4)) ;
+  Transfer.synchronize_stream copy ;
+  Transfer.free_all_buffers stalled3 ;
+  Transfer.free_all_buffers y3 ;
   Transfer.synchronize_stream copy ;
   Transfer.free_all_buffers stalled ;
   Transfer.free_all_buffers stalled2 ;
@@ -1110,7 +1160,6 @@ let run_on (dev : Device.t) =
   test_device_only dev ;
   test_ranged dev ;
   test_streams_pinned dev ;
-  test_non_blocking dev ;
   test_keep_alive dev ;
   test_device_synchronize_releases dev ;
   test_device_synchronize_keeps_later_work dev ;

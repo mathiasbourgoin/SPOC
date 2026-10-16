@@ -493,6 +493,9 @@ let to_device (type a b) (vec : (a, b) Vector.t) (dev : Device.t) : unit =
          that binds it must be issued first. Launches that do not bind it are
          unaffected and stay pending (specs/launch-window.md). *)
       Spoc_framework.Launch_hooks.flush_touching ~device_id:dev.id ~buf:vec.id ;
+      (* The synchronous upload runs on the default stream: wait for any
+         non-blocking stream still reading or writing this vector. *)
+      !settle_hook vec.id ;
       Log.debugf
         Log.Transfer
         "to_device: transferring %d bytes to dev=%d"
@@ -671,6 +674,12 @@ module Ledger = struct
 
   let live : (int, stream_state) Hashtbl.t = Hashtbl.create 8
 
+  (* Live non-blocking streams: the settle paths cost one atomic read when
+     none exists. *)
+  let nonblocking_live = Atomic.make 0
+
+  let has_nonblocking () = Atomic.get nonblocking_live > 0
+
   let new_stream ?(nonblocking = false) (dev : Device.t) : stream_state =
     Mutex.protect lock (fun () ->
         incr next_sid ;
@@ -687,10 +696,12 @@ module Ledger = struct
           }
         in
         Hashtbl.replace live st.sid st ;
+        if nonblocking then Atomic.incr nonblocking_live ;
         st)
 
   let forget (st : stream_state) =
     Mutex.protect lock (fun () ->
+        if st.nonblocking && not st.destroyed then Atomic.decr nonblocking_live ;
         st.destroyed <- true ;
         Hashtbl.remove live st.sid)
 
@@ -793,7 +804,14 @@ end
     Explicit-stream operations never call this: ordering between explicit
     streams is the caller's, through events. *)
 let settle_id (id : int) : unit =
-  List.iter (fun st -> st.Ledger.drain ()) (Ledger.nonblocking_holding id)
+  if Ledger.has_nonblocking () then
+    List.iter
+      (fun st ->
+        (* A stream destroyed between the snapshot and the drain completed its
+           work before it was destroyed. *)
+        try st.Ledger.drain ()
+        with Invalid_argument _ when st.Ledger.destroyed -> ())
+      (Ledger.nonblocking_holding id)
 
 let settle_vector (vec : (_, _) Vector.t) : unit = settle_id vec.id
 
@@ -1858,9 +1876,11 @@ let staged_copy st ~(dev : Device.t) ~(stream : stream) ~src_addr ~byte_size
     returns, so the caller may overwrite it immediately. The copy to [dst] is
     enqueued on [stream] (default: [dev]'s default stream), after the work
     already there and before what follows; streams from {!create_stream} are
-    blocking, so they order with it too. SPOC keeps [dst] alive until the copy
-    has completed, and refuses to free it until the stream or device is
-    synchronised (or the ring has reused the range).
+    blocking by default, so they order with it too (a [~non_blocking:true]
+    stream does not: order it with events; without [~stream] the vector is
+    settled first). SPOC keeps [dst] alive until the copy has completed, and
+    refuses to free it until the stream or device is synchronised (or the ring
+    has reused the range).
 
     Staging is 1 MiB of pinned memory per device, allocated on first use and
     kept for the process lifetime; when every byte of it is still in flight, the
