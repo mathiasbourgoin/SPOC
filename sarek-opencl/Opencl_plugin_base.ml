@@ -267,6 +267,10 @@ module Opencl : Framework_sig.PLUGIN_BASE = struct
           state.streams <- queue :: state.streams) ;
       {queue; device_id = device.id}
 
+    (* An OpenCL command queue is an independent in-order queue: there is no
+       implicit ordering against the default queue to relax. *)
+    let create_non_blocking = create
+
     let destroy stream =
       let state = get_state stream.device_id in
       Mutex.protect state.streams_lock (fun () ->

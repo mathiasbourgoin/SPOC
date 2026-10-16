@@ -475,13 +475,17 @@ end
 module Stream = struct
   type t = {handle : cu_stream structure ptr; device : Device.t}
 
-  let create device =
+  let create_with_flags flags device =
     Device.set_current device ;
     let stream = allocate cu_stream_ptr (from_voidp cu_stream null) in
-    check
-      "cuStreamCreate"
-      (cuStreamCreate stream (Unsigned.UInt.of_int cu_stream_default)) ;
+    check "cuStreamCreate" (cuStreamCreate stream (Unsigned.UInt.of_int flags)) ;
     {handle = !@stream; device}
+
+  let create = create_with_flags cu_stream_default
+
+  (* CU_STREAM_NON_BLOCKING: no implicit synchronisation with the legacy
+     default stream. *)
+  let create_non_blocking = create_with_flags cu_stream_non_blocking
 
   let destroy stream =
     Device.set_current stream.device ;

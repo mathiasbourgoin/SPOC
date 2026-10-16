@@ -454,6 +454,13 @@ module type BACKEND = sig
 
     val create : Device.t -> t
 
+    (** A stream that does NOT synchronise implicitly with the device's default
+        stream (CUDA/HIP: the non-blocking flag). Backends whose queues are
+        already independent return the same as {!create}; backends with no
+        asynchrony (Native, Interpreter) return a unit stream. Backends that
+        cannot provide the property raise [Feature_not_supported]. *)
+    val create_non_blocking : Device.t -> t
+
     val destroy : t -> unit
 
     val synchronize : t -> unit
@@ -798,6 +805,13 @@ module type PLUGIN_BASE = sig
     type t
 
     val create : Device.t -> t
+
+    (** A stream that does NOT synchronise implicitly with the device's default
+        stream (CUDA/HIP: the non-blocking flag). Backends whose queues are
+        already independent return the same as {!create}; backends with no
+        asynchrony (Native, Interpreter) return a unit stream. Backends that
+        cannot provide the property raise [Feature_not_supported]. *)
+    val create_non_blocking : Device.t -> t
 
     val destroy : t -> unit
 

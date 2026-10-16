@@ -101,6 +101,8 @@ module Interpreter : sig
 
     val create : Device.t -> t
 
+    val create_non_blocking : Device.t -> t
+
     val destroy : t -> unit
 
     val synchronize : t -> unit
@@ -546,6 +548,9 @@ end = struct
     type t = unit
 
     let create _dev = ()
+
+    (* Synchronous execution: every stream is trivially ordered. *)
+    let create_non_blocking _dev = ()
 
     let destroy _s = ()
 

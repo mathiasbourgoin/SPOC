@@ -310,6 +310,14 @@ let hipStreamCreate_lazy =
 
 let hipStreamCreate p = Lazy.force hipStreamCreate_lazy p
 
+let hipStreamCreateWithFlags_lazy =
+  foreign_hip_lazy
+    "hipStreamCreateWithFlags"
+    (ptr hip_stream_ptr @-> uint @-> returning hip_result)
+
+let hipStreamCreateWithFlags p flags =
+  Lazy.force hipStreamCreateWithFlags_lazy p flags
+
 let hipStreamDestroy_lazy =
   foreign_hip_lazy "hipStreamDestroy" (hip_stream_ptr @-> returning hip_result)
 

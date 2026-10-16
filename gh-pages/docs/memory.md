@@ -103,7 +103,8 @@ let streaming_step dev ~ir ~cache ~x ~y ~slot ~slot_bytes ~block ~grid =
 ```
 
 - `synchronize_stream`, `Transfer.flush`, `synchronize_event` and a `true` `event_query` release what the stream kept alive. Destroy streams you create: a dropped stream keeps its pending work rooted.
-- Streams from `create_stream` are blocking, and the auto-sync path depends on that. A synchronous transfer on the default stream serialises with them, so a streaming loop should not mix in automatic transfers.
+- Streams from `create_stream` are blocking by default: a synchronous transfer on the default stream serialises with them, so a streaming loop should not mix in automatic transfers.
+- `create_stream ~non_blocking:true` makes a stream the default stream does not wait for (CUDA/HIP non-blocking flag; OpenCL, Metal and Vulkan queues are already independent; Native and Interpreter are synchronous). Order it against other streams only with `record_event` / `stream_wait_event`. The implicit paths (read-back, `sync`, auto-transfer before a default-stream launch) wait on the host for a non-blocking stream that still references the vector, so they stay correct but do not overlap; launches on an explicit stream are never settled this way.
 - Stream launches are never held in the [launch window](performance.html); they flush it first.
 
 The core of the streaming interface as a signature that the compiler checks against `Transfer`:
@@ -113,7 +114,7 @@ module type Streaming = sig
   type stream
   type event
 
-  val create_stream : Device.t -> stream
+  val create_stream : ?non_blocking:bool -> Device.t -> stream
   val synchronize_stream : stream -> unit
   val destroy_stream : stream -> unit
   val create_event : Device.t -> event

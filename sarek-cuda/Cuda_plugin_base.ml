@@ -132,6 +132,8 @@ module Cuda : Framework_sig.PLUGIN_BASE = struct
 
     let create = Cuda_api.Stream.create
 
+    let create_non_blocking = Cuda_api.Stream.create_non_blocking
+
     let destroy = Cuda_api.Stream.destroy
 
     let synchronize = Cuda_api.Stream.synchronize
