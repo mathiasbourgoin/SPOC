@@ -104,6 +104,42 @@ let test_is_gpu () =
   assert (Spoc_core.Device.is_gpu opencl_cpu = false) ;
   print_endline "  is_gpu: OK"
 
+(* #516: every framework name, with a GPU-shaped record ([is_cpu = false]) and
+   a CPU-shaped one ([is_cpu = true]). Native and Interpreter are never GPUs;
+   the others are GPUs unless the device reports itself as a CPU (OpenCL CPU
+   runtimes). *)
+let test_is_gpu_all_frameworks () =
+  let gpu_caps = make_fake_caps ~is_cpu:false () in
+  let cpu_caps = make_fake_caps ~is_cpu:true () in
+  let cases =
+    [
+      ("HIP", true);
+      ("CUDA", true);
+      ("CUDA/PTX", true);
+      ("CUDA/C", true);
+      ("OpenCL", true);
+      ("Vulkan", true);
+      ("Metal", true);
+      ("Native", false);
+      ("Interpreter", false);
+    ]
+  in
+  List.iter
+    (fun (framework, expected) ->
+      let dev = make_fake_device ~framework ~caps:gpu_caps () in
+      if Spoc_core.Device.is_gpu dev <> expected then
+        failwith
+          (Printf.sprintf
+             "is_gpu %s (is_cpu=false): expected %b"
+             framework
+             expected) ;
+      let cpu_dev = make_fake_device ~framework ~caps:cpu_caps () in
+      if Spoc_core.Device.is_gpu cpu_dev then
+        failwith
+          (Printf.sprintf "is_gpu %s (is_cpu=true): expected false" framework))
+    cases ;
+  print_endline "  is_gpu all frameworks: OK"
+
 let test_is_cpu () =
   let native_dev = make_fake_device ~framework:"Native" () in
   let cuda_dev = make_fake_device ~framework:"CUDA" () in
@@ -330,6 +366,7 @@ let () =
   test_is_opencl () ;
   test_is_native () ;
   test_is_gpu () ;
+  test_is_gpu_all_frameworks () ;
   test_is_cpu () ;
   (* Capability query tests *)
   test_allows_fp64 () ;
