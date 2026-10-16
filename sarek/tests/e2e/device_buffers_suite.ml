@@ -982,6 +982,22 @@ let test_non_blocking dev =
   keep
     (released_after "default-stream stage_to_device" fresh (fun v ->
          Transfer.stage_to_device (i32_ba 4 (fun _ -> 3l)) ~dst:v ~dst_offset:0)) ;
+  (* sync on a Both vector settles a pending non-blocking read of it. *)
+  (let pd = Transfer.alloc_pinned dev Bigarray.int32 n in
+   let ov = Vector.create Vector.int32 n in
+   Vector.fill ov 1l ;
+   Transfer.to_device ov dev ;
+   Transfer.copy_to_host ~stream:copy ~src:ov ~src_offset:0 pd ;
+   Transfer.sync ov ;
+   check
+     "non-blocking: sync on a Both vector settles the stream"
+     (match Transfer.free_pinned pd with
+     | () -> true
+     | exception Invalid_argument _ ->
+         Transfer.synchronize_stream copy ;
+         Transfer.free_pinned pd ;
+         false) ;
+   Transfer.free_all_buffers ov) ;
   Transfer.flush dev ;
   List.iter Transfer.free_all_buffers !freed ;
   (* Default behaviour unchanged: a plain create_stream stream still
