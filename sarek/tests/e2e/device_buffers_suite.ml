@@ -942,6 +942,21 @@ let test_non_blocking dev =
     | () -> true
     | exception Invalid_argument _ -> false) ;
   Transfer.free_all_buffers z ;
+  (* A default-stream ranged write after a pending write on the non-blocking
+     stream must land last (it settles the vector first). *)
+  let w = Transfer.create_device_only dev Vector.int32 n in
+  let late = Transfer.alloc_pinned dev Bigarray.int32 n in
+  Bigarray.Array1.fill late 1l ;
+  let stalled_w = spin_on dev copy in
+  Transfer.copy_to_device ~stream:copy late ~dst:w ~dst_offset:0 ;
+  Transfer.copy_to_device (i32_ba n (fun _ -> 2l)) ~dst:w ~dst_offset:0 ;
+  Transfer.synchronize_stream copy ;
+  check
+    "non-blocking: default-stream ranged write lands after the pending one"
+    (Bigarray.Array1.get (read_all w) 0 = 2l) ;
+  Transfer.free_all_buffers stalled_w ;
+  Transfer.free_all_buffers w ;
+  Transfer.free_pinned late ;
   (* (3) *)
   let o = Vector.create Vector.int32 n in
   Vector.fill o 5l ;

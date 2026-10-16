@@ -1346,6 +1346,7 @@ let h2d_range (type a b k) ~(op : string) ?(stream : stream option)
   let (module Buf : Vector.DEVICE_BUFFER) = buf in
   (match stream with
   | None ->
+      settle_vector dst ;
       Buf.range_from_host
         ~src_ptr
         ~dst_offset:dst_byte_offset
@@ -1481,6 +1482,7 @@ let d2h_range (type a b) ~(op : string) ?(stream : stream option)
   let (module Buf : Vector.DEVICE_BUFFER) = buf in
   match stream with
   | None ->
+      settle_vector src ;
       Buf.range_to_host
         ~src_offset:src_byte_offset
         ~dst_ptr
@@ -1906,6 +1908,7 @@ let stage_to_device (type a b) ?(stream : stream option)
          byte_size
          max_staged_bytes) ;
   let dev, _ = range_target ~op dst in
+  if Option.is_none stream then settle_vector dst ;
   let (module B : Framework_sig.BACKEND) = backend_of dev in
   if not B.Async.support.ranged_copy then
     refuse_capability ~backend:B.name "staged writes (they need ranged copies)" ;
