@@ -940,6 +940,50 @@ let test_non_blocking dev =
   Transfer.free_pinned pb ;
   Transfer.destroy_stream bs ;
   Transfer.free_all_buffers zs ;
+  (* Each implicit default-stream path settles: after it, the non-blocking
+     stream's hold on the pinned buffer is gone without any synchronise of the
+     stream. Observable on every backend through the ledger. *)
+  let released_after name prepare operation =
+    let p = Transfer.alloc_pinned dev Bigarray.int32 n in
+    let v = prepare () in
+    Transfer.copy_to_device ~stream:copy p ~dst:v ~dst_offset:0 ;
+    operation v ;
+    check
+      (Printf.sprintf "non-blocking: %s settles the stream" name)
+      (match Transfer.free_pinned p with
+      | () -> true
+      | exception Invalid_argument _ ->
+          Transfer.synchronize_stream copy ;
+          Transfer.free_pinned p ;
+          false) ;
+    v
+  in
+  let fresh () = Transfer.create_device_only dev Vector.int32 n in
+  let freed = ref [] in
+  let keep v = freed := v :: !freed in
+  keep
+    (released_after "Execute.run" fresh (fun v ->
+         let yy = fresh () in
+         keep yy ;
+         Execute.run
+           ~device:dev
+           ~name:(Lazy.force add_one_ir).Sarek_ir_types.kern_name
+           ~ir:(Some add_one_ir)
+           ~native_fn:None
+           ~block:(Execute.dims1d 64)
+           ~grid:(Execute.dims1d (n / 64))
+           [Execute.Vec v; Execute.Vec yy; Execute.Int n])) ;
+  keep
+    (released_after "default-stream copy_to_device" fresh (fun v ->
+         Transfer.copy_to_device (i32_ba n (fun _ -> 3l)) ~dst:v ~dst_offset:0)) ;
+  keep
+    (released_after "default-stream copy_to_host" fresh (fun v ->
+         Transfer.copy_to_host ~src:v ~src_offset:0 (i32_ba n (fun _ -> 0l)))) ;
+  keep
+    (released_after "default-stream stage_to_device" fresh (fun v ->
+         Transfer.stage_to_device (i32_ba 4 (fun _ -> 3l)) ~dst:v ~dst_offset:0)) ;
+  Transfer.flush dev ;
+  List.iter Transfer.free_all_buffers !freed ;
   (* Default behaviour unchanged: a plain create_stream stream still
      synchronises with the default stream. *)
   if is_async dev then begin

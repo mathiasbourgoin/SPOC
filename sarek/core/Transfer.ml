@@ -1027,8 +1027,11 @@ let create_stream ?(non_blocking = false) (dev : Device.t) : stream =
     let synchronize () =
       Spoc_framework.Launch_hooks.flush_pending () ;
       Ledger.check_live ~op:"Transfer.synchronize_stream" st ;
+      (* Release only what was enqueued before the wait began: another domain
+         may be enqueueing, or settling this stream, concurrently. *)
+      let upto = Ledger.mark st in
       B.Stream.synchronize s ;
-      Ledger.release_all st
+      Ledger.release st upto
 
     let () = st.Ledger.drain <- synchronize
 
@@ -1037,8 +1040,12 @@ let create_stream ?(non_blocking = false) (dev : Device.t) : stream =
     let destroy () =
       Ledger.check_live ~op:"Transfer.destroy_stream" st ;
       synchronize () ;
-      B.Stream.destroy s ;
-      Ledger.forget st
+      (* Marked destroyed before the backend handle goes: a concurrent settle
+         then sees a destroyed stream, never a recycled handle. A stream is
+         meant to have one owning domain; this narrows, not closes, the
+         window for a settle already inside the backend synchronise. *)
+      Ledger.forget st ;
+      B.Stream.destroy s
   end : STREAM)
 
 (* One ledger state per device for the default stream: every [default_stream]
@@ -1049,7 +1056,9 @@ let default_states : (int, Ledger.stream_state) Hashtbl.t = Hashtbl.create 4
 let default_states_lock = Mutex.create ()
 
 (** Get default stream for a device. All handles for one device share one ledger
-    state. *)
+    state. Work given [~stream:(default_stream dev)] is explicit-stream work: it
+    is not settled against non-blocking streams (only the no-[~stream] paths
+    are); order it with events. *)
 let default_stream (dev : Device.t) : stream =
   let (module B : Framework_sig.BACKEND) = backend_of dev in
   let backend_dev = B.Device.get dev.backend_id in
