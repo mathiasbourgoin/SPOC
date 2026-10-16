@@ -605,6 +605,9 @@ let to_cpu ?(force = false) (type a b) (vec : (a, b) Vector.t) : unit =
 
 (** Ensure vector is fully synchronized *)
 let sync (type a b) (vec : (a, b) Vector.t) : unit =
+  (* Also a [Both] vector: a non-blocking stream may still be reading it (a
+     pending [copy_to_host ~stream]); sync is a full synchronisation point. *)
+  !settle_hook vec.id ;
   match vec.location with
   | Vector.CPU -> ()
   | Vector.Both _ -> ()
