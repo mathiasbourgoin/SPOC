@@ -911,6 +911,37 @@ let test_non_blocking dev =
     Transfer.synchronize_event busy_event ;
     Transfer.destroy_event busy_event
   end ;
+  (* Default behaviour unchanged: a plain create_stream stream still
+     synchronises with the default stream. *)
+  if is_async dev then begin
+    let blocking = Transfer.create_stream dev in
+    let busy_event = busy dev in
+    Transfer.copy_to_device ~stream:blocking pinned ~dst:x ~dst_offset:0 ;
+    Transfer.synchronize_stream blocking ;
+    check
+      "default create_stream stays blocking (waits for the default stream)"
+      (Transfer.event_query busy_event) ;
+    Transfer.destroy_event busy_event ;
+    Transfer.destroy_stream blocking
+  end ;
+  (* Ledger rules hold on a non-blocking stream: in-flight work pins the
+     vector and the host buffer; synchronising releases them. *)
+  let z = Transfer.create_device_only dev Vector.int32 n in
+  let pinned2 = Transfer.alloc_pinned dev Bigarray.int32 n in
+  Transfer.copy_to_device ~stream:copy pinned2 ~dst:z ~dst_offset:0 ;
+  check
+    "non-blocking: freeing a vector in flight refused"
+    (refuses_invalid (fun () -> Transfer.free_all_buffers z)) ;
+  check
+    "non-blocking: free_pinned refused while the copy is pending"
+    (refuses_invalid (fun () -> Transfer.free_pinned pinned2)) ;
+  Transfer.synchronize_stream copy ;
+  check
+    "non-blocking: synchronising the stream releases the ledger"
+    (match Transfer.free_pinned pinned2 with
+    | () -> true
+    | exception Invalid_argument _ -> false) ;
+  Transfer.free_all_buffers z ;
   (* (3) *)
   let o = Vector.create Vector.int32 n in
   Vector.fill o 5l ;
