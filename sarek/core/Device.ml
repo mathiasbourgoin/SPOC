@@ -200,7 +200,8 @@ let is_native d = d.framework = "Native"
 let is_cpu d = d.capabilities.is_cpu || is_native d
 
 let is_gpu d =
-  (is_cuda d || is_opencl d || d.framework = "Vulkan" || d.framework = "HIP")
+  (is_cuda d || is_opencl d || d.framework = "Vulkan" || d.framework = "HIP"
+ || d.framework = "Metal")
   && not (is_cpu d)
 
 (** {2 Capability Queries} *)
