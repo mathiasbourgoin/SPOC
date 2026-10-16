@@ -6,9 +6,12 @@
   makes a stream the device's default stream does not wait for (HIP `hipStreamNonBlocking`,
   CUDA `CU_STREAM_NON_BLOCKING`), so a copy stream can overlap kernels on the default stream;
   order streams with `record_event` / `stream_wait_event`. The implicit paths stay correct: a
-  host read-back (`to_cpu`, `sync`, migration) and a default-stream launch first wait on the
-  host (`Transfer.settle_vector`) for any non-blocking stream still referencing the vector;
-  launches on an explicit stream are never settled, ordering is the caller's through events.
+  host read-back (`to_cpu`, `sync`, migration), the implicit upload (`to_device`), a
+  default-stream launch (`Execute.run`, `run_vectors`, `run_source`, SoA launch), and default-stream
+  ranged copies and `stage_to_device` first wait on the host (`Transfer.settle_vector`) for any
+  non-blocking stream still referencing the vector; launches and copies on an explicit stream are
+  never settled, ordering is the caller's through events. Host buffers (a pinned buffer used by
+  a pending non-blocking copy) are not tracked by the settle: ordering them is the caller's.
   **Breaking for out-of-tree backends:** `Framework_sig.BACKEND.Stream` (and `PLUGIN_BASE`) gain
   `create_non_blocking : Device.t -> t` (one line: `let create_non_blocking = create` when the
   backend's queues are already independent). Coverage: HIP and CUDA (C and PTX) implemented;
