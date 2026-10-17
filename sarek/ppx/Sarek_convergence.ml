@@ -72,6 +72,29 @@ type variance = {
 
 let legacy_variance = {strict = false; defs = []; visiting = []}
 
+(** Memo of [assigned_varying], per mutable name: the scan of an inner [let mut]
+    body is repeated by every enclosing [let mut], which is exponential in their
+    nesting. An entry is valid for one body (physical equality), one variance
+    environment and one set of visible helpers. Cleared at each kernel check. *)
+type assigned_entry = {
+  ae_body : texpr;
+  ae_env : StringSet.t;
+  ae_vi : variance;
+  ae_result : bool;
+}
+
+let assigned_memo : (string, assigned_entry list) Hashtbl.t = Hashtbl.create 64
+
+let find_assigned vi env name body =
+  List.find_opt
+    (fun e ->
+      e.ae_body == body
+      && StringSet.equal e.ae_env env
+      && e.ae_vi.defs == vi.defs
+      && e.ae_vi.visiting = vi.visiting
+      && e.ae_vi.strict = vi.strict)
+    (Option.value ~default:[] (Hashtbl.find_opt assigned_memo name))
+
 (** Analysis context *)
 type ctx = {
   mode : exec_mode;
@@ -324,6 +347,18 @@ and helper_result_varying vi env (f : texpr) (args : texpr list) : bool =
     thread-varying value or under thread-varying control flow? Then its value
     after the assignment differs per thread. *)
 and assigned_varying vi env name (body : texpr) : bool =
+  match find_assigned vi env name body with
+  | Some e -> e.ae_result
+  | None ->
+      let result = assigned_varying_scan vi env name body in
+      Hashtbl.replace
+        assigned_memo
+        name
+        ({ae_body = body; ae_env = env; ae_vi = vi; ae_result = result}
+        :: Option.value ~default:[] (Hashtbl.find_opt assigned_memo name)) ;
+      result
+
+and assigned_varying_scan vi env name (body : texpr) : bool =
   let rec scan mode env (e : texpr) : bool =
     match e.te with
     | TEAssign (n, _, value) ->
@@ -726,6 +761,7 @@ let rec has_sync_point (te : texpr) : bool =
 (** Check an expression as a whole kernel body: the legacy analysis, then the
     strict analysis for synchronisation points. *)
 let check_toplevel_expr (te : texpr) : Sarek_error.error list =
+  Hashtbl.reset assigned_memo ;
   add_strict_sync_errors
     ~legacy:(check_expr init_ctx te)
     ~strict:
@@ -735,6 +771,7 @@ let check_toplevel_expr (te : texpr) : Sarek_error.error list =
 
 (** Check a kernel for convergence safety *)
 let check_kernel (kernel : tkernel) : (unit, Sarek_error.error list) result =
+  Hashtbl.reset assigned_memo ;
   (* Module functions that contain a synchronisation point, in definition order
      so a later one sees an earlier one. *)
   let sync_helpers =

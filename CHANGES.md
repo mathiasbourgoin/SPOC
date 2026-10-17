@@ -16,9 +16,9 @@
   Limits of the stricter analysis for barriers: the variance of a `mut` is flow-insensitive, so a
   `mut` used as a uniform loop counter for a barrier loop and later assigned a thread-varying value
   is refused (use a separate `mut`); a barrier after a tuple `let` that destructures a thread-varying
-  component is refused (already so before this change); the strict pass is exponential in the nesting
-  depth of `let mut` and of helper call chains (20 nested `let mut` take about 3 s to compile, 22
-  about 11 s, against 0.2 s before); helpers resolve names lexically in the strict pass (a helper
+  component is refused (already so before this change); the strict pass is exponential in the length of
+  helper call chains (a chain of 22 helpers takes about 5 s to compile, against 0.2 s before; nested
+  `let mut` scans are memoised: a kernel of 22 nested mutables and a 22-helper chain compile in 4 s together); helpers resolve names lexically in the strict pass (a helper
   redefined after use no longer hides a barrier).
 
 ### Added
