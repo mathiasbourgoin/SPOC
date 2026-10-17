@@ -683,6 +683,28 @@ Standard OpenCL math functions are available through the intrinsic registry:
 - `floor`, `ceil`, `round`, `trunc`, `fabs`
 - `fmin`, `fmax`, `fmod`, `copysign`
 
+## Warp shuffles (sub-groups)
+
+`warp_shuffle`, `warp_shuffle_down`, `warp_shuffle_up`, `warp_shuffle_xor`
+(`int32`, `float32`, `float64`), `warp_size` and `lane_id` map to sub-group
+built-ins: the source lane is computed from `get_sub_group_local_id()` and
+`get_sub_group_size()` and read with `sub_group_shuffle` (extension
+`cl_khr_subgroup_shuffle`; `cl_khr_subgroups` is declared too). Only the base
+shuffle is needed, not `cl_khr_subgroup_shuffle_relative`. Kernels that use a
+sub-group built-in are built with `-cl-std=CL3.0` (OpenCL 3.0 devices) or
+`-cl-std=CL2.0` (2.x), because the built-ins are invisible at the default
+language level.
+
+A device gets the `warp-shuffle` feature only if it lists
+`cl_khr_subgroup_shuffle` **and** a probe kernel (`Opencl_warp_probe`, run once
+per device) measures `lane = linear local id mod W` for a 64x1 and an 8x8
+block; `warp_size` is that measured `W` (it was the constant 32; a device
+without sub-groups reports 1). On this workstation the RX 7900 XTX under
+rusticl passes (W = 64), the pocl and llvmpipe CPU devices fail the 8x8 shape and
+refuse shuffle kernels. A kernel that shuffles is refused at launch unless its
+block is a multiple of `W`. Without the extension the kernel is refused with a
+message naming the feature; emulation through `__local` memory is planned.
+
 ## Testing
 
 ### Running Tests

@@ -78,6 +78,20 @@ module Vulkan = struct
               (if dev.Vulkan_api.Device.supports_fp16 then
                  [Sarek_ir_analysis.Float16]
                else []);
+              (* Warp_shuffle: probed (BASIC and SHUFFLE subgroup operations
+                 for the compute stage), never assumed. NOT probed: that the
+                 hardware lane of an invocation equals its linear local id
+                 modulo the subgroup size, which Vulkan does not promise (plan
+                 risk R1); this backend has no runtime lane-mapping probe, does not require full
+                 subgroups, and therefore claims the feature only with the
+                 opt-in SPOC_VULKAN_SUBGROUP_SHUFFLE=1; it has
+                 no device run in CI (decision D7 / the owner's rule against
+                 running Vulkan on the shared workstation). *)
+              (if
+                 dev.Vulkan_api.Device.subgroup_shuffle
+                 && Sys.getenv_opt "SPOC_VULKAN_SUBGROUP_SHUFFLE" = Some "1"
+               then [Sarek_ir_analysis.Warp_shuffle]
+               else []);
             ];
         coopmat = dev.Vulkan_api.Device.coopmat;
         supports_atomics = true;

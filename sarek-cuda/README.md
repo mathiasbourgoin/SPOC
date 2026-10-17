@@ -1135,15 +1135,20 @@ mem_fence_system : unit -> unit  (* __threadfence_system() *)
 
 ### Warp Operations (CUDA 9.0+)
 
-**Not available from Sarek kernels yet.** `warp_shuffle`, `warp_shuffle_up`,
-`warp_shuffle_down`, `warp_shuffle_xor`, `warp_vote_all`, `warp_vote_any`,
-`warp_ballot`, `warp_active_mask` and `warp_size` are refused at PPX time with
-a located error: no backend lowers them, and the warp width varies by vendor
-and device (for example 32 on NVIDIA, 32 or 64 on AMD), so `warp_size` has no
-single value. Warp-level collectives arrive
-with warp-scope supersteps (roadmap S1). The CUDA instructions they will map to
-are `__shfl_sync`, `__shfl_up_sync`, `__shfl_down_sync`, `__shfl_xor_sync`,
-`__all_sync`, `__any_sync` and `__ballot_sync`.
+`warp_shuffle`, `warp_shuffle_down`, `warp_shuffle_up` and `warp_shuffle_xor`
+(`int32`, `float32`, `float64`), `warp_size` and `lane_id` are available. The
+contract is the table of `sarek/sarek/BSP.md`: every lane takes part, an
+out-of-range source returns the lane's own value, and a block must be a whole
+number of warps. CUDA C emits `__shfl_sync`, `__shfl_down_sync`,
+`__shfl_up_sync` and `__shfl_xor_sync` with the full mask, the delta or mask
+clamped to 0 outside `[0, 32)`; PTX emits `shfl.sync.{idx,down,up,bfly}.b32`
+(two shuffles for a `float64`) with the lane operand masked or clamped the same
+way (the instruction reads only the low five bits of it). `warp_vote_all`,
+`warp_vote_any`, `warp_ballot` and `warp_active_mask` are refused at PPX time
+until warp-scope supersteps (roadmap S1) land; the instructions they will map
+to are `__all_sync`, `__any_sync` and `__ballot_sync`. Tested on the PTX path
+through ZLUDA on gfx1100 (`test_warp_shuffle_parity`); the NVRTC (CUDA C) source
+is tested as text only.
 
 ## Testing
 

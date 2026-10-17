@@ -94,6 +94,13 @@ type t = {
       (** Whether {!subgroup_size} is a measurement rather than the fallback.
           Both local devices are probed; a [false] here is a test failure, not a
           degradation to be tolerated. *)
+  subgroup_shuffle : bool;
+      (** [VkPhysicalDeviceSubgroupProperties]: [supportedOperations] has BASIC
+          and SHUFFLE and [supportedStages] has COMPUTE. What the warp shuffles
+          lowered to [GL_KHR_shader_subgroup_shuffle] need. The shuffles are
+          emitted as index shuffles (the source lane is computed), so the
+          SHUFFLE_RELATIVE bit is not required. [false] on a Vulkan 1.0 device,
+          where the struct is never written. *)
   coopmat_extension_advertised : bool;
       (** Whether [vkEnumerateDeviceExtensionProperties] listed
           [VK_KHR_cooperative_matrix] for this physical device. *)
@@ -480,6 +487,7 @@ type extended_properties = {
   ep_driver_info : string;
   ep_subgroup_size : int;
       (** Always positive — see {!fallback_subgroup_size}. *)
+  ep_subgroup_shuffle : bool;  (** See {!t.subgroup_shuffle}. *)
   ep_subgroup_size_probed : bool;
       (** [false] when the driver left [subgroupSize] at the zero {!zero_struct}
           wrote, so {!ep_subgroup_size} is the fallback rather than a
@@ -502,6 +510,14 @@ type extended_properties = {
     [test_vulkan_coopmat_capability] asserts that every local device is PROBED —
     the fallback going live here is a test failure, not a quiet degradation. *)
 let fallback_subgroup_size = 32
+
+(** Whether a device can run the warp shuffles lowered to
+    [GL_KHR_shader_subgroup_shuffle]: [supportedOperations] has BASIC (0x1) and
+    SHUFFLE (0x10) and [supportedStages] has COMPUTE (0x20). Pure, so the bit
+    arithmetic is tested without a device. The relative-shuffle bit is not
+    needed: up, down and xor are emitted as index shuffles. *)
+let subgroup_shuffle_supported ~operations ~stages =
+  operations land 0x11 = 0x11 && stages land 0x20 <> 0
 
 (** Driver identity and subgroup size, through one [VkPhysicalDeviceProperties2]
     chain. Both are core Vulkan 1.1 property structs, so no extension gate. *)
@@ -545,6 +561,14 @@ let query_extended_properties phys_dev =
       (if reported_subgroup_size > 0 then reported_subgroup_size
        else fallback_subgroup_size);
     ep_subgroup_size_probed = reported_subgroup_size > 0;
+    ep_subgroup_shuffle =
+      subgroup_shuffle_supported
+        ~operations:
+          (Unsigned.UInt32.to_int
+             (getf subgroup subgroup_props_supportedOperations))
+        ~stages:
+          (Unsigned.UInt32.to_int
+             (getf subgroup subgroup_props_supportedStages));
   }
 
 (** {2 Cooperative-matrix configuration enumeration} *)
@@ -1228,6 +1252,7 @@ let get idx =
           driver_info = props2.ep_driver_info;
           subgroup_size = props2.ep_subgroup_size;
           subgroup_size_probed = props2.ep_subgroup_size_probed;
+          subgroup_shuffle = props2.ep_subgroup_shuffle;
           coopmat_extension_advertised =
             has_ext vk_khr_cooperative_matrix_extension_name;
           coopmat_enabled = want_coopmat;

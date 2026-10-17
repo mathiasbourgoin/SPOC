@@ -107,6 +107,15 @@ module Device = struct
     local_mem_size : int64;
     max_clock_freq : int;
     supports_fp64 : bool;
+    version : int * int;
+        (* CL_DEVICE_VERSION, "OpenCL <major>.<minor> ...": the OpenCL C
+           language level a sub-group kernel must be built against
+           ({!Device.subgroup_build_options}). (0, 0) when unparsable. *)
+    supports_subgroup_shuffle : bool;
+        (* The device lists [cl_khr_subgroup_shuffle] in CL_DEVICE_EXTENSIONS.
+           A hint only: the
+           plugin claims the warp-shuffle feature after
+           {!Opencl_warp_probe.probe} has measured the lane mapping. *)
     supports_int64 : bool;
         (* 64-bit integer support. Core in the FULL profile; optional in
            EMBEDDED_PROFILE, where it is gated on [cles_khr_int64]. Probed
@@ -260,6 +269,21 @@ module Device = struct
     let supports_fp64 =
       contains "cl_khr_fp64" extensions || contains "cl_amd_fp64" extensions
     in
+    (* [cl_khr_subgroup_shuffle] depends on sub-group support and is listed
+       alone by OpenCL 3.0 devices where sub-groups are an optional core feature
+       ([__opencl_c_subgroups]) rather than the [cl_khr_subgroups] extension
+       (rusticl on radeonsi). *)
+    let version =
+      try
+        Scanf.sscanf
+          (get_info_string handle CL_DEVICE_VERSION)
+          "OpenCL %d.%d"
+          (fun major minor -> (major, minor))
+      with _ -> (0, 0)
+    in
+    let supports_subgroup_shuffle =
+      contains "cl_khr_subgroup_shuffle" extensions
+    in
 
     (* 64-bit integer support (#142 follow-up).
 
@@ -317,12 +341,26 @@ module Device = struct
       local_mem_size;
       max_clock_freq;
       supports_fp64;
+      version;
+      supports_subgroup_shuffle;
       supports_int64;
       is_cpu;
       mem_base_addr_align;
       max_mem_alloc_size;
       single_fp_config;
     }
+
+  (** Build options a SUB-GROUP kernel needs on [d]. The sub-group built-ins are
+      invisible at the default language level (OpenCL C 1.2) of an OpenCL
+      2.x/3.0 device, so the level is raised to what the device implements:
+      OpenCL C 3.0 for a 3.0 device (where sub-groups are the optional core
+      feature [__opencl_c_subgroups]), 2.0 for a 2.x device. Empty on a 1.x
+      device, which has no sub-groups. *)
+  let subgroup_build_options d =
+    match d.version with
+    | major, _ when major >= 3 -> "-cl-std=CL3.0"
+    | 2, _ -> "-cl-std=CL2.0"
+    | _ -> ""
 
   let init () = () (* OpenCL doesn't require explicit init *)
 

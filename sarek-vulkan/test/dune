@@ -218,3 +218,12 @@
  (name bench_vulkan_pinned_copy)
  (modules bench_vulkan_pinned_copy)
  (libraries sarek_vulkan spoc_core unix ctypes))
+
+; Subgroup shuffle claims of the Vulkan backend (the shuffle plan, AC-6): the
+; capability bits, the extension lines and the compile environment. Pure, no
+; device and no driver call.
+
+(test
+ (name test_vulkan_warp_capability)
+ (modules test_vulkan_warp_capability)
+ (libraries sarek_vulkan sarek_ir alcotest))

@@ -54,7 +54,14 @@ module Hip : Framework_sig.PLUGIN_BASE = struct
         compute_capability = d.compute_capability;
         (* As CUDA: fp64 and int64 are core on every HIP target. Float16 is
            omitted for the same reason — unprobed, so not claimed. *)
-        device_features = [Sarek_ir_analysis.Float64; Sarek_ir_analysis.Int64];
+        (* Warp_shuffle: __shfl* are core HIP device functions on every AMD
+           target, with the width the device reports (warp_size below). *)
+        device_features =
+          [
+            Sarek_ir_analysis.Float64;
+            Sarek_ir_analysis.Int64;
+            Sarek_ir_analysis.Warp_shuffle;
+          ];
         coopmat = Some (Hip_coopmat.probe d);
         supports_atomics = true;
         warp_size = d.warp_size;

@@ -68,7 +68,14 @@ module Cuda : Framework_sig.PLUGIN_BASE = struct
            right here to decide it — but wiring that is a separate change from
            #142, and listing a feature we have not gated would be the
            permissive default this list exists to remove. *)
-        device_features = [Sarek_ir_analysis.Float64; Sarek_ir_analysis.Int64];
+        (* Warp_shuffle: shfl.sync / __shfl_sync need sm_30, below every device
+           Sarek targets. *)
+        device_features =
+          [
+            Sarek_ir_analysis.Float64;
+            Sarek_ir_analysis.Int64;
+            Sarek_ir_analysis.Warp_shuffle;
+          ];
         (* backlog-62: no cooperative-matrix probe here. [None] is "not
            probed", which Sarek_coopmat.verdict maps to Unknown and therefore
            refuses; an empty list would be a positive claim nobody measured.

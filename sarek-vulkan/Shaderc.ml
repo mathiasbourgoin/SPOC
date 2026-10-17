@@ -87,6 +87,31 @@ let shaderc_glsl_tess_evaluation_shader = 5
 
 (** {1 Functions} *)
 
+(* Compile options, used only to raise the target environment to Vulkan 1.1
+   (SPIR-V 1.3) for a shader that uses subgroup operations: glslang refuses
+   "subgroup op" below SPIR-V 1.3. Kept to that case because Vulkan 1.1 changes
+   the storage class of buffer blocks (see compile_glsl_to_spirv_cli). *)
+let shaderc_compile_options_initialize_lazy =
+  foreign_lazy
+    "shaderc_compile_options_initialize"
+    (void @-> returning shaderc_compile_options)
+
+let shaderc_compile_options_set_target_env_lazy =
+  foreign_lazy
+    "shaderc_compile_options_set_target_env"
+    (shaderc_compile_options @-> int @-> uint32_t @-> returning void)
+
+let shaderc_compile_options_release_lazy =
+  foreign_lazy
+    "shaderc_compile_options_release"
+    (shaderc_compile_options @-> returning void)
+
+(* shaderc_target_env_vulkan, shaderc_env_version_vulkan_1_1 *)
+let shaderc_target_env_vulkan = 0
+
+let shaderc_env_version_vulkan_1_1 =
+  Unsigned.UInt32.of_int ((1 lsl 22) lor (1 lsl 12))
+
 let shaderc_compiler_initialize_lazy =
   foreign_lazy
     "shaderc_compiler_initialize"
@@ -172,7 +197,7 @@ let get_compiler () =
       global_compiler := Some c ;
       c
 
-let compile_glsl_to_spirv ~entry_point source =
+let compile_glsl_to_spirv ?(vulkan_1_1 = false) ~entry_point source =
   let compiler = get_compiler () in
   let src_len = String.length source in
   let len = Unsigned.Size_t.of_int src_len in
@@ -185,6 +210,18 @@ let compile_glsl_to_spirv ~entry_point source =
   in
 
   (* Compile *)
+  let options =
+    if vulkan_1_1 then begin
+      let o = Lazy.force shaderc_compile_options_initialize_lazy () in
+      Lazy.force
+        shaderc_compile_options_set_target_env_lazy
+        o
+        shaderc_target_env_vulkan
+        shaderc_env_version_vulkan_1_1 ;
+      o
+    end
+    else null
+  in
   let result =
     shaderc_compile_into_spv
       compiler
@@ -193,8 +230,9 @@ let compile_glsl_to_spirv ~entry_point source =
       shaderc_glsl_compute_shader
       "shader.glsl"
       entry_point
-      null
+      options
   in
+  if vulkan_1_1 then Lazy.force shaderc_compile_options_release_lazy options ;
   ignore (Sys.opaque_identity (source, entry_point)) ;
 
   let status = shaderc_result_get_compilation_status result in
