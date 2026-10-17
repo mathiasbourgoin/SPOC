@@ -51,13 +51,13 @@ type helper_def = {
           site; empty for a module-level function. *)
 }
 
-(** How variance is computed. The [legacy] analysis is the one the barrier rules
-    were written against and is kept unchanged. The [strict] analysis is applied
-    to warp collectives only (they give an undefined result, not a deadlock, so
-    a missed divergence is a silent wrong answer): it also follows the value of
-    an [if]/[match], a helper result that reads the thread, and a mutable
-    assigned under thread-varying control flow (specs/convergence-semantics.md
-    section 3). *)
+(** How variance is computed. The [legacy] analysis is the first, cheap pass.
+    The [strict] analysis is applied to every synchronisation point (warp
+    collectives, whose missed divergence is a silent wrong answer, and barriers,
+    whose missed divergence is a deadlock or undefined behaviour): it also
+    follows the value of an [if]/[match], a helper result that reads the thread,
+    and a mutable assigned under thread-varying control flow
+    (specs/convergence-semantics.md section 3). *)
 type variance = {
   strict : bool;
   defs : (string * helper_def) list;  (** helpers in scope, innermost first *)
@@ -432,8 +432,10 @@ let sync_error (kind : sync_kind) loc : Sarek_error.error =
   | Barrier_sync -> Sarek_error.Barrier_in_diverged_flow loc
   | Warp_sync name -> Sarek_error.Warp_collective_in_diverged_flow (name, loc)
 
-let is_warp_error : Sarek_error.error -> bool = function
-  | Sarek_error.Warp_collective_in_diverged_flow _ -> true
+let is_sync_error : Sarek_error.error -> bool = function
+  | Sarek_error.Warp_collective_in_diverged_flow _
+  | Sarek_error.Barrier_in_diverged_flow _ ->
+      true
   | _ -> false
 
 (** Collect errors from convergence analysis *)
@@ -469,8 +471,8 @@ let rec check_expr ctx (te : texpr) : Sarek_error.error list =
   | TEWhile (cond, body) ->
       let cond_varying = varying ctx.variance ctx.varying_vars cond in
       (* A thread-varying condition is re-evaluated at every iteration by the
-         threads still looping only, so a warp collective inside it runs in
-         diverged flow (strict analysis only: barrier rules are unchanged). *)
+         threads still looping only, so a synchronisation point inside it runs in
+         diverged flow (strict analysis only). *)
       let cond_ctx =
         if ctx.variance.strict && cond_varying then diverge ctx else ctx
       in
@@ -635,8 +637,8 @@ let rec check_expr ctx (te : texpr) : Sarek_error.error list =
 (** Strict analysis: a call to a helper whose body is checked with the
     parameters that the call makes thread-varying. The definition itself is
     checked with uniform parameters, so a shuffle under [if param > k] is only
-    seen here. Only warp collectives are reported (the barrier rules are
-    unchanged); a helper already being re-checked is not entered again. *)
+    seen here. Only synchronisation errors are reported; a helper already being
+    re-checked is not entered again. *)
 and check_helper_call ctx (f : texpr) (args : texpr list) :
     Sarek_error.error list =
   let strict_call =
@@ -658,7 +660,7 @@ and check_helper_call ctx (f : texpr) (args : texpr list) :
                 call_stack = name :: ctx.call_stack;
               }
             in
-            List.filter is_warp_error (check_expr ctx_body def.hd_body))
+            List.filter is_sync_error (check_expr ctx_body def.hd_body))
   | _ -> []
 
 (** Check a module item *)
@@ -674,13 +676,13 @@ let check_kernel_with ctx (kernel : tkernel) : Sarek_error.error list =
   in
   item_errors @ check_expr ctx kernel.tkern_body
 
-(** The warp-collective errors only the strict analysis sees in [legacy]'s blind
+(** The synchronisation errors only the strict analysis sees in [legacy]'s blind
     spots: [strict] errors that [legacy] did not already report. *)
-let add_strict_warp_errors ~legacy ~strict =
+let add_strict_sync_errors ~legacy ~strict =
   let extra =
     List.fold_left
       (fun acc e ->
-        if is_warp_error e && not (List.mem e legacy || List.mem e acc) then
+        if is_sync_error e && not (List.mem e legacy || List.mem e acc) then
           e :: acc
         else acc)
       []
@@ -688,17 +690,25 @@ let add_strict_warp_errors ~legacy ~strict =
   in
   legacy @ List.rev extra
 
-(** Does [te] contain a warp collective? The strict analysis is skipped for a
-    kernel without one (it only reports warp collectives). *)
-let rec has_warp_collective (te : texpr) : bool =
+(** Does [te] contain a synchronisation point (barrier, superstep or warp
+    collective)? The strict analysis is skipped for a kernel without one (it
+    only reports synchronisation errors). *)
+let rec has_sync_point (te : texpr) : bool =
   match te.te with
-  | TEIntrinsicFun (_, Some Sarek_core_primitives.WarpConvergence, _) -> true
-  | _ -> List.exists has_warp_collective (sub_exprs te)
+  | TESuperstep _
+  | TEIntrinsicFun
+      ( _,
+        Some
+          ( Sarek_core_primitives.ConvergencePoint
+          | Sarek_core_primitives.WarpConvergence ),
+        _ ) ->
+      true
+  | _ -> List.exists has_sync_point (sub_exprs te)
 
 (** Check an expression as a whole kernel body: the legacy analysis, then the
-    strict analysis for warp collectives. *)
+    strict analysis for synchronisation points. *)
 let check_toplevel_expr (te : texpr) : Sarek_error.error list =
-  add_strict_warp_errors
+  add_strict_sync_errors
     ~legacy:(check_expr init_ctx te)
     ~strict:
       (check_expr
@@ -740,15 +750,15 @@ let check_kernel (kernel : tkernel) : (unit, Sarek_error.error list) result =
   let ctx = {init_ctx with sync_helpers} in
   let strict_ctx = {ctx with variance = {strict = true; defs; visiting = []}} in
   let all_errors =
-    add_strict_warp_errors
+    add_strict_sync_errors
       ~legacy:(check_kernel_with ctx kernel)
       ~strict:
         (if
-           has_warp_collective kernel.tkern_body
+           has_sync_point kernel.tkern_body
            || List.exists
                 (function
                   | TMFun (_, _, _, b) | TMConst (_, _, _, b) ->
-                      has_warp_collective b)
+                      has_sync_point b)
                 kernel.tkern_module_items
          then check_kernel_with strict_ctx kernel
          else [])

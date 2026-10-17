@@ -1,5 +1,19 @@
 ## 2026-10
 
+### Changed
+
+- Convergence: the strict variance analysis introduced for warp shuffles now also covers block
+  barriers and supersteps. A barrier is refused when the thread-varying condition reaches it through a
+  helper parameter that the caller makes varying, a helper result that reads a thread index, the
+  value of a thread-varying `if`/`match`, or a `mut` variable assigned under thread-varying control
+  flow or a thread-varying value (`Sarek_convergence.check_kernel`; negative tests
+  `test_barrier_diverged_param`, `_result`, `_mut`, and `test_convergence` "strict barrier"). Before
+  this change these four kernels were accepted and would deadlock or give undefined results on a
+  GPU. Kernels accepted before and refused now: none among the repository's kernels (tests,
+  examples, benchmarks) nor Katra's `src/kernels` (compiled with the new analysis); a kernel that
+  relies on one of the four routes to hide a barrier under a varying test must make the test
+  uniform (hoist the barrier out of the branch).
+
 ### Added
 
 - Warp shuffles: `warp_shuffle`, `warp_shuffle_down`, `warp_shuffle_up` and `warp_shuffle_xor`
@@ -43,17 +57,15 @@
   The convergence check refuses a shuffle reached through a helper parameter that the caller makes
   thread-varying, a helper result that reads a thread index, the value of a thread-varying
   `if`/`match`, or a `mut` variable assigned under thread-varying control flow or a thread-varying
-  value (`Sarek_convergence`, a strict variance analysis applied to warp collectives only;
+  value (`Sarek_convergence`, a strict variance analysis applied to warp collectives, barriers and supersteps;
   `test_warp_diverged_param`, `_result`, `_mut`, `_if_value` and `test_convergence` "strict").
-  **Known limits:** the barrier rules still use the earlier, weaker variance analysis, so the same
-  four routes are not refused for a barrier (left unchanged on purpose: tightening it could reject
-  existing kernels; to be done as its own change); reads of memory at a uniform index count as
+  **Known limits:** reads of memory at a uniform index count as
   uniform (specs/convergence-semantics.md section 3, race freedom). Still accepted for a warp
-  shuffle (found by the independent review of e42648dc, follow-up work): a helper selected through a
+  shuffle or a barrier (found by the independent review of e42648dc, follow-up work): a helper selected through a
   function-valued `if` (the check runs before defunctionalisation), a recursive helper whose
   recursive call makes a parameter varying, variance stored through a local array or record, a `mut`
   assigned inside a local helper, and a call chain of more than 8 helpers; the strict analysis is
-  exponential in the nesting depth of `let mut` and skipped for kernels without a warp collective;
+  exponential in the nesting depth of `let mut` and skipped for kernels without a barrier, superstep or warp collective;
   it rejects a tuple `let` whose scrutinee is varying even if the shuffle does not use it, and a shuffle in a `while` condition whose value counts as thread-varying (the shuffle result itself is varying, so even a loop on a uniform value is refused); a shuffling helper passed as an argument to a higher-order helper is still accepted (same root cause as the function-valued `if`); a `let s = ... s ...` that rebinds
   a name in the same scope (including a kernel parameter's name) still emits a C redefinition on the
   CUDA, HIP and OpenCL source backends (pre-existing, not specific to warps); Vulkan claims the feature only with `SPOC_VULKAN_SUBGROUP_SHUFFLE=1` (no lane-mapping
