@@ -28,6 +28,9 @@
   non-Bigarray storage keep the accessor path. Not changed: superstep handling, arithmetic.
   `bench_native_matvec` native, median of 15, alternating, tartarus load about 1: row 55.5 ms to
   29.5 ms, wave 189 ms to 140 ms, copy 4.0 ms to 2.9 ms; checksums identical.
+  One observable difference: a float32/int32 vector argument in `Stale_CPU` is now downloaded when the
+  launch arguments are built, even if the kernel never reads it (it becomes `Both`); the native
+  argument record is valid for the launch that built it only.
 - `Transfer.create_stream ?non_blocking:bool` (default `false`, unchanged): `~non_blocking:true`
   makes a stream the device's default stream does not wait for (HIP `hipStreamNonBlocking`,
   CUDA `CU_STREAM_NON_BLOCKING`), so a copy stream can overlap kernels on the default stream;
