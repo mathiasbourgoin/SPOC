@@ -10,11 +10,30 @@
   <span><span class="xref-unresolved">Ppxlib__</span>.Import.expression <span class="arrow">&#45;&gt;</span></span>
   <span><a href="../Sarek_types/index.html#type-typ">Sarek_types.typ</a> <span class="arrow">&#45;&gt;</span></span>
   <span>string <span class="arrow">&#45;&gt;</span></span>
-  <span class="xref-unresolved">Ppxlib__</span>.Import.expression</span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-gen_memory_access"><a href="#val-gen_memory_access" class="anchor"></a><code><span><span class="keyword">val</span> gen_memory_access : 
+  <span class="xref-unresolved">Ppxlib__</span>.Import.expression</span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-fast_vec_of"><a href="#val-fast_vec_of" class="anchor"></a><code><span><span class="keyword">val</span> fast_vec_of : 
+  <span><span class="label">loc</span>:<span class="xref-unresolved">Ppxlib__</span>.Location.t <span class="arrow">&#45;&gt;</span></span>
+  <span><a href="../Sarek_native_gen_base/index.html#type-gen_context">Sarek_native_gen_base.gen_context</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><a href="../Sarek_typed_ast/index.html#type-texpr">Sarek_typed_ast.texpr</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><span>(<a href="../Sarek_native_gen_base/index.html#type-fast_kind">Sarek_native_gen_base.fast_kind</a> * <span class="xref-unresolved">Ppxlib__</span>.Import.expression)</span> option</span></span></code></div><div class="spec-doc"><p>The direct-access kind and fast-record variable of <code>vec</code> when it is a float32/int32 vector parameter bound for the fast path.</p></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-gen_fast_get"><a href="#val-gen_fast_get" class="anchor"></a><code><span><span class="keyword">val</span> gen_fast_get : 
   <span><span class="label">loc</span>:<span class="xref-unresolved">Ppxlib</span>.location <span class="arrow">&#45;&gt;</span></span>
+  <span><a href="../Sarek_native_gen_base/index.html#type-fast_kind">Sarek_native_gen_base.fast_kind</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="xref-unresolved">Ppxlib_ast</span>.Ast.expression <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="xref-unresolved">Ppxlib_ast</span>.Ast.expression <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="xref-unresolved">Ppxlib_ast</span>.Ast.expression <span class="arrow">&#45;&gt;</span></span>
+  <span class="xref-unresolved">Ppxlib_ast</span>.Ast.expression</span></code></div><div class="spec-doc"><p><code>v.(i)</code> on a fast vector: in range (the vector's length, as <code>Vector.get</code> tests it) it reads the Bigarray, otherwise it calls the accessor object, which raises <code>Vector.get</code>'s error. The index is evaluated once.</p></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-gen_fast_set"><a href="#val-gen_fast_set" class="anchor"></a><code><span><span class="keyword">val</span> gen_fast_set : 
+  <span><span class="label">loc</span>:<span class="xref-unresolved">Ppxlib</span>.location <span class="arrow">&#45;&gt;</span></span>
+  <span><a href="../Sarek_native_gen_base/index.html#type-fast_kind">Sarek_native_gen_base.fast_kind</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="xref-unresolved">Ppxlib_ast</span>.Ast.expression <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="xref-unresolved">Ppxlib_ast</span>.Ast.expression <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="xref-unresolved">Ppxlib_ast</span>.Ast.expression <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="xref-unresolved">Ppxlib_ast</span>.Ast.expression <span class="arrow">&#45;&gt;</span></span>
+  <span class="xref-unresolved">Ppxlib_ast</span>.Ast.expression</span></code></div><div class="spec-doc"><p><code>v.(i) &lt;- x</code> on a fast vector. The value is evaluated before the index, the order of the arguments of <code>v#set i x</code>; a store marks the device copy stale as <code>Vector.set</code> does.</p></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-gen_memory_access"><a href="#val-gen_memory_access" class="anchor"></a><code><span><span class="keyword">val</span> gen_memory_access : 
+  <span><span class="label">loc</span>:<span class="xref-unresolved">Ppxlib__</span>.Location.t <span class="arrow">&#45;&gt;</span></span>
   <span><span class="label">ctx</span>:<a href="../Sarek_native_gen_base/index.html#type-gen_context">Sarek_native_gen_base.gen_context</a> <span class="arrow">&#45;&gt;</span></span>
   <span><span class="label">gen_expr</span>:
-    <span>(<span><span class="label">loc</span>:<span class="xref-unresolved">Ppxlib</span>.location <span class="arrow">&#45;&gt;</span></span> <span><a href="../Sarek_typed_ast/index.html#type-texpr">Sarek_typed_ast.texpr</a> <span class="arrow">&#45;&gt;</span></span> <span class="xref-unresolved">Ppxlib_ast</span>.Ast.expression)</span> <span class="arrow">&#45;&gt;</span></span>
+    <span>(<span><span class="label">loc</span>:<span class="xref-unresolved">Ppxlib__</span>.Location.t <span class="arrow">&#45;&gt;</span></span>
+      <span><a href="../Sarek_typed_ast/index.html#type-texpr">Sarek_typed_ast.texpr</a> <span class="arrow">&#45;&gt;</span></span>
+      <span class="xref-unresolved">Ppxlib_ast</span>.Ast.expression)</span> <span class="arrow">&#45;&gt;</span></span>
   <span><a href="../Sarek_typed_ast/index.html#type-texpr">Sarek_typed_ast.texpr</a> <span class="arrow">&#45;&gt;</span></span>
   <span class="xref-unresolved">Ppxlib</span>.expression</span></code></div><div class="spec-doc"><p>Generate memory access operations (vectors, arrays, record fields)</p></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-gen_let_binding"><a href="#val-gen_let_binding" class="anchor"></a><code><span><span class="keyword">val</span> gen_let_binding : 
   <span><span class="label">loc</span>:<span class="xref-unresolved">Ppxlib__</span>.Location.t <span class="arrow">&#45;&gt;</span></span>
