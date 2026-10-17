@@ -134,14 +134,17 @@ Assumptions, documented in ASSUMPTIONS.md:
   they are never synchronisation points.
 
 **Implementation status.** `Sarek_convergence` implements this table in a
-*strict* variance analysis that is applied to warp collectives only: helper
+*strict* variance analysis that is applied to every synchronisation point
+(warp collectives, block barriers and supersteps): helper
 parameters made varying by a call (the helper body is re-checked at the call
 with those parameters varying, H-1), helper results that read the thread (the
 body is unfolded per call, recursion cut), the value of `if`/`match`, and
 mutables assigned a varying value or under varying control (C-1; flow-insensitive
-per variable). Barriers and supersteps still use the earlier analysis (let-bound
-variance only); aligning them is a separate change because it can reject kernels
-that compile today. Private-array reads (C-5) and loop-carried fixpoints through
+per variable). Barriers and supersteps use it since the barrier-convergence
+change (a barrier reached through a varying helper parameter, a thread-dependent
+helper result, a mutable assigned in divergence or the value of a varying `if`
+is refused like a warp collective); the repository's kernels and Katra's
+compile unchanged under it. Private-array reads (C-5) and loop-carried fixpoints through
 several mutables are not tracked by either analysis.
 
 ## 4. Helpers (C-3)
