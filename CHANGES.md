@@ -18,7 +18,7 @@
   is refused (use a separate `mut`); a barrier after a tuple `let` that destructures a thread-varying
   component is refused (already so before this change); the strict pass is exponential in the length of
   helper call chains (a chain of 22 helpers takes about 5 s to compile, against 0.2 s before; nested
-  `let mut` scans are memoised: a kernel of 22 nested mutables and a 22-helper chain compile in 4 s together); an inline `let` whose bound value varies but whose body does not still counts as varying in the legacy pass (so `let n = (let t = thread_idx_x in ...; 8l) in` before a barrier loop is refused, as before; the helper form is accepted); helpers resolve names lexically in the strict pass (a helper
+  `let mut` scans are memoised: a kernel of 22 nested mutables compile in 0.2 s and a 22-helper chain in 3 s); an inline `let` whose bound value varies but whose body does not still counts as varying in the legacy pass (so `let n = (let t = thread_idx_x in ...; 8l) in` before a barrier loop is refused, as before; the helper form is accepted); helpers resolve names lexically in the strict pass (a helper
   redefined after use no longer hides a barrier).
 
 ### Added
@@ -72,7 +72,7 @@
   function-valued `if` (the check runs before defunctionalisation), a recursive helper whose
   recursive call makes a parameter varying, variance stored through a local array or record, a `mut`
   assigned inside a local helper, and a call chain of more than 8 helpers; the strict analysis is
-  exponential in the nesting depth of `let mut` and skipped for kernels without a barrier, superstep or warp collective;
+  exponential in the length of helper call chains (the `let mut` scans are memoised) and skipped for kernels without a barrier, superstep or warp collective;
   it rejects a tuple `let` whose scrutinee is varying even if the shuffle does not use it, and a shuffle in a `while` condition whose value counts as thread-varying (the shuffle result itself is varying, so even a loop on a uniform value is refused); a shuffling helper passed as an argument to a higher-order helper is still accepted (same root cause as the function-valued `if`); a `let s = ... s ...` that rebinds
   a name in the same scope (including a kernel parameter's name) still emits a C redefinition on the
   CUDA, HIP and OpenCL source backends (pre-existing, not specific to warps); Vulkan claims the feature only with `SPOC_VULKAN_SUBGROUP_SHUFFLE=1` (no lane-mapping
