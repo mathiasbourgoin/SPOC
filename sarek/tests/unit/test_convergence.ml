@@ -517,6 +517,18 @@ let test_strict_barrier_if_value () =
        (TELet ("c", 6, value, if_ (gt (var "c") (int 0)) barrier_call))
        typ_unit)
 
+let test_strict_barrier_while_condition () =
+  (* while (barrier; thread_idx_x > 0) do () : the condition is re-evaluated by
+     the threads still looping only. *)
+  let loop cond = mk_texpr (TEWhile (cond, int 0)) typ_unit in
+  let cond test = seq [barrier_call; test] in
+  barrier_refused
+    "barrier in a varying while condition"
+    (loop (cond (gt tid_x (int 0)))) ;
+  accepted
+    "barrier in a uniform while condition"
+    (loop (cond (gt (int 1) (int 0))))
+
 let test_shuffle_makes_barrier_kernel () =
   (* A shuffle kernel is a barrier kernel for the CPU runtimes: the Native
      simulation exchanges through shared memory between two barriers. *)
@@ -1183,6 +1195,10 @@ let () =
             "strict barrier: value of an if"
             `Quick
             test_strict_barrier_if_value;
+          test_case
+            "strict barrier: while condition"
+            `Quick
+            test_strict_barrier_while_condition;
           test_case
             "a shuffle kernel is a barrier kernel"
             `Quick
