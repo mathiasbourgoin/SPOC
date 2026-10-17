@@ -85,6 +85,7 @@
   test_convention_kernel
   test_pragma
   test_barrier_converged
+  test_warp_shuffle_converged
   test_superstep
   test_fusion_api
   test_stencil
@@ -126,6 +127,7 @@
   test_convention_kernel
   test_pragma
   test_barrier_converged
+  test_warp_shuffle_converged
   test_superstep
   test_fusion_api
   test_stencil
@@ -426,6 +428,7 @@
  (deps
   test_pragma.exe
   test_barrier_converged.exe
+  test_warp_shuffle_converged.exe
   test_superstep.exe
   test_ppx_scan_failure_warning.exe))
 
@@ -2012,6 +2015,9 @@
 (executables
  (names
   test_int32_bitcasts
+  test_warp_shuffle_parity
+  test_warp_shuffle_reduce
+  bench_warp_shuffle
   test_blocking_ffi_releases_lock
   test_lsr_unroll
   test_coopmat_hip_e2e
@@ -2035,6 +2041,9 @@
   test_matrix_kernel_scope)
  (modules
   test_int32_bitcasts
+  test_warp_shuffle_parity
+  test_warp_shuffle_reduce
+  bench_warp_shuffle
   test_blocking_ffi_releases_lock
   test_lsr_unroll
   test_coopmat_hip_e2e
@@ -2091,6 +2100,31 @@
  (alias runtest)
  (action
   (run %{dep:test_int32_bitcasts.exe})))
+
+; warp_shuffle / _down / _up / _xor on int32, float32 and float64: every
+; enumerated device equal, bit for bit, to Sarek_warp.source_lane (the section
+; 4.3 table of docs/plans/warp-shuffle-intake-2026-10-17.md), over the boundary
+; operands, a 1-D and a 2-D block. Native and the Interpreter run at W in
+; {8, 16, 32, 64}; a GPU runs at the width it reports. Built by the
+; test_int32_bitcasts stanza above.
+
+(rule
+ (alias runtest)
+ (action
+  (run %{dep:test_warp_shuffle_parity.exe})))
+
+; The Katra-shaped use (AC-3): an 8-lane xor-tree float32 sum per column, masks
+; 4, 2, 1, equal bit for bit to the same tree through shared memory and barriers
+; on every device. Built by the test_int32_bitcasts stanza above.
+
+(rule
+ (alias runtest)
+ (action
+  (run %{dep:test_warp_shuffle_reduce.exe})))
+
+; Micro-benchmark of the same reduction, shuffle against shared memory with two
+; barriers (AC-9): information only, run by hand on one device:
+;   HIP_VISIBLE_DEVICES=0 dune exec sarek/tests/e2e/bench_warp_shuffle.exe
 
 ; Launch window and horizontal fusion (specs/launch-window.md): window on vs
 ; off bit-identical on every device, launch counts where launches are deferred,
