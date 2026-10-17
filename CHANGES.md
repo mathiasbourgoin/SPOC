@@ -62,7 +62,7 @@
   new values above.
   Tests: also `test_sarek_warp`, `test_warp_capability`, `test_opencl_warp_capability`,
   `test_vulkan_warp_capability`, `test_warp_shuffle_golden` (six goldens), `test_warp_shuffle_converged`,
-  seven new `make test_negative` cases. Docs: `sarek/sarek/BSP.md`, `gh-pages/docs/kernel_language.md`,
+  twelve new `make test_negative` cases. Docs: `sarek/sarek/BSP.md`, `gh-pages/docs/kernel_language.md`,
   the backend READMEs, `specs/convergence-semantics.md`, `docs/plans/warp-shuffle-intake-2026-10-17.md`.
 
 - Launch bounds: `pragma ["sarek.max_threads N"]` around a kernel body declares an upper bound

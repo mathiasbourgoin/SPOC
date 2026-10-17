@@ -143,8 +143,10 @@ Rules:
 - **Devices.** CUDA (C and PTX), HIP, Metal (generated, not run in CI), Vulkan
   (needs the `BASIC` and `SHUFFLE` subgroup operations in the compute stage) and
   OpenCL (needs `cl_khr_subgroup_shuffle`, and the lane mapping is measured once
-  per device) run the shuffles natively. WebGPU/WGSL needs the `subgroups`
-  feature (generated, not run in CI). A device without the feature refuses the
+  per device) get the shuffles lowered to their native subgroup instructions.
+  Execution is verified on HIP, OpenCL (rusticl), PTX through ZLUDA, Native and
+  the Interpreter; CUDA C/NVRTC, Metal, Vulkan and WGSL are generated but not
+  executed in CI. WebGPU/WGSL needs the `subgroups` feature. A device without the feature refuses the
   kernel with a message naming the feature (`warp-shuffle unavailable`);
   emulation through shared memory on such devices is planned, not available.
 - **Native and the Interpreter** simulate a warp of `Sarek_warp.simulated_width
