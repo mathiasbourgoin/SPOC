@@ -269,6 +269,70 @@
 
 <p>On WGSL a constant-size <code class="language-plaintext highlighter-rouge">Local</code> array lowers to a function-scope <code class="language-plaintext highlighter-rouge">var a : array&lt;T, N&gt;</code>.</p>
 
+<h2 id="warp-shuffles">Warp shuffles</h2>
+
+<p>A warp is the group of threads that a device runs in lockstep: a wave on AMD, a SIMD-group on Apple, a subgroup in Vulkan, OpenCL and WebGPU. Four primitives read a value from another lane of the warp, for <code class="language-plaintext highlighter-rouge">int32</code>, <code class="language-plaintext highlighter-rouge">float32</code> and <code class="language-plaintext highlighter-rouge">float64</code> values (the compiler picks the instance from the type of the value). <code class="language-plaintext highlighter-rouge">W</code> is <code class="language-plaintext highlighter-rouge">warp_size</code>, an <code class="language-plaintext highlighter-rouge">int32</code> constant that depends on the device (32 on NVIDIA, RDNA and Apple GPUs, 32 or 64 on AMD, 8 to 64 on Vulkan and OpenCL devices), and the calling lane is <code class="language-plaintext highlighter-rouge">lane_id</code>.</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Call</th>
+      <th>Lane read by lane <code class="language-plaintext highlighter-rouge">i</code></th>
+      <th>Out of range</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">warp_shuffle v x</code></td>
+      <td><code class="language-plaintext highlighter-rouge">x land (W-1)</code></td>
+      <td>cannot occur</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">warp_shuffle_down v d</code></td>
+      <td><code class="language-plaintext highlighter-rouge">i + d</code></td>
+      <td><code class="language-plaintext highlighter-rouge">d &lt; 0</code> or <code class="language-plaintext highlighter-rouge">i + d &gt;= W</code>: the lane’s own <code class="language-plaintext highlighter-rouge">v</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">warp_shuffle_up v d</code></td>
+      <td><code class="language-plaintext highlighter-rouge">i - d</code></td>
+      <td><code class="language-plaintext highlighter-rouge">d &lt; 0</code> or <code class="language-plaintext highlighter-rouge">i - d &lt; 0</code>: the lane’s own <code class="language-plaintext highlighter-rouge">v</code></td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">warp_shuffle_xor v m</code></td>
+      <td><code class="language-plaintext highlighter-rouge">i lxor m</code></td>
+      <td><code class="language-plaintext highlighter-rouge">m &lt; 0</code> or <code class="language-plaintext highlighter-rouge">i lxor m &gt;= W</code>: the lane’s own <code class="language-plaintext highlighter-rouge">v</code></td>
+    </tr>
+  </tbody>
+</table>
+
+<p>The lane operand is an <code class="language-plaintext highlighter-rouge">int32</code>, read in two’s complement. The table holds on every backend: the emitters add the guards that make it so where a vendor leaves a case undefined.</p>
+
+<div class="language-ocaml highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c">(* Sum of 8 consecutive lanes, delivered to each of them: the masks 4, 2, 1
+   stay inside aligned groups of 8 whatever the warp width. *)</span>
+<span class="k">let</span> <span class="n">sum8</span> <span class="o">=</span>
+  <span class="p">[</span><span class="o">%</span><span class="n">kernel</span>
+    <span class="k">fun</span> <span class="p">(</span><span class="n">input</span> <span class="o">:</span> <span class="n">float32</span> <span class="n">vector</span><span class="p">)</span> <span class="p">(</span><span class="n">output</span> <span class="o">:</span> <span class="n">float32</span> <span class="n">vector</span><span class="p">)</span> <span class="o">-&gt;</span>
+      <span class="k">let</span> <span class="k">open</span> <span class="nn">Sarek_stdlib</span><span class="p">.</span><span class="nc">Std</span> <span class="k">in</span>
+      <span class="k">let</span> <span class="n">tid</span> <span class="o">=</span> <span class="n">global_thread_id</span> <span class="k">in</span>
+      <span class="k">let</span> <span class="n">s0</span> <span class="o">=</span> <span class="n">input</span><span class="o">.</span><span class="p">(</span><span class="n">tid</span><span class="p">)</span> <span class="k">in</span>
+      <span class="k">let</span> <span class="n">s1</span> <span class="o">=</span> <span class="n">s0</span> <span class="o">+.</span> <span class="n">warp_shuffle_xor</span> <span class="n">s0</span> <span class="mi">4</span><span class="n">l</span> <span class="k">in</span>
+      <span class="k">let</span> <span class="n">s2</span> <span class="o">=</span> <span class="n">s1</span> <span class="o">+.</span> <span class="n">warp_shuffle_xor</span> <span class="n">s1</span> <span class="mi">2</span><span class="n">l</span> <span class="k">in</span>
+      <span class="k">let</span> <span class="n">s3</span> <span class="o">=</span> <span class="n">s2</span> <span class="o">+.</span> <span class="n">warp_shuffle_xor</span> <span class="n">s2</span> <span class="mi">1</span><span class="n">l</span> <span class="k">in</span>
+      <span class="n">output</span><span class="o">.</span><span class="p">(</span><span class="n">tid</span><span class="p">)</span> <span class="o">&lt;-</span> <span class="n">s3</span><span class="p">]</span>
+</code></pre></div></div>
+
+<p>Rules:</p>
+
+<ul>
+  <li>Every lane of the warp takes part. A shuffle under a thread-varying <code class="language-plaintext highlighter-rouge">if</code>, in a loop whose bound varies per thread, or in a helper called from such code is refused at compile time (<code class="language-plaintext highlighter-rouge">Warp collective 'warp_shuffle_xor' called in diverged control flow</code>). There is no mask and no <code class="language-plaintext highlighter-rouge">width</code> argument; use <code class="language-plaintext highlighter-rouge">xor</code> with masks below a power of two for sub-warp groups.</li>
+  <li>The launch block must be a whole number of warps: a kernel that shuffles is refused with <code class="language-plaintext highlighter-rouge">Execute_error.Invalid_dimensions</code> when <code class="language-plaintext highlighter-rouge">bx * by * bz</code> is not a multiple of the device’s warp width. A thread’s lane is its linear index <code class="language-plaintext highlighter-rouge">tx + bx * (ty + by * tz)</code> modulo <code class="language-plaintext highlighter-rouge">W</code>.</li>
+  <li>CUDA, HIP, Metal, Vulkan and OpenCL devices get the shuffles lowered to their native subgroup instructions; execution is verified on HIP, OpenCL, PTX through ZLUDA, Native and the Interpreter only, the other backends are generated but not executed in CI (Vulkan needs the <code class="language-plaintext highlighter-rouge">BASIC</code> and <code class="language-plaintext highlighter-rouge">SHUFFLE</code> subgroup operations in the compute stage, OpenCL needs <code class="language-plaintext highlighter-rouge">cl_khr_subgroup_shuffle</code> and a lane mapping measured once per device, WebGPU needs the <code class="language-plaintext highlighter-rouge">subgroups</code> feature). A device without the feature refuses the kernel with a message naming it; emulation through shared memory on those devices is planned.</li>
+  <li>Native and the Interpreter simulate a warp of 32 lanes with two block barriers per shuffle. They are slow and exact: they are the reference the device results are compared with, bit for bit.</li>
+  <li><code class="language-plaintext highlighter-rouge">warp_vote_all</code>, <code class="language-plaintext highlighter-rouge">warp_vote_any</code>, <code class="language-plaintext highlighter-rouge">warp_ballot</code> and <code class="language-plaintext highlighter-rouge">warp_active_mask</code> are not available yet.</li>
+</ul>
+
+<p>Sources: <code class="language-plaintext highlighter-rouge">Sarek_warp.ml</code> (the table, executable), <code class="language-plaintext highlighter-rouge">Sarek_ir_warp_text.ml</code> (the source backends), <code class="language-plaintext highlighter-rouge">Sarek_cpu_runtime_warp.ml</code> (Native), <code class="language-plaintext highlighter-rouge">Execute.check_launch_warp</code>.</p>
+
       </div>
     </main>
 
