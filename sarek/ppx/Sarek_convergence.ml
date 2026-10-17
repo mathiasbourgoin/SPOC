@@ -467,10 +467,15 @@ let rec check_expr ctx (te : texpr) : Sarek_error.error list =
       cond_errors @ then_errors @ else_errors
   (* While loop - diverge if condition is thread-varying *)
   | TEWhile (cond, body) ->
-      let cond_errors = check_expr ctx cond in
-      let inner_ctx =
-        if varying ctx.variance ctx.varying_vars cond then diverge ctx else ctx
+      let cond_varying = varying ctx.variance ctx.varying_vars cond in
+      (* A thread-varying condition is re-evaluated at every iteration by the
+         threads still looping only, so a warp collective inside it runs in
+         diverged flow (strict analysis only: barrier rules are unchanged). *)
+      let cond_ctx =
+        if ctx.variance.strict && cond_varying then diverge ctx else ctx
       in
+      let cond_errors = check_expr cond_ctx cond in
+      let inner_ctx = if cond_varying then diverge ctx else ctx in
       let body_errors = check_expr inner_ctx body in
       cond_errors @ body_errors
   (* For loop - check if bounds are thread-varying *)
@@ -537,6 +542,16 @@ let rec check_expr ctx (te : texpr) : Sarek_error.error list =
         else ctx
       in
       let ctx' = {ctx' with variance = alias_def ctx'.variance name value} in
+      (* [let g = helper]: the alias is as synchronising as the helper. *)
+      let ctx' =
+        match
+          Option.bind (helper_name value) (fun h ->
+              List.assoc_opt h ctx'.sync_helpers)
+        with
+        | Some kind ->
+            {ctx' with sync_helpers = (name, kind) :: ctx'.sync_helpers}
+        | None -> ctx'
+      in
       value_errors @ check_expr ctx' body
   | TELetMut (name, _, value, body) ->
       let value_errors = check_expr ctx value in

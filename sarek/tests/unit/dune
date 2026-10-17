@@ -487,7 +487,7 @@
 (test
  (name test_warp_pass_safety)
  (modules test_warp_pass_safety)
- (libraries sarek.codegen sarek.execute sarek_ir alcotest))
+ (libraries sarek sarek.codegen sarek.execute sarek_ir alcotest))
 
 ; Capability gate and launch rule of the warp operations on fake devices
 ; (the shuffle plan, AC-6 / AC-7). No hardware.

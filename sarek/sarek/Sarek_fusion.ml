@@ -615,6 +615,13 @@ let reject_if_intermediate_survives ~(fn : string) ~(intermediate : string)
       ~members:(List.map (fun m -> m.kern_name) members) ;
     fused)
 
+(* Vertical fusion inlines the producer's store expression into the consumer's
+   reads, which moves a shuffle under the consumer's guards where only some
+   lanes of a warp reach it: a kernel with a warp operation never fuses. *)
+let neither_uses_warp_ops a b =
+  (not (Sarek_ir_analysis.kernel_uses_warp_ops a))
+  && not (Sarek_ir_analysis.kernel_uses_warp_ops b)
+
 (** Check if two kernels can be fused via an intermediate array.
 
     Vertical fusion eliminates intermediate arrays by inlining the producer's
@@ -684,8 +691,10 @@ let can_fuse (producer : kernel) (consumer : kernel) (intermediate : string) :
     && not (Sarek_ir_analysis.kernel_uses Sarek_ir_analysis.Coopmat consumer)
   in
 
+  let no_warp_ops = neither_uses_warp_ops producer consumer in
+
   prod_writes_inter && cons_reads_inter && patterns_ok && no_barriers
-  && no_atomics && no_coopmat
+  && no_atomics && no_coopmat && no_warp_ops
   && not (length_of_intermediate_needed producer consumer intermediate)
 
 (** Fuse producer into consumer, eliminating intermediate array.
@@ -962,6 +971,7 @@ let can_fuse_reduction (map_kernel : kernel) (reduce_kernel : kernel)
   map_writes_inter
   && Option.is_some reduce_reads_inter
   && no_barriers && no_atomics
+  && neither_uses_warp_ops map_kernel reduce_kernel
   && not (length_of_intermediate_needed map_kernel reduce_kernel intermediate)
 
 (** Fuse a map kernel into a reduction kernel, eliminating intermediate array.
@@ -1133,6 +1143,7 @@ let can_fuse_stencil (producer : kernel) (consumer : kernel)
   let no_atomics = (not prod_info.has_atomics) && not cons_info.has_atomics in
 
   prod_writes_inter && cons_stencil && no_barriers && no_atomics
+  && neither_uses_warp_ops producer consumer
   && not (length_of_intermediate_needed producer consumer intermediate)
 
 (** Information about fused stencil *)

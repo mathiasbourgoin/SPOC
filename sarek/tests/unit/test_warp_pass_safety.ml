@@ -208,6 +208,37 @@ let test_fusion_epilogue () =
   | (_ : kernel) -> Alcotest.fail "epilogue fusion accepted a shuffle producer"
   | exception Ex.Fusion_epilogue.Incompatible _ -> ()
 
+(* Vertical fusion (can_fuse): the producer's store expression would be inlined
+   under the consumer's guards. *)
+let test_vertical_fusion () =
+  let consumer =
+    let i = var "i" TInt32 in
+    {
+      default_kernel with
+      kern_name = "vert_consumer";
+      kern_params = [vec_param "out" TInt32; vec_param "res" TInt32];
+      kern_body =
+        SLet
+          ( i,
+            EIntrinsic (["Sarek_stdlib"; "Gpu"], "global_thread_id", []),
+            SAssign (LArrayElem ("res", EVar i), EArrayRead ("out", EVar i)) );
+    }
+  in
+  Alcotest.(check bool)
+    "control: the pair fuses without a shuffle"
+    true
+    (Sarek.Sarek_fusion.can_fuse
+       (epilogue_producer ~shuffle:false)
+       consumer
+       "out") ;
+  Alcotest.(check bool)
+    "a shuffle producer is not fused vertically"
+    false
+    (Sarek.Sarek_fusion.can_fuse
+       (epilogue_producer ~shuffle:true)
+       consumer
+       "out")
+
 (* A store whose index comes from a shuffle is not a function of the launch. *)
 let shuffled_index_body () =
   let tid = var "tid" TInt32 in
@@ -268,6 +299,7 @@ let () =
             test_horizontal_verdict;
           test_case "horizontal fusion" `Quick test_fusion_horizontal;
           test_case "epilogue fusion" `Quick test_fusion_epilogue;
+          test_case "vertical fusion" `Quick test_vertical_fusion;
           test_case "index slice" `Quick test_index_slice;
           test_case "affine coverage" `Quick test_coverage_affine;
         ] );
