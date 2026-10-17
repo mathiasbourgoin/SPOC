@@ -21,27 +21,39 @@ type parsed = Not_a_launch_bound | Bound of int | Malformed of string
     [["sarek.max_threads"; "N"]] spellings are accepted, like [sarek.inline]. *)
 let parse (opts : string list) : parsed =
   let words =
-    match opts with
-    | [single] -> String.split_on_char ' ' (String.trim single)
-    | _ -> opts
+    List.concat_map
+      (fun o ->
+        String.split_on_char
+          ' '
+          (String.map (fun c -> if c = '\t' then ' ' else c) o)
+        |> List.filter (fun w -> w <> ""))
+      opts
   in
+  let is_decimal w =
+    w <> "" && String.for_all (fun c -> c >= '0' && c <= '9') w
+  in
+  let prefix_len = String.length directive in
   match words with
-  | d :: rest when d = directive -> (
-      match rest with
-      | [n] -> (
-          match int_of_string_opt n with
-          | Some v when v >= 1 && v <= max_allowed -> Bound v
-          | _ ->
-              Malformed
-                (Printf.sprintf
-                   "%s expects an integer between 1 and %d, got %S"
-                   directive
-                   max_allowed
-                   n))
+  | [d; n] when d = directive -> (
+      match if is_decimal n then int_of_string_opt n else None with
+      | Some v when v >= 1 && v <= max_allowed -> Bound v
       | _ ->
           Malformed
-            (Printf.sprintf "%s expects exactly one integer argument" directive)
-      )
+            (Printf.sprintf
+               "%s expects an integer between 1 and %d, got %S"
+               directive
+               max_allowed
+               n))
+  | d :: _
+    when String.length d >= prefix_len && String.sub d 0 prefix_len = directive
+    ->
+      (* A near miss ("sarek.max_threads=256", an extra option, a missing
+         number) must not be mistaken for an unrelated pragma and dropped. *)
+      Malformed
+        (Printf.sprintf
+           "%s expects exactly one integer argument (pragma [\"%s N\"])"
+           directive
+           directive)
   | _ -> Not_a_launch_bound
 
 (** Strip the leading [sarek.max_threads] pragma(s) from a kernel body. Returns
