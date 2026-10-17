@@ -159,6 +159,8 @@ test_negative:
 	@out=$$(mktemp); dune build --profile=negative sarek/tests/negative/neg_test_max_threads_misplaced.cma > "$$out" 2>&1; if grep -q "sarek.max_threads must wrap the whole kernel body" "$$out"; then echo "  PASS: launch bounds misplaced"; else cat "$$out"; rm -f "$$out"; exit 1; fi; rm -f "$$out"
 	@echo "Testing launch bounds: declared twice is refused..."
 	@out=$$(mktemp); dune build --profile=negative sarek/tests/negative/neg_test_max_threads_twice.cma > "$$out" 2>&1; if grep -q "sarek.max_threads declared twice on one kernel" "$$out"; then echo "  PASS: launch bounds declared twice"; else cat "$$out"; rm -f "$$out"; exit 1; fi; rm -f "$$out"
+	@echo "Testing launch bounds: near-miss spelling is refused..."
+	@out=$$(mktemp); dune build --profile=negative sarek/tests/negative/neg_test_max_threads_nearmiss.cma > "$$out" 2>&1; if grep -q "sarek.max_threads expects exactly one integer argument" "$$out"; then echo "  PASS: launch bounds near miss"; else cat "$$out"; rm -f "$$out"; exit 1; fi; rm -f "$$out"
 	@echo "Testing create_array Global rejection..."
 	@out=$$(mktemp); dune build --profile=negative sarek/tests/negative/neg_test_create_array_global.cma > "$$out" 2>&1; if grep -q "create_array with the Global memory space" "$$out"; then echo "  PASS: create_array Global"; else cat "$$out"; rm -f "$$out"; exit 1; fi; rm -f "$$out"
 	@echo "Testing create_array runtime size rejection..."

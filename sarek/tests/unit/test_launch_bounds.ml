@@ -192,6 +192,27 @@ let test_check_launch_bounds () =
     true
     (refused ~block:(dims 1024 1 1) no_hint = None)
 
+let test_run_vectors_checks_original_kernel () =
+  let k =
+    {
+      default_kernel with
+      kern_name = "empty";
+      kern_launch_bounds = Some {max_threads = 64};
+    }
+  in
+  Sarek_interpreter.Interpreter_plugin.init () ;
+  match
+    Execute.run_vectors_outcome
+      ~device:(Spoc_core.Device.init ~frameworks:["Interpreter"] ()).(0)
+      ~ir:k
+      ~args:[]
+      ~block:(dims 128 1 1)
+      ~grid:(dims 1 1 1)
+      ()
+  with
+  | _ -> Alcotest.fail "run_vectors_outcome must refuse an oversized block"
+  | exception Execute_error.Execution_error (Invalid_dimensions _) -> ()
+
 let test_interpreter_refuses_before_running () =
   let k =
     {
@@ -276,6 +297,10 @@ let () =
             "interpreter"
             `Quick
             test_interpreter_refuses_before_running;
+          Alcotest.test_case
+            "run_vectors_outcome"
+            `Quick
+            test_run_vectors_checks_original_kernel;
         ] );
       ( "fusion",
         [

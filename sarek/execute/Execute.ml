@@ -1986,6 +1986,9 @@ let run_vectors_outcome ?(stream : Transfer.stream option) ?precision ?explicit
     ~(device : Device.t) ~(ir : Sarek_ir_types.kernel) ~(args : vector_arg list)
     ~(block : Framework_sig.dims) ~(grid : Framework_sig.dims)
     ?(shared_mem : int = 0) () : Matrix_specialise.outcome =
+  (* Against the caller's kernel, before a matrix rewrite (which chooses its
+     own geometry and carries no bound) can replace it. *)
+  check_launch_bounds ~kernel:ir.Sarek_ir_types.kern_name ir ~block ;
   let outcome =
     Matrix_specialise.choose
       ?precision

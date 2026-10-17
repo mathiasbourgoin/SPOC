@@ -284,7 +284,9 @@ let run ~(device : Device.t) ~(block : Framework_sig.dims)
   match device.framework with
   | "Native" -> (
       match k.native_fn with
-      | Some fn -> fn ~block ~grid args
+      | Some fn ->
+          Execute.check_launch_bounds ~kernel:k.name (Lazy.force k.ir) ~block ;
+          fn ~block ~grid args
       | None ->
           Kirc_error.raise_error
             (Kirc_error.No_native_function
