@@ -32,6 +32,8 @@
 ;   barrier steered by a helper parameter the caller makes varying, a
 ;   thread-dependent helper result, a mutable assigned under a thread-varying
 ;   condition; strict variance analysis, as for warp collectives)
+; - test_barrier_diverged_dup_helper: "Barrier called in diverged control flow" (the barrier
+;   helper is the later of two module helpers with the same name)
 ; - test_warp_arity: "Wrong number of arguments: expected 2, got 1"
 ; - test_warp_lane_type: "Cannot unify types" (a float32 lane operand)
 ; - test_warp_value_type: "shuffles int32, float32 or float64 values" (a bool)
@@ -1316,6 +1318,17 @@
 (library
  (name neg_test_warp_diverged_while_cond)
  (modules test_warp_diverged_while_cond)
+ (libraries sarek sarek.stdlib sarek.ppx.lib)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33))
+ (enabled_if
+  (= %{profile} "negative")))
+
+(library
+ (name neg_test_barrier_diverged_dup_helper)
+ (modules test_barrier_diverged_dup_helper)
  (libraries sarek sarek.stdlib sarek.ppx.lib)
  (preprocess
   (pps sarek_ppx))

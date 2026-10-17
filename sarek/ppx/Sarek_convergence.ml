@@ -48,7 +48,7 @@ type helper_def = {
   hd_self : string;  (** the name it was defined under *)
   hd_params : string list;
   hd_body : texpr;
-  hd_defs : (string * helper_def) list Lazy.t;
+  hd_defs : (string * helper_def) list;
       (** The helpers in scope at its definition (itself excluded): a call
           resolves names lexically, as the generated code does, not in the
           caller's scope. *)
@@ -196,7 +196,7 @@ let helper_name (f : texpr) : string option =
 (** The helpers in scope inside the body of [def]: those of its definition site
     plus itself. *)
 let body_defs (def : helper_def) =
-  (def.hd_self, def) :: List.remove_assoc def.hd_self (Lazy.force def.hd_defs)
+  (def.hd_self, def) :: List.remove_assoc def.hd_self def.hd_defs
 
 (** The environment a helper body is evaluated in at a call: what it captured,
     minus its own parameters, plus the parameters whose argument is varying. *)
@@ -321,7 +321,7 @@ and add_def vi env name (params : tparam list) body =
       hd_self = name;
       hd_params = List.map (fun p -> p.tparam_name) params;
       hd_body = body;
-      hd_defs = Lazy.from_val (List.remove_assoc name vi.defs);
+      hd_defs = List.remove_assoc name vi.defs;
       hd_captured = env;
     }
   in
@@ -787,25 +787,25 @@ let check_kernel (kernel : tkernel) : (unit, Sarek_error.error list) result =
       kernel.tkern_module_items
   in
   (* Module functions as strict-analysis helpers; they capture nothing. *)
-  let rec defs =
-    lazy
-      (List.filter_map
-         (fun (item : tmodule_item) ->
-           match item with
-           | TMFun (name, _, params, body) ->
-               Some
-                 ( name,
-                   {
-                     hd_self = name;
-                     hd_params = List.map (fun p -> p.tparam_name) params;
-                     hd_body = body;
-                     hd_defs = defs;
-                     hd_captured = StringSet.empty;
-                   } )
-           | TMConst _ -> None)
-         kernel.tkern_module_items)
+  let defs =
+    List.fold_left
+      (fun scope (item : tmodule_item) ->
+        match item with
+        | TMFun (name, _, params, body) ->
+            let def =
+              {
+                hd_self = name;
+                hd_params = List.map (fun p -> p.tparam_name) params;
+                hd_body = body;
+                hd_defs = scope;
+                hd_captured = StringSet.empty;
+              }
+            in
+            (name, def) :: List.remove_assoc name scope
+        | TMConst _ -> scope)
+      []
+      kernel.tkern_module_items
   in
-  let defs = Lazy.force defs in
   let ctx = {init_ctx with sync_helpers} in
   let strict_ctx = {ctx with variance = {strict = true; defs; visiting = []}} in
   let all_errors =

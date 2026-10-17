@@ -18,7 +18,7 @@
   is refused (use a separate `mut`); a barrier after a tuple `let` that destructures a thread-varying
   component is refused (already so before this change); the strict pass is exponential in the length of
   helper call chains (a chain of 22 helpers takes about 5 s to compile, against 0.2 s before; nested
-  `let mut` scans are memoised: a kernel of 22 nested mutables and a 22-helper chain compile in 4 s together); helpers resolve names lexically in the strict pass (a helper
+  `let mut` scans are memoised: a kernel of 22 nested mutables and a 22-helper chain compile in 4 s together); an inline `let` whose bound value varies but whose body does not still counts as varying in the legacy pass (so `let n = (let t = thread_idx_x in ...; 8l) in` before a barrier loop is refused, as before; the helper form is accepted); helpers resolve names lexically in the strict pass (a helper
   redefined after use no longer hides a barrier).
 
 ### Added
