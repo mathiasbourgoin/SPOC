@@ -42,6 +42,30 @@ type sync_kind =
   | Barrier_sync  (** a block barrier or a superstep *)
   | Warp_sync of string  (** a warp collective, by name *)
 
+(** A helper function in scope: what a call to it can be analysed against. *)
+type helper_def = {
+  hd_params : string list;
+  hd_body : texpr;
+  hd_captured : StringSet.t;
+      (** Thread-varying variables a nested helper captures from its definition
+          site; empty for a module-level function. *)
+}
+
+(** How variance is computed. The [legacy] analysis is the one the barrier rules
+    were written against and is kept unchanged. The [strict] analysis is applied
+    to warp collectives only (they give an undefined result, not a deadlock, so
+    a missed divergence is a silent wrong answer): it also follows the value of
+    an [if]/[match], a helper result that reads the thread, and a mutable
+    assigned under thread-varying control flow (specs/convergence-semantics.md
+    section 3). *)
+type variance = {
+  strict : bool;
+  defs : (string * helper_def) list;  (** helpers in scope, innermost first *)
+  visiting : string list;  (** helpers being unfolded: recursion guard *)
+}
+
+let legacy_variance = {strict = false; defs = []; visiting = []}
+
 (** Analysis context *)
 type ctx = {
   mode : exec_mode;
@@ -51,11 +75,20 @@ type ctx = {
       (** Helper functions in scope that contain a synchronisation point,
           transitively (specs/convergence-semantics.md, rule H-2): a call to one
           in diverged flow is an error at the call site. *)
+  variance : variance;
+  call_stack : string list;
+      (** Helpers whose body is being re-checked at a call (strict analysis) *)
 }
 
 (** Initial context - start converged *)
 let init_ctx =
-  {mode = Converged; varying_vars = StringSet.empty; sync_helpers = []}
+  {
+    mode = Converged;
+    varying_vars = StringSet.empty;
+    sync_helpers = [];
+    variance = legacy_variance;
+    call_stack = [];
+  }
 
 (** Enter diverged mode, preserving known-varying variable set *)
 let diverge ctx = {ctx with mode = Diverged}
@@ -73,80 +106,6 @@ let is_barrier_ref (ref : intrinsic_ref) : bool =
   | IntrinsicRef (_, base_name) ->
       Sarek_core_primitives.is_convergence_point base_name
   | CorePrimitiveRef name -> Sarek_core_primitives.is_convergence_point name
-
-(** Check if an expression's value varies per-thread.
-
-    Thread-varying (different per thread):
-    - thread_idx_x, thread_idx_y, thread_idx_z
-    - global_thread_id
-    - Expressions derived from above
-    - Array accesses with thread-varying index
-
-    Uniform (same for all threads in workgroup):
-    - Constants and literals
-    - block_idx_x/y/z (same for whole block)
-    - block_dim_x/y/z, grid_dim_x/y/z
-    - Expressions derived only from uniform values *)
-let rec is_thread_varying_env (env : StringSet.t) (te : texpr) : bool =
-  match te.te with
-  (* Literals are uniform *)
-  | TEUnit | TEBool _ | TEInt _ | TEInt32 _ | TEInt64 _ | TEFloat _ | TEDouble _
-    ->
-      false
-  (* Variable: check static intrinsics table AND locally-inferred varying set *)
-  | TEVar (name, _) ->
-      Sarek_core_primitives.is_thread_varying name || StringSet.mem name env
-  (* Intrinsic constants - check if thread-varying *)
-  | TEIntrinsicConst ref -> is_thread_varying_intrinsic ref
-  (* Binary ops: varying if either operand varies *)
-  | TEBinop (_, e1, e2) ->
-      is_thread_varying_env env e1 || is_thread_varying_env env e2
-  (* Unary ops: varying if operand varies *)
-  | TEUnop (_, e) -> is_thread_varying_env env e
-  (* Array/vector access: varying if index varies *)
-  | TEVecGet (_, idx) | TEArrGet (_, idx) -> is_thread_varying_env env idx
-  (* Field access: varying if record varies *)
-  | TEFieldGet (e, _, _) -> is_thread_varying_env env e
-  (* Application: varying if any argument varies *)
-  | TEApp (_, args) -> List.exists (is_thread_varying_env env) args
-  (* Intrinsic function: varying if any argument varies *)
-  | TEIntrinsicFun (_, _, args) -> List.exists (is_thread_varying_env env) args
-  (* Tuple: varying if any element varies *)
-  | TETuple es -> List.exists (is_thread_varying_env env) es
-  (* Let binding: propagate variance of bound value into the body *)
-  | TELet (name, _, value, body) | TELetMut (name, _, value, body) ->
-      let v = is_thread_varying_env env value in
-      let env' = if v then StringSet.add name env else env in
-      v || is_thread_varying_env env' body
-  | TESeq es -> List.exists (is_thread_varying_env env) es
-  (* BSP constructs: check body/continuation *)
-  | TELetShared (_, _, _, size_opt, body) ->
-      (match size_opt with
-        | Some size -> is_thread_varying_env env size
-        | None -> false)
-      || is_thread_varying_env env body
-  | TESuperstep (_, _, step_body, cont) ->
-      is_thread_varying_env env step_body || is_thread_varying_env env cont
-  | TEOpen (_, body) -> is_thread_varying_env env body
-  (* Default: assume uniform (minimize false positives) *)
-  | TEIf _ | TEFor _ | TEWhile _ | TEMatch _ | TERecord _ | TEConstr _
-  | TEReturn _ | TECreateArray _ | TEGlobalRef _ | TENative _ | TEPragma _
-  | TEVecSet _ | TEArrSet _ | TEFieldSet _ | TEAssign _ | TELetRec _ ->
-      false
-
-(** Backward-compatible wrapper using an empty environment *)
-let is_thread_varying = is_thread_varying_env StringSet.empty
-
-(** Check if an intrinsic reference is a barrier *)
-let is_barrier_intrinsic (ref : intrinsic_ref) : bool = is_barrier_ref ref
-
-(** Check if an intrinsic ref requires warp convergence *)
-let is_warp_convergence_ref (ref : intrinsic_ref) : bool =
-  match ref with
-  | IntrinsicRef (_, base_name) ->
-      Sarek_core_primitives.is_warp_convergence_point base_name
-  | CorePrimitiveRef name ->
-      Sarek_core_primitives.is_warp_convergence_point name
 
 (** True if texpr e contains a TEReturn reachable on some execution path *)
 let rec has_reachable_return (e : texpr) : bool =
@@ -167,47 +126,6 @@ let rec has_reachable_return (e : texpr) : bool =
   | TEOpen (_, body) -> has_reachable_return body
   | TELetRec (_, _, _, fn_body, cont) ->
       has_reachable_return fn_body || has_reachable_return cont
-  | _ -> false
-
-(** True if e contains a TEReturn that is reachable under a thread-varying
-    condition. Such a return causes SOME threads (those that take the varying
-    branch) to exit early, while other threads continue — creating an implicit
-    divergence point at every subsequent barrier in the enclosing sequence. *)
-let rec has_varying_return (varying_env : StringSet.t) (e : texpr) : bool =
-  match e.te with
-  | TEIf (cond, t, else_opt) -> (
-      if is_thread_varying_env varying_env cond then
-        (* Under a varying condition: any return in branches is a varying return *)
-        has_reachable_return t
-        ||
-        match else_opt with
-        | Some e -> has_reachable_return e
-        | None -> false
-      else
-        (* Non-varying condition: recurse with same env *)
-        has_varying_return varying_env t
-        ||
-        match else_opt with
-        | Some e -> has_varying_return varying_env e
-        | None -> false)
-  | TESeq es -> List.exists (has_varying_return varying_env) es
-  | TELet (name, _, v, b) | TELetMut (name, _, v, b) ->
-      let env' =
-        if is_thread_varying_env varying_env v then
-          StringSet.add name varying_env
-        else varying_env
-      in
-      has_varying_return varying_env v || has_varying_return env' b
-  | TEMatch (scrut, cases) ->
-      if is_thread_varying_env varying_env scrut then
-        List.exists (fun (_, e) -> has_reachable_return e) cases
-      else List.exists (fun (_, e) -> has_varying_return varying_env e) cases
-  | TEWhile (cond, b) ->
-      has_varying_return varying_env cond || has_varying_return varying_env b
-  | TEFor (_, _, lo, hi, _, b) ->
-      has_varying_return varying_env lo
-      || has_varying_return varying_env hi
-      || has_varying_return varying_env b
   | _ -> false
 
 (** The direct sub-expressions of [te], in evaluation order. *)
@@ -241,6 +159,246 @@ let sub_exprs (te : texpr) : texpr list =
   | TESuperstep (_, _, body, cont) -> [body; cont]
   | TEIntrinsicFun (_, _, args) -> args
 
+let helper_name (f : texpr) : string option =
+  match f.te with
+  | TEVar (name, _) | TEGlobalRef (name, _) -> Some name
+  | _ -> None
+
+(** The environment a helper body is evaluated in at a call: what it captured,
+    minus its own parameters, plus the parameters whose argument is varying. *)
+let helper_call_env (def : helper_def) (varying_args : bool list) : StringSet.t
+    =
+  let base =
+    List.fold_left
+      (fun s p -> StringSet.remove p s)
+      def.hd_captured
+      def.hd_params
+  in
+  let rec bind env params flags =
+    match (params, flags) with
+    | p :: ps, true :: fs -> bind (StringSet.add p env) ps fs
+    | _ :: ps, false :: fs -> bind env ps fs
+    | _ -> env
+  in
+  bind base def.hd_params varying_args
+
+(** Check if an expression's value varies per-thread.
+
+    Thread-varying (different per thread):
+    - thread_idx_x, thread_idx_y, thread_idx_z
+    - global_thread_id
+    - Expressions derived from above
+    - Array accesses with thread-varying index
+
+    Uniform (same for all threads in workgroup):
+    - Constants and literals
+    - block_idx_x/y/z (same for whole block)
+    - block_dim_x/y/z, grid_dim_x/y/z
+    - Expressions derived only from uniform values
+
+    With [vi.strict] the value of control flow, helper results and mutables
+    assigned in divergence are followed too (see {!variance}). *)
+let rec varying (vi : variance) (env : StringSet.t) (te : texpr) : bool =
+  let v = varying vi env in
+  match te.te with
+  (* Literals are uniform *)
+  | TEUnit | TEBool _ | TEInt _ | TEInt32 _ | TEInt64 _ | TEFloat _ | TEDouble _
+    ->
+      false
+  (* Variable: check static intrinsics table AND locally-inferred varying set *)
+  | TEVar (name, _) ->
+      Sarek_core_primitives.is_thread_varying name || StringSet.mem name env
+  (* Intrinsic constants - check if thread-varying *)
+  | TEIntrinsicConst ref -> is_thread_varying_intrinsic ref
+  (* Binary ops: varying if either operand varies *)
+  | TEBinop (_, e1, e2) -> v e1 || v e2
+  (* Unary ops: varying if operand varies *)
+  | TEUnop (_, e) -> v e
+  (* Array/vector access: varying if index varies *)
+  | TEVecGet (_, idx) | TEArrGet (_, idx) -> v idx
+  (* Field access: varying if record varies *)
+  | TEFieldGet (e, _, _) -> v e
+  (* Application: varying if any argument varies; strictly, also if the helper's
+     own result reads the thread *)
+  | TEApp (f, args) ->
+      List.exists v args || (vi.strict && helper_result_varying vi env f args)
+  (* Intrinsic function: varying if any argument varies *)
+  | TEIntrinsicFun (ref, _, args) ->
+      (vi.strict && is_thread_varying_intrinsic ref) || List.exists v args
+  (* Tuple: varying if any element varies *)
+  | TETuple es -> List.exists v es
+  (* Let binding: propagate variance of bound value into the body *)
+  | TELet (name, _, value, body) ->
+      let vv = v value in
+      let env' = if vv then StringSet.add name env else env in
+      vv || varying vi env' body
+  | TELetMut (name, _, value, body) ->
+      let vv = v value in
+      let env' =
+        if vv || (vi.strict && assigned_varying vi env name body) then
+          StringSet.add name env
+        else env
+      in
+      vv || varying vi env' body
+  | TESeq es -> List.exists v es
+  (* BSP constructs: check body/continuation *)
+  | TELetShared (_, _, _, size_opt, body) ->
+      (match size_opt with Some size -> v size | None -> false) || v body
+  | TESuperstep (_, _, step_body, cont) -> v step_body || v cont
+  | TEOpen (_, body) -> v body
+  (* The value of control flow, only under the strict analysis *)
+  | TEIf (cond, t, e) ->
+      vi.strict
+      && (v cond || v t || match e with Some e -> v e | None -> false)
+  | TEMatch (scrut, cases) ->
+      vi.strict && (v scrut || List.exists (fun (_, e) -> v e) cases)
+  | TERecord (_, fields) -> vi.strict && List.exists (fun (_, e) -> v e) fields
+  | TEConstr (_, _, arg) -> (
+      vi.strict && match arg with Some e -> v e | None -> false)
+  | TEPragma (_, e) -> vi.strict && v e
+  | TELetRec (name, _, params, fn_body, cont) ->
+      vi.strict
+      &&
+      let vi' = add_def vi env name params fn_body in
+      varying vi' env cont
+  (* Default: assume uniform (minimize false positives) *)
+  | TEFor _ | TEWhile _ | TEReturn _ | TECreateArray _ | TEGlobalRef _
+  | TENative _ | TEVecSet _ | TEArrSet _ | TEFieldSet _ | TEAssign _ ->
+      false
+
+(** Register a nested helper. *)
+and add_def vi env name (params : tparam list) body =
+  let def =
+    {
+      hd_params = List.map (fun p -> p.tparam_name) params;
+      hd_body = body;
+      hd_captured = env;
+    }
+  in
+  {vi with defs = (name, def) :: List.remove_assoc name vi.defs}
+
+(** Strict analysis: does a call to a known helper return a thread-dependent
+    value, given which arguments vary? The body is unfolded once per call (a
+    recursion guard stops cycles). *)
+and helper_result_varying vi env (f : texpr) (args : texpr list) : bool =
+  match helper_name f with
+  | Some name when not (List.mem name vi.visiting) -> (
+      match List.assoc_opt name vi.defs with
+      | Some def ->
+          let flags = List.map (varying vi env) args in
+          let vi' = {vi with visiting = name :: vi.visiting} in
+          varying vi' (helper_call_env def flags) def.hd_body
+      | None -> false)
+  | _ -> false
+
+(** Strict analysis: is the mutable [name] assigned, anywhere in [body], a
+    thread-varying value or under thread-varying control flow? Then its value
+    after the assignment differs per thread. *)
+and assigned_varying vi env name (body : texpr) : bool =
+  let rec scan mode env (e : texpr) : bool =
+    match e.te with
+    | TEAssign (n, _, value) ->
+        (n = name && (mode = Diverged || varying vi env value))
+        || scan mode env value
+    | TEIf (cond, t, el) -> (
+        let inner = if varying vi env cond then Diverged else mode in
+        scan mode env cond || scan inner env t
+        || match el with Some e -> scan inner env e | None -> false)
+    | TEWhile (cond, b) ->
+        let inner = if varying vi env cond then Diverged else mode in
+        scan mode env cond || scan inner env b
+    | TEFor (_, _, lo, hi, _, b) ->
+        let inner =
+          if varying vi env lo || varying vi env hi then Diverged else mode
+        in
+        scan mode env lo || scan mode env hi || scan inner env b
+    | TEMatch (s, cases) ->
+        let inner = if varying vi env s then Diverged else mode in
+        scan mode env s || List.exists (fun (_, e) -> scan inner env e) cases
+    | TESeq es ->
+        let rec go mode = function
+          | [] -> false
+          | e :: rest ->
+              scan mode env e
+              || go
+                   (if has_varying_return_with vi env e then Diverged else mode)
+                   rest
+        in
+        go mode es
+    | TELet (n, _, value, b) ->
+        scan mode env value
+        || scan
+             mode
+             (if varying vi env value then StringSet.add n env else env)
+             b
+    | TELetMut (n, _, value, b) ->
+        scan mode env value
+        || n <> name
+           && scan
+                mode
+                (if varying vi env value || assigned_varying vi env n b then
+                   StringSet.add n env
+                 else env)
+                b
+    | _ -> List.exists (scan mode env) (sub_exprs e)
+  in
+  scan Converged env body
+
+(** True if [e] contains a return reachable under a thread-varying condition
+    (some threads exit early). *)
+and has_varying_return_with vi (env : StringSet.t) (e : texpr) : bool =
+  match e.te with
+  | TEIf (cond, t, else_opt) -> (
+      if varying vi env cond then
+        has_reachable_return t
+        ||
+        match else_opt with
+        | Some e -> has_reachable_return e
+        | None -> false
+      else
+        has_varying_return_with vi env t
+        ||
+        match else_opt with
+        | Some e -> has_varying_return_with vi env e
+        | None -> false)
+  | TESeq es -> List.exists (has_varying_return_with vi env) es
+  | TELet (name, _, v, b) | TELetMut (name, _, v, b) ->
+      let env' = if varying vi env v then StringSet.add name env else env in
+      has_varying_return_with vi env v || has_varying_return_with vi env' b
+  | TEMatch (scrut, cases) ->
+      if varying vi env scrut then
+        List.exists (fun (_, e) -> has_reachable_return e) cases
+      else List.exists (fun (_, e) -> has_varying_return_with vi env e) cases
+  | TEWhile (cond, b) ->
+      has_varying_return_with vi env cond || has_varying_return_with vi env b
+  | TEFor (_, _, lo, hi, _, b) ->
+      has_varying_return_with vi env lo
+      || has_varying_return_with vi env hi
+      || has_varying_return_with vi env b
+  | _ -> false
+
+let is_thread_varying_env = varying legacy_variance
+
+(** True if e contains a TEReturn that is reachable under a thread-varying
+    condition. Such a return causes SOME threads (those that take the varying
+    branch) to exit early, while other threads continue, creating an implicit
+    divergence point at every subsequent barrier in the enclosing sequence. *)
+let has_varying_return = has_varying_return_with legacy_variance
+
+(** Backward-compatible wrapper using an empty environment *)
+let is_thread_varying = is_thread_varying_env StringSet.empty
+
+(** Check if an intrinsic reference is a barrier *)
+let is_barrier_intrinsic (ref : intrinsic_ref) : bool = is_barrier_ref ref
+
+(** Check if an intrinsic ref requires warp convergence *)
+let is_warp_convergence_ref (ref : intrinsic_ref) : bool =
+  match ref with
+  | IntrinsicRef (_, base_name) ->
+      Sarek_core_primitives.is_warp_convergence_point base_name
+  | CorePrimitiveRef name ->
+      Sarek_core_primitives.is_warp_convergence_point name
+
 (** The first synchronisation point [te] contains: a barrier, a superstep, a
     warp collective, or a call to a helper of [helpers] (which contains one). *)
 let rec first_sync ~(helpers : (string * sync_kind) list) (te : texpr) :
@@ -262,6 +420,10 @@ let sync_error (kind : sync_kind) loc : Sarek_error.error =
   | Barrier_sync -> Sarek_error.Barrier_in_diverged_flow loc
   | Warp_sync name -> Sarek_error.Warp_collective_in_diverged_flow (name, loc)
 
+let is_warp_error : Sarek_error.error -> bool = function
+  | Sarek_error.Warp_collective_in_diverged_flow _ -> true
+  | _ -> false
+
 (** Collect errors from convergence analysis *)
 let rec check_expr ctx (te : texpr) : Sarek_error.error list =
   match te.te with
@@ -282,7 +444,7 @@ let rec check_expr ctx (te : texpr) : Sarek_error.error list =
   | TEIf (cond, then_e, else_opt) ->
       let cond_errors = check_expr ctx cond in
       let inner_ctx =
-        if is_thread_varying_env ctx.varying_vars cond then diverge ctx else ctx
+        if varying ctx.variance ctx.varying_vars cond then diverge ctx else ctx
       in
       let then_errors = check_expr inner_ctx then_e in
       let else_errors =
@@ -295,7 +457,7 @@ let rec check_expr ctx (te : texpr) : Sarek_error.error list =
   | TEWhile (cond, body) ->
       let cond_errors = check_expr ctx cond in
       let inner_ctx =
-        if is_thread_varying_env ctx.varying_vars cond then diverge ctx else ctx
+        if varying ctx.variance ctx.varying_vars cond then diverge ctx else ctx
       in
       let body_errors = check_expr inner_ctx body in
       cond_errors @ body_errors
@@ -305,8 +467,8 @@ let rec check_expr ctx (te : texpr) : Sarek_error.error list =
       let hi_errors = check_expr ctx hi in
       let inner_ctx =
         if
-          is_thread_varying_env ctx.varying_vars lo
-          || is_thread_varying_env ctx.varying_vars hi
+          varying ctx.variance ctx.varying_vars lo
+          || varying ctx.variance ctx.varying_vars hi
         then diverge ctx
         else ctx
       in
@@ -316,8 +478,7 @@ let rec check_expr ctx (te : texpr) : Sarek_error.error list =
   | TEMatch (scrut, cases) ->
       let scrut_errors = check_expr ctx scrut in
       let inner_ctx =
-        if is_thread_varying_env ctx.varying_vars scrut then diverge ctx
-        else ctx
+        if varying ctx.variance ctx.varying_vars scrut then diverge ctx else ctx
       in
       let case_errors =
         List.concat_map (fun (_, e) -> check_expr inner_ctx e) cases
@@ -347,12 +508,28 @@ let rec check_expr ctx (te : texpr) : Sarek_error.error list =
             | None -> [])
         | _ -> []
       in
-      call_errors @ check_expr ctx f @ List.concat_map (check_expr ctx) args
+      call_errors
+      @ check_helper_call ctx f args
+      @ check_expr ctx f
+      @ List.concat_map (check_expr ctx) args
   | TEAssign (_, _, e) -> check_expr ctx e
-  | TELet (name, _, value, body) | TELetMut (name, _, value, body) ->
+  | TELet (name, _, value, body) ->
       let value_errors = check_expr ctx value in
       let ctx' =
-        if is_thread_varying_env ctx.varying_vars value then
+        if varying ctx.variance ctx.varying_vars value then
+          {ctx with varying_vars = StringSet.add name ctx.varying_vars}
+        else ctx
+      in
+      value_errors @ check_expr ctx' body
+  | TELetMut (name, _, value, body) ->
+      let value_errors = check_expr ctx value in
+      let is_varying =
+        varying ctx.variance ctx.varying_vars value
+        || ctx.variance.strict
+           && assigned_varying ctx.variance ctx.varying_vars name body
+      in
+      let ctx' =
+        if is_varying then
           {ctx with varying_vars = StringSet.add name ctx.varying_vars}
         else ctx
       in
@@ -367,7 +544,9 @@ let rec check_expr ctx (te : texpr) : Sarek_error.error list =
         | e :: rest ->
             let errors = check_expr ctx e in
             let ctx' =
-              if has_varying_return ctx.varying_vars e then diverge ctx else ctx
+              if has_varying_return_with ctx.variance ctx.varying_vars e then
+                diverge ctx
+              else ctx
             in
             errors @ check_seq ctx' rest
       in
@@ -404,7 +583,7 @@ let rec check_expr ctx (te : texpr) : Sarek_error.error list =
       in
       entry_errors @ check_expr ctx step_body @ check_expr ctx cont
   | TEOpen (_, body) -> check_expr ctx body
-  | TELetRec (name, _, _, fn_body, cont) ->
+  | TELetRec (name, _, params, fn_body, cont) ->
       let ctx' =
         match first_sync ~helpers:ctx.sync_helpers fn_body with
         | Some kind ->
@@ -413,13 +592,71 @@ let rec check_expr ctx (te : texpr) : Sarek_error.error list =
             (* a later helper of the same name shadows an earlier one *)
             {ctx with sync_helpers = List.remove_assoc name ctx.sync_helpers}
       in
+      let ctx' =
+        {
+          ctx' with
+          variance = add_def ctx.variance ctx.varying_vars name params fn_body;
+        }
+      in
       check_expr ctx fn_body @ check_expr ctx' cont
+
+(** Strict analysis: a call to a helper whose body is checked with the
+    parameters that the call makes thread-varying. The definition itself is
+    checked with uniform parameters, so a shuffle under [if param > k] is only
+    seen here. Only warp collectives are reported (the barrier rules are
+    unchanged); a helper already being re-checked is not entered again. *)
+and check_helper_call ctx (f : texpr) (args : texpr list) :
+    Sarek_error.error list =
+  let strict_call =
+    ctx.variance.strict && ctx.mode = Converged
+    && List.length ctx.call_stack < 8
+  in
+  match (strict_call, helper_name f) with
+  | true, Some name when not (List.mem name ctx.call_stack) -> (
+      match List.assoc_opt name ctx.variance.defs with
+      | None -> []
+      | Some def ->
+          let flags = List.map (varying ctx.variance ctx.varying_vars) args in
+          if not (List.mem true flags) then []
+          else
+            let ctx_body =
+              {
+                ctx with
+                varying_vars = helper_call_env def flags;
+                call_stack = name :: ctx.call_stack;
+              }
+            in
+            List.filter is_warp_error (check_expr ctx_body def.hd_body))
+  | _ -> []
 
 (** Check a module item *)
 let check_module_item ctx (item : tmodule_item) : Sarek_error.error list =
   match item with
   | TMConst (_, _, _, e) -> check_expr ctx e
   | TMFun (_, _, _, e) -> check_expr ctx e
+
+(** Run [check] over the module items and the body of [kernel] with [ctx]. *)
+let check_kernel_with ctx (kernel : tkernel) : Sarek_error.error list =
+  let item_errors =
+    List.concat_map (check_module_item ctx) kernel.tkern_module_items
+  in
+  item_errors @ check_expr ctx kernel.tkern_body
+
+(** The warp-collective errors only the strict analysis sees in [legacy]'s blind
+    spots: [strict] errors that [legacy] did not already report. *)
+let add_strict_warp_errors ~legacy ~strict =
+  legacy
+  @ List.filter (fun e -> is_warp_error e && not (List.mem e legacy)) strict
+
+(** Check an expression as a whole kernel body: the legacy analysis, then the
+    strict analysis for warp collectives. *)
+let check_toplevel_expr (te : texpr) : Sarek_error.error list =
+  add_strict_warp_errors
+    ~legacy:(check_expr init_ctx te)
+    ~strict:
+      (check_expr
+         {init_ctx with variance = {legacy_variance with strict = true}}
+         te)
 
 (** Check a kernel for convergence safety *)
 let check_kernel (kernel : tkernel) : (unit, Sarek_error.error list) result =
@@ -437,14 +674,29 @@ let check_kernel (kernel : tkernel) : (unit, Sarek_error.error list) result =
       []
       kernel.tkern_module_items
   in
-  let ctx = {init_ctx with sync_helpers} in
-  (* Check module items first *)
-  let item_errors =
-    List.concat_map (check_module_item ctx) kernel.tkern_module_items
+  (* Module functions as strict-analysis helpers; they capture nothing. *)
+  let defs =
+    List.filter_map
+      (fun (item : tmodule_item) ->
+        match item with
+        | TMFun (name, _, params, body) ->
+            Some
+              ( name,
+                {
+                  hd_params = List.map (fun p -> p.tparam_name) params;
+                  hd_body = body;
+                  hd_captured = StringSet.empty;
+                } )
+        | TMConst _ -> None)
+      kernel.tkern_module_items
   in
-  (* Check kernel body *)
-  let body_errors = check_expr ctx kernel.tkern_body in
-  let all_errors = item_errors @ body_errors in
+  let ctx = {init_ctx with sync_helpers} in
+  let strict_ctx = {ctx with variance = {strict = true; defs; visiting = []}} in
+  let all_errors =
+    add_strict_warp_errors
+      ~legacy:(check_kernel_with ctx kernel)
+      ~strict:(check_kernel_with strict_ctx kernel)
+  in
   if all_errors = [] then Ok () else Error all_errors
 
 (** Check if a kernel uses any barriers (explicit or implicit). Used for
