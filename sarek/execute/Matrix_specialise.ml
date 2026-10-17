@@ -58,9 +58,6 @@ type plan = {gemm : P.gemm; mapping : Map.mapping; case : Adv.element_case}
 type entry = {
   generation : int;  (** the {!generation} it belongs to *)
   plan : (plan, string) result;
-  uses_warp_ops : bool;
-      (** [Sarek_ir_analysis.kernel_uses_warp_ops]: a whole-IR scan, so made
-          once per IR here and not on every launch *)
   mutable kernels :
     ((Rw.lowering * variant * int * int) * (kernel, string) result) list;
       (** keyed by lowering, variant, subgroup width and fragment edge *)
@@ -125,6 +122,21 @@ let guarded_plan k =
   | exception ((Out_of_memory | Sys.Break) as e) -> raise e
   | exception e -> Error ("matrix analysis failed: " ^ Printexc.to_string e)
 
+(* [Sarek_ir_analysis.kernel_uses_warp_ops] is a whole-IR scan and a pure
+   function of the immutable IR: recorded once per IR in its own slot, outside
+   the generation-scoped [entry] (a cache clear must not repeat it) and ahead of
+   the matrix analysis (a warp kernel is refused without being analysed). *)
+let warp_ops_key : bool Ir_memo.key = Ir_memo.new_key ()
+
+let uses_warp_ops (ir : kernel) : bool =
+  let facts = Ir_memo.facts ir in
+  match Ir_memo.find facts warp_ops_key with
+  | Some verdict -> verdict
+  | None ->
+      let verdict = Sarek_ir_analysis.kernel_uses_warp_ops ir in
+      Ir_memo.set facts warp_ops_key verdict ;
+      verdict
+
 let entry k =
   let facts = Ir_memo.facts k in
   Mutex.protect memo_lock (fun () ->
@@ -132,12 +144,7 @@ let entry k =
       | Some e when e.generation = !generation -> e
       | Some _ | None ->
           let e =
-            {
-              generation = !generation;
-              plan = guarded_plan k;
-              uses_warp_ops = Sarek_ir_analysis.kernel_uses_warp_ops k;
-              kernels = [];
-            }
+            {generation = !generation; plan = guarded_plan k; kernels = []}
           in
           Ir_memo.set facts memo_key e ;
           e)
@@ -371,14 +378,14 @@ let decide ?precision ~explicit ~stream ~(device : Device.t) ~ir ~launch () =
     else Ok ()
   in
   let* () = device_possible device ~explicit ~stream in
-  let e = entry ir in
   let* () =
     (* The rewrite chooses its own geometry; a warp shuffle is defined over the
        warp the kernel was written for. *)
-    if e.uses_warp_ops then
+    if uses_warp_ops ir then
       Error "the kernel uses a warp operation (shuffle, warp_size or lane_id)"
     else Ok ()
   in
+  let e = entry ir in
   let* plan = e.plan in
   let* () =
     if uses_launch_dims plan.gemm then
