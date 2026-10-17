@@ -231,7 +231,7 @@ let rec varying (vi : variance) (env : StringSet.t) (te : texpr) : bool =
   | TELet (name, _, value, body) ->
       let vv = v value in
       let env' = if vv then StringSet.add name env else env in
-      vv || varying vi env' body
+      vv || varying (alias_def vi name value) env' body
   | TELetMut (name, _, value, body) ->
       let vv = v value in
       let env' =
@@ -265,6 +265,18 @@ let rec varying (vi : variance) (env : StringSet.t) (te : texpr) : bool =
   | TEFor _ | TEWhile _ | TEReturn _ | TECreateArray _ | TEGlobalRef _
   | TENative _ | TEVecSet _ | TEArrSet _ | TEFieldSet _ | TEAssign _ ->
       false
+
+(** [let g = f]: [g] is another name for the helper [f] (strict analysis). *)
+and alias_def vi name (value : texpr) =
+  if not vi.strict then vi
+  else
+    match helper_name value with
+    | Some f when f <> name -> (
+        match List.assoc_opt f vi.defs with
+        | Some def ->
+            {vi with defs = (name, def) :: List.remove_assoc name vi.defs}
+        | None -> vi)
+    | _ -> vi
 
 (** Register a nested helper. *)
 and add_def vi env name (params : tparam list) body =
@@ -494,6 +506,10 @@ let rec check_expr ctx (te : texpr) : Sarek_error.error list =
   | TEArrSet (a, i, x) -> check_expr ctx a @ check_expr ctx i @ check_expr ctx x
   | TEFieldGet (e, _, _) -> check_expr ctx e
   | TEFieldSet (e, _, _, x) -> check_expr ctx e @ check_expr ctx x
+  | TEBinop ((Sarek_ast.And | Sarek_ast.Or), a, b)
+    when ctx.variance.strict && varying ctx.variance ctx.varying_vars a ->
+      (* The right operand is evaluated only by some threads (short-circuit). *)
+      check_expr ctx a @ check_expr (diverge ctx) b
   | TEBinop (_, a, b) -> check_expr ctx a @ check_expr ctx b
   | TEUnop (_, e) -> check_expr ctx e
   | TEApp (f, args) ->
@@ -520,6 +536,7 @@ let rec check_expr ctx (te : texpr) : Sarek_error.error list =
           {ctx with varying_vars = StringSet.add name ctx.varying_vars}
         else ctx
       in
+      let ctx' = {ctx' with variance = alias_def ctx'.variance name value} in
       value_errors @ check_expr ctx' body
   | TELetMut (name, _, value, body) ->
       let value_errors = check_expr ctx value in
@@ -645,8 +662,23 @@ let check_kernel_with ctx (kernel : tkernel) : Sarek_error.error list =
 (** The warp-collective errors only the strict analysis sees in [legacy]'s blind
     spots: [strict] errors that [legacy] did not already report. *)
 let add_strict_warp_errors ~legacy ~strict =
-  legacy
-  @ List.filter (fun e -> is_warp_error e && not (List.mem e legacy)) strict
+  let extra =
+    List.fold_left
+      (fun acc e ->
+        if is_warp_error e && not (List.mem e legacy || List.mem e acc) then
+          e :: acc
+        else acc)
+      []
+      strict
+  in
+  legacy @ List.rev extra
+
+(** Does [te] contain a warp collective? The strict analysis is skipped for a
+    kernel without one (it only reports warp collectives). *)
+let rec has_warp_collective (te : texpr) : bool =
+  match te.te with
+  | TEIntrinsicFun (_, Some Sarek_core_primitives.WarpConvergence, _) -> true
+  | _ -> List.exists has_warp_collective (sub_exprs te)
 
 (** Check an expression as a whole kernel body: the legacy analysis, then the
     strict analysis for warp collectives. *)
@@ -695,7 +727,16 @@ let check_kernel (kernel : tkernel) : (unit, Sarek_error.error list) result =
   let all_errors =
     add_strict_warp_errors
       ~legacy:(check_kernel_with ctx kernel)
-      ~strict:(check_kernel_with strict_ctx kernel)
+      ~strict:
+        (if
+           has_warp_collective kernel.tkern_body
+           || List.exists
+                (function
+                  | TMFun (_, _, _, b) | TMConst (_, _, _, b) ->
+                      has_warp_collective b)
+                kernel.tkern_module_items
+         then check_kernel_with strict_ctx kernel
+         else [])
   in
   if all_errors = [] then Ok () else Error all_errors
 

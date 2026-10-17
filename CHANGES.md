@@ -48,7 +48,13 @@
   **Known limits:** the barrier rules still use the earlier, weaker variance analysis, so the same
   four routes are not refused for a barrier (left unchanged on purpose: tightening it could reject
   existing kernels; to be done as its own change); reads of memory at a uniform index count as
-  uniform (specs/convergence-semantics.md section 3, race freedom); a `let s = ... s ...` that rebinds
+  uniform (specs/convergence-semantics.md section 3, race freedom). Still accepted for a warp
+  shuffle (found by the independent review of e42648dc, follow-up work): a helper selected through a
+  function-valued `if` (the check runs before defunctionalisation), a recursive helper whose
+  recursive call makes a parameter varying, variance stored through a local array or record, a `mut`
+  assigned inside a local helper, and a call chain of more than 8 helpers; the strict analysis is
+  exponential in the nesting depth of `let mut` and skipped for kernels without a warp collective;
+  it rejects a tuple `let` whose scrutinee is varying even if the shuffle does not use it; a `let s = ... s ...` that rebinds
   a name in the same scope (including a kernel parameter's name) still emits a C redefinition on the
   CUDA, HIP and OpenCL source backends (pre-existing, not specific to warps); Vulkan claims the feature only with `SPOC_VULKAN_SUBGROUP_SHUFFLE=1` (no lane-mapping
   probe, full subgroups not required); the OpenCL probe runs at device enumeration and measures the
