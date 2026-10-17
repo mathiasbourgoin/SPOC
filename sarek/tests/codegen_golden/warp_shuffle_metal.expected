@@ -1,0 +1,54 @@
+#include <metal_stdlib>
+using namespace metal;
+#pragma METAL fp contract(off)
+
+static inline int sarek_warp_shuffle_i32(int v, int x, uint lane, uint w) {
+  return simd_shuffle(v, (ushort)(((uint)(x) & (w - 1u))));
+}
+
+static inline float sarek_warp_shuffle_f32(float v, int x, uint lane, uint w) {
+  return simd_shuffle(v, (ushort)(((uint)(x) & (w - 1u))));
+}
+
+static inline int sarek_warp_shuffle_down_i32(int v, int x, uint lane, uint w) {
+  return simd_shuffle(v, (ushort)((((uint)(x) < w - lane) ? (lane + (uint)(x)) : (lane))));
+}
+
+static inline float sarek_warp_shuffle_down_f32(float v, int x, uint lane, uint w) {
+  return simd_shuffle(v, (ushort)((((uint)(x) < w - lane) ? (lane + (uint)(x)) : (lane))));
+}
+
+static inline int sarek_warp_shuffle_up_i32(int v, int x, uint lane, uint w) {
+  return simd_shuffle(v, (ushort)((((uint)(x) <= lane) ? (lane - (uint)(x)) : (lane))));
+}
+
+static inline float sarek_warp_shuffle_up_f32(float v, int x, uint lane, uint w) {
+  return simd_shuffle(v, (ushort)((((uint)(x) <= lane) ? (lane - (uint)(x)) : (lane))));
+}
+
+static inline int sarek_warp_shuffle_xor_i32(int v, int x, uint lane, uint w) {
+  return simd_shuffle(v, (ushort)((((uint)(x) < w && (lane ^ (uint)(x)) < w) ? (lane ^ (uint)(x)) : (lane))));
+}
+
+static inline float sarek_warp_shuffle_xor_f32(float v, int x, uint lane, uint w) {
+  return simd_shuffle(v, (ushort)((((uint)(x) < w && (lane ^ (uint)(x)) < w) ? (lane ^ (uint)(x)) : (lane))));
+}
+kernel void warp_golden(device int* src_i [[buffer(0)]], constant int &sarek_src_i_length [[buffer(1)]], device float* src_f [[buffer(2)]], constant int &sarek_src_f_length [[buffer(3)]], device int* out_i [[buffer(4)]], constant int &sarek_out_i_length [[buffer(5)]], device float* out_f [[buffer(6)]], constant int &sarek_out_f_length [[buffer(7)]],
+uint3 __metal_gid [[thread_position_in_grid]],
+uint3 __metal_tid [[thread_position_in_threadgroup]],
+uint3 __metal_bid [[threadgroup_position_in_grid]],
+uint3 __metal_tpg [[threads_per_threadgroup]],
+uint3 __metal_num_groups [[threadgroups_per_grid]],
+uint __sarek_lane [[thread_index_in_simdgroup]],
+uint __sarek_w [[threads_per_simdgroup]]) {
+  out_i[0] = sarek_warp_shuffle_i32(src_i[0], ((int)__sarek_lane), __sarek_lane, __sarek_w);
+  out_f[0] = sarek_warp_shuffle_f32(src_f[0], ((int)__sarek_lane), __sarek_lane, __sarek_w);
+  out_i[0] = sarek_warp_shuffle_down_i32(src_i[0], ((int)__sarek_lane), __sarek_lane, __sarek_w);
+  out_f[0] = sarek_warp_shuffle_down_f32(src_f[0], ((int)__sarek_lane), __sarek_lane, __sarek_w);
+  out_i[0] = sarek_warp_shuffle_up_i32(src_i[0], ((int)__sarek_lane), __sarek_lane, __sarek_w);
+  out_f[0] = sarek_warp_shuffle_up_f32(src_f[0], ((int)__sarek_lane), __sarek_lane, __sarek_w);
+  out_i[0] = sarek_warp_shuffle_xor_i32(src_i[0], ((int)__sarek_lane), __sarek_lane, __sarek_w);
+  out_f[0] = sarek_warp_shuffle_xor_f32(src_f[0], ((int)__sarek_lane), __sarek_lane, __sarek_w);
+  out_i[0] = ((int)__sarek_w);
+}
+

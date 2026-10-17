@@ -11,7 +11,7 @@
  * with no backend lowering (and no FFI-registry template) must now RAISE a
  * located [Backend_error (Codegen {backend; Unknown_intrinsic {name}})] on
  * EVERY backend, exactly as GLSL already did after #259. Before #49 these four
- * backends silently emitted the raw OCaml path [warp_shuffle(...)] — a call to
+ * backends silently emitted the raw OCaml path [warp_vote_all(...)] — a call to
  * a non-existent device function — and the pipeline returned [Ok], yielding
  * invalid device code that only failed (cryptically) at the driver.
  *
@@ -59,10 +59,10 @@ let backends =
   ]
 
 (* An intrinsic with no lowering on any backend and no FFI-registry template. *)
-let unknown_name = "warp_shuffle"
+let unknown_name = "warp_vote_all"
 
 let test_backend_raises (label, expected_backend, generate) () =
-  let k = kernel_calling ~path:[] ~name:unknown_name ~arity:2 in
+  let k = kernel_calling ~path:[] ~name:unknown_name ~arity:1 in
   match generate k with
   | (_ : string) ->
       Alcotest.failf

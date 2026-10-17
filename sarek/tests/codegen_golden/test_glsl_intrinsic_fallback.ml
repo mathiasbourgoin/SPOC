@@ -59,7 +59,7 @@ let generate k = Glsl.generate_with_types ~types:[] k
 (* (path, name, arity) — a representative slice of the fall-through inventory. *)
 let unhandled =
   [
-    ([], "warp_shuffle", 2);
+    ([], "warp_ballot", 1);
     ([], "warp_vote_all", 1);
     ([], "atomic_cas_int32", 3);
     ([], "atomic_xor_int32", 2);

@@ -456,6 +456,7 @@ and metal_backend st =
           path
           name
           args);
+    warp_dialect = Sarek_ir_warp_text.Metal;
     invalid_arg_count = bad_arity;
     on_unknown =
       (fun full ->
@@ -1187,6 +1188,25 @@ let reject_float64_kernel =
     not a tuning choice. *)
 let metal_fp_contract_pragma = "#pragma METAL fp contract(off)\n"
 
+(** Refuse a warp operation inside a user helper function: the Metal lane and
+    SIMD-group width are kernel-entry attributes that a helper cannot read, and
+    a located refusal here beats a Metal compiler error on an undeclared
+    identifier. A warp operation in the kernel body is unaffected. *)
+let reject_warp_in_helpers (k : kernel) : unit =
+  List.iter
+    (fun hf ->
+      if Sarek_ir_analysis.helper_warp_calls hf <> [] then
+        Codegen_error.raise_error
+          (Codegen_error.unsupported_construct
+             "warp shuffle in a helper function"
+             (Printf.sprintf
+                "Metal: helper %S uses a warp operation, but the SIMD-group \
+                 lane and width are kernel-entry attributes that a helper \
+                 cannot read. Call the shuffle from the kernel body and pass \
+                 the result to the helper."
+                hf.hf_name)))
+    k.kern_funcs
+
 (** Generate Metal source with custom type definitions.
 
     Registry lookups are made under the constant tag ["Metal"]. An earlier draft
@@ -1234,6 +1254,13 @@ let generate_with_types ?block
     ~records:types
     ~variants:k.kern_variants ;
 
+  (* Warp shuffle helpers. They take the lane and the SIMD-group width as
+     arguments (attributes of the kernel entry, unreadable from a helper), so
+     a user helper function, which has neither in scope, cannot call one. *)
+  let warp_calls = Sarek_ir_analysis.kernel_warp_calls k in
+  reject_warp_in_helpers k ;
+  Buffer.add_string buf (Sarek_ir_warp_text.helpers Metal warp_calls) ;
+
   (* Generate helper functions before kernel *)
   List.iter (gen_helper_func st buf) k.kern_funcs ;
 
@@ -1268,6 +1295,7 @@ let generate_with_types ?block
     "  uint3 __metal_bid [[threadgroup_position_in_grid]],\n" ;
   Buffer.add_string buf "  uint3 __metal_tpg [[threads_per_threadgroup]],\n" ;
   Buffer.add_string buf "  uint3 __metal_num_groups [[threadgroups_per_grid]]" ;
+  Buffer.add_string buf (Sarek_ir_warp_text.metal_params warp_calls) ;
 
   Buffer.add_string buf ") {\n" ;
 
