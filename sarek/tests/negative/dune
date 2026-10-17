@@ -21,7 +21,7 @@
 ;   varies per thread)
 ; - test_warp_diverged_helper: the same message (a shuffle in a helper called
 ;   from thread-varying control flow)
-; - test_warp_diverged_param / _result / _mut / _if_value: the same message (a
+; - test_warp_diverged_param / _result / _mut / _if_value / _shortcircuit / _alias: the same message (a
 ;   helper parameter thread-varying at the call, a helper result that depends on
 ;   the thread, a mutable assigned under a thread-varying condition, the value
 ;   of a thread-varying if)
@@ -1234,6 +1234,28 @@
 (library
  (name neg_test_warp_diverged_if_value)
  (modules test_warp_diverged_if_value)
+ (libraries sarek sarek.stdlib sarek.ppx.lib)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33))
+ (enabled_if
+  (= %{profile} "negative")))
+
+(library
+ (name neg_test_warp_diverged_shortcircuit)
+ (modules test_warp_diverged_shortcircuit)
+ (libraries sarek sarek.stdlib sarek.ppx.lib)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33))
+ (enabled_if
+  (= %{profile} "negative")))
+
+(library
+ (name neg_test_warp_diverged_alias)
+ (modules test_warp_diverged_alias)
  (libraries sarek sarek.stdlib sarek.ppx.lib)
  (preprocess
   (pps sarek_ppx))
