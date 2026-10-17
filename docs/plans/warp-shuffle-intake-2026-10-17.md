@@ -1,10 +1,12 @@
 # Intake: `warp_shuffle`, `warp_shuffle_down`, `warp_shuffle_up`, `warp_shuffle_xor` on every backend
 
-**Status: DRAFT — pending validation**
+**Status: VALIDATED** — owner wrote « Validé » in the chat on 2026-10-17, right after receiving the
+summary of this brief and the decisions D1-D7 recorded in section 13 (the validation targets this brief
+with these decisions).
 
-Branch `feat/warp-shuffle` (worktree `/mnt/ssd-external-2to/wt-warp-shuffle`, from
-`origin/main` 49959aa1). Not validated. `/roster-run` must NOT be started until the owner
-has validated this brief and answered section 13. Task type: **api-change**.
+Branch `feat/warp-shuffle` (worktree `/mnt/ssd-external-2to/wt-warp-shuffle`, rebased on
+`origin/main` 82fdd6b8, which includes the launch bounds PR 520). Validated 2026-10-17;
+decisions in section 13. Task type: **api-change**.
 
 ## 1. Problem
 
@@ -283,31 +285,28 @@ intrinsics, KB (`kb/backends`, `kb/sarek`) via the usual post-merge update. A us
 guide paragraph: the exact table of 4.3, the multiple-of-`W` rule, the segment idiom
 with `xor`.
 
-## 13. Decisions needed from the owner before validation
+## 13. Decisions (owner, validated 2026-10-17)
 
-- **D1 Typing.** (a) overload the four names on `int32`/`float32`/`float64` in the
-  primitive table (needs per-type resolution in the typer; check how `abs`/`min` are
-  done), (b) type-suffixed names (`warp_shuffle_f32`...), (c) keep `int32` only and
-  let users bitcast through `specs/stdlib-bitcasts.md` (zero compiler work for float32
-  but 64-bit values still need two calls). Recommendation: (a) if the typer already has
-  a precedent, else (b).
-- **D2 Segment width.** None in v1 (recommended), or an optional third argument now.
-- **D3 Launch rule for partial warps.** Refuse at launch (recommended) or define
-  partial-warp semantics (lanes beyond `n` return own value) and emulate it on GPUs
-  with an extra guard.
-- **D4 `warp_size` and `lane_id`.** Keep refused (recommended: separate item, S1) or
-  include them here, since user code wanting a portable tree reduction needs `W`.
-- **D5 OpenCL/WGSL without the extension.** Refuse (as requested) or compile-time
-  emulation by an IR pass using a `__local` exchange array plus barriers (the GPU twin
-  of 6.1; also gives a path on rusticl/pocl CPU devices). Recommendation: refuse in
-  this task, emulation as a follow-up.
-- **D6 PTX ownership** (R7): same PR or follow-up.
-- **D7 Metal verification window** on ladon: date, or accept golden-only for now.
+Options considered are kept in the brief history (commit 2995e672). Binding decisions:
+
+- **D1 Typing.** `int32`, `float32`, `float64`. Overloaded on the value type if the Sarek
+  typer allows it (precedent to check: how `abs`/`min` are typed); otherwise type-suffixed
+  names (`warp_shuffle_f32`...).
+- **D2 Segment width.** None in v1. Sub-warp groups use `xor` with masks below a power of two.
+- **D3 Partial warps.** A kernel using a shuffle whose block size is not a multiple of the
+  warp width is refused at launch (`Invalid_launch`).
+- **D4 `warp_size` and `lane_id`.** Exposed in this task (portable tree reductions need `W`).
+  They leave the unlowered set and follow the same per-backend lowering and tests.
+- **D5 OpenCL/WGSL without the extension.** Clear located refusal in v1. Shared-memory
+  emulation follows in a later task. Owner requirement: the Sarek compiler must eventually
+  handle shuffle everywhere, Native included, if necessary through a slow sequential version.
+- **D6 PTX.** Same PR, unless another task touching the PTX emitter conflicts (then a
+  follow-up, with the PTX row explicit in the coverage table).
+- **D7 Metal.** Golden tests only. No execution on ladon except in a window announced by the owner.
 
 ## 14. Out of scope
 
-`warp_vote_all/any`, `warp_ballot`, `warp_active_mask`, `warp_size`, `lane_id`
-(unless D4), warp-scope supersteps (S1), `width`-segmented shuffles (unless D2), shuffle
+`warp_vote_all/any`, `warp_ballot`, `warp_active_mask`, `warp_vote_*` family, warp-scope supersteps (S1), `width`-segmented shuffles (D2: none in v1), shuffle
 of `bool`/vector/record values, subgroup reductions/scans/arithmetic
 (`subgroupAdd`...), cooperative groups, non-full masks, any Katra kernel change (Katra
 adopts the primitives in its own branch after this merges, with its own perf-vs-llama
