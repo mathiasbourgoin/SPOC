@@ -285,7 +285,11 @@ let run ~(device : Device.t) ~(block : Framework_sig.dims)
   | "Native" -> (
       match k.native_fn with
       | Some fn ->
-          Execute.check_launch_bounds ~kernel:k.name (Lazy.force k.ir) ~block ;
+          (* A Native-only kernel has no IR (its [ir] raises [No_ir]) and so
+             no declared bound; it proceeds unchecked. *)
+          (match Lazy.force k.ir with
+          | ir -> Execute.check_launch_bounds ~kernel:k.name ir ~block
+          | exception Kirc_error.Kirc_error (Kirc_error.No_ir _) -> ()) ;
           fn ~block ~grid args
       | None ->
           Kirc_error.raise_error
