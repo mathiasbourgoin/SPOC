@@ -133,6 +133,17 @@ Assumptions, documented in ASSUMPTIONS.md:
   convergence yet (C-50): their result is the join of their arguments and
   they are never synchronisation points.
 
+**Implementation status.** `Sarek_convergence` implements this table in a
+*strict* variance analysis that is applied to warp collectives only: helper
+parameters made varying by a call (the helper body is re-checked at the call
+with those parameters varying, H-1), helper results that read the thread (the
+body is unfolded per call, recursion cut), the value of `if`/`match`, and
+mutables assigned a varying value or under varying control (C-1; flow-insensitive
+per variable). Barriers and supersteps still use the earlier analysis (let-bound
+variance only); aligning them is a separate change because it can reject kernels
+that compile today. Private-array reads (C-5) and loop-carried fixpoints through
+several mutables are not tracked by either analysis.
+
 ## 4. Helpers (C-3)
 
 The check runs after monomorphisation and defunctionalisation, so every call

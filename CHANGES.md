@@ -40,10 +40,17 @@
   longer shadows it. A kernel that uses a shuffle is a barrier kernel for the CPU runtimes, and
   no IR pass that moves threads touches one: horizontal and epilogue fusion, the launch window, the
   matrix rewrite, `Index_slice` and `Coverage_affine` refuse such a kernel (`test_warp_pass_safety`).
-  **Known limits:** the convergence analysis still does not track a helper parameter made varying
-  by its caller, a helper result that reads a thread index, or a `mut` variable assigned under
-  divergence (the same holes exist for barriers), so a shuffle reached through those routes is not
-  refused; Vulkan claims the feature only with `SPOC_VULKAN_SUBGROUP_SHUFFLE=1` (no lane-mapping
+  The convergence check refuses a shuffle reached through a helper parameter that the caller makes
+  thread-varying, a helper result that reads a thread index, the value of a thread-varying
+  `if`/`match`, or a `mut` variable assigned under thread-varying control flow or a thread-varying
+  value (`Sarek_convergence`, a strict variance analysis applied to warp collectives only;
+  `test_warp_diverged_param`, `_result`, `_mut`, `_if_value` and `test_convergence` "strict").
+  **Known limits:** the barrier rules still use the earlier, weaker variance analysis, so the same
+  four routes are not refused for a barrier (left unchanged on purpose: tightening it could reject
+  existing kernels; to be done as its own change); reads of memory at a uniform index count as
+  uniform (specs/convergence-semantics.md section 3, race freedom); a `let s = ... s ...` that rebinds
+  a name in the same scope (including a kernel parameter's name) still emits a C redefinition on the
+  CUDA, HIP and OpenCL source backends (pre-existing, not specific to warps); Vulkan claims the feature only with `SPOC_VULKAN_SUBGROUP_SHUFFLE=1` (no lane-mapping
   probe, full subgroups not required); the OpenCL probe runs at device enumeration and measures the
   width of its own kernel. Consumers that read `Device.warp_size` (Katra's `Gdn.threads_for`) see the
   new values above.

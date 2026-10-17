@@ -333,6 +333,133 @@ let test_shuffle_in_helper_called_from_diverged () =
     0
     (List.length (Sarek_convergence.check_expr Sarek_convergence.init_ctx ok))
 
+(** {2 Strict analysis of warp collectives}
+
+    check_toplevel_expr adds the strict analysis to the legacy one for warp
+    collectives: thread-varying helper parameters, thread-dependent helper
+    results, mutables assigned in divergence, the value of an if. *)
+
+let var name = mk_texpr (TEVar (name, 9)) typ_int32
+
+let int n = mk_texpr (TEInt n) typ_int32
+
+let tid_x = mk_texpr (TEVar ("thread_idx_x", 0)) typ_int32
+
+let gt a b = mk_texpr (TEBinop (Sarek_ast.Gt, a, b)) typ_bool
+
+let tparam name id =
+  {
+    tparam_name = name;
+    tparam_type = typ_int32;
+    tparam_index = 0;
+    tparam_is_vec = false;
+    tparam_id = id;
+  }
+
+let helper_ty = Sarek_types.TFun ([typ_int32], typ_int32)
+
+let call name args =
+  mk_texpr (TEApp (mk_texpr (TEVar (name, 2)) helper_ty, args)) typ_int32
+
+let if_ c t = mk_texpr (TEIf (c, t, None)) typ_unit
+
+let seq es = mk_texpr (TESeq es) typ_unit
+
+let let_rec name params fn_body cont =
+  mk_texpr (TELetRec (name, 2, params, fn_body, cont)) typ_unit
+
+let check_all e = Sarek_convergence.check_toplevel_expr e
+
+let refused msg e =
+  match check_all e with
+  | [Sarek_error.Warp_collective_in_diverged_flow ("warp_shuffle_xor", _)] -> ()
+  | errors ->
+      Alcotest.failf
+        "%s: expected one Warp_collective_in_diverged_flow, got [%s]"
+        msg
+        (String.concat "; " (List.map Sarek_error.error_to_string errors))
+
+let accepted msg e = Alcotest.(check int) msg 0 (List.length (check_all e))
+
+let test_strict_helper_param () =
+  (* let gate n x = if n > 16 then shuffle x in gate thread_idx_x 7 *)
+  let body = if_ (gt (var "n") (int 16)) (shuffle_call (var "x")) in
+  let params = [tparam "n" 3; tparam "x" 4] in
+  refused
+    "varying argument"
+    (let_rec "gate" params body (call "gate" [tid_x; int 7])) ;
+  accepted
+    "uniform argument"
+    (let_rec "gate" params body (call "gate" [int 20; int 7])) ;
+  (* a varying argument that only feeds the shuffled value *)
+  accepted
+    "varying value argument"
+    (let_rec "red" [tparam "x" 4] (shuffle_call (var "x")) (call "red" [tid_x]))
+
+let test_strict_helper_result () =
+  (* let me k = thread_idx_x + k in if me 0 > 16 then shuffle *)
+  let me_body = mk_texpr (TEBinop (Sarek_ast.Add, tid_x, var "k")) typ_int32 in
+  let uniform_body =
+    mk_texpr (TEBinop (Sarek_ast.Add, int 1, var "k")) typ_int32
+  in
+  let use = if_ (gt (call "me" [int 0]) (int 16)) (shuffle_call (int 7)) in
+  refused "thread-dependent result" (let_rec "me" [tparam "k" 3] me_body use) ;
+  accepted "uniform result" (let_rec "me" [tparam "k" 3] uniform_body use)
+
+let test_strict_mutable () =
+  (* let m = mut 0 in if thread_idx_x > 16 then m := 1; if m > 0 then shuffle *)
+  let assign v = mk_texpr (TEAssign ("m", 5, v)) typ_unit in
+  let guarded_shuffle = if_ (gt (var "m") (int 0)) (shuffle_call (int 7)) in
+  let let_m body = mk_texpr (TELetMut ("m", 5, int 0, body)) typ_unit in
+  refused
+    "assigned under a varying condition"
+    (let_m (seq [if_ (gt tid_x (int 16)) (assign (int 1)); guarded_shuffle])) ;
+  refused
+    "assigned a varying value"
+    (let_m (seq [assign tid_x; guarded_shuffle])) ;
+  accepted
+    "assigned a uniform value in uniform flow"
+    (let_m (seq [assign (int 3); guarded_shuffle]))
+
+let test_strict_if_value () =
+  (* let c = if thread_idx_x > 16 then 1 else 0 in if c > 0 then shuffle *)
+  let value =
+    mk_texpr (TEIf (gt tid_x (int 16), int 1, Some (int 0))) typ_int32
+  in
+  refused
+    "value of a varying if"
+    (mk_texpr
+       (TELet ("c", 6, value, if_ (gt (var "c") (int 0)) (shuffle_call (int 7))))
+       typ_unit)
+
+let test_strict_leaves_barriers_alone () =
+  (* The barrier rules are unchanged: a barrier under the value of a varying
+     if is still not reported (a known gap, tracked separately). *)
+  let barrier =
+    mk_texpr
+      (TEIntrinsicFun
+         ( Sarek_env.CorePrimitiveRef "block_barrier",
+           Some Sarek_core_primitives.ConvergencePoint,
+           [] ))
+      typ_unit
+  in
+  let value =
+    mk_texpr (TEIf (gt tid_x (int 16), int 1, Some (int 0))) typ_int32
+  in
+  Alcotest.(check int)
+    "barrier verdict unchanged"
+    (List.length
+       (Sarek_convergence.check_expr
+          Sarek_convergence.init_ctx
+          (mk_texpr
+             (TELet ("c", 6, value, if_ (gt (var "c") (int 0)) barrier))
+             typ_unit)))
+    (List.length
+       (check_all
+          (mk_texpr
+             (TELet ("c", 6, value, if_ (gt (var "c") (int 0)) barrier))
+             typ_unit)))
+
 let test_shuffle_makes_barrier_kernel () =
   (* A shuffle kernel is a barrier kernel for the CPU runtimes: the Native
      simulation exchanges through shared memory between two barriers. *)
@@ -982,6 +1109,14 @@ let () =
             "in a helper called from diverged flow"
             `Quick
             test_shuffle_in_helper_called_from_diverged;
+          test_case "strict: helper parameter" `Quick test_strict_helper_param;
+          test_case "strict: helper result" `Quick test_strict_helper_result;
+          test_case "strict: mutable" `Quick test_strict_mutable;
+          test_case "strict: value of an if" `Quick test_strict_if_value;
+          test_case
+            "strict leaves barriers alone"
+            `Quick
+            test_strict_leaves_barriers_alone;
           test_case
             "a shuffle kernel is a barrier kernel"
             `Quick

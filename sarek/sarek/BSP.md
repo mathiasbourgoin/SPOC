@@ -192,7 +192,9 @@ done
 
 The convergence checker (`Sarek_convergence.ml`) tracks:
 - Control flow entry points
-- Conditions involving thread indices
+- Conditions involving thread indices (for warp shuffles also helper parameters
+  and results, the value of `if`/`match`, and `mut` variables assigned in
+  divergent flow)
 - Barrier locations
 - Reconvergence points
 

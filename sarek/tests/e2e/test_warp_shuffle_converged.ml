@@ -71,4 +71,64 @@ let kernel_shadowed_helper =
       let reduce (y : int32) = y + 1l in
       if thread_idx_x > 16 then v.(thread_idx_x) <- reduce v.(thread_idx_x)]
 
+(* The strict analysis (thread-varying parameters, helper results, mutables
+   assigned in divergence) must not refuse these legitimate kernels. *)
+
+(* OK: the Katra 8-lane reduction, a shuffle tree in converged flow *)
+let kernel_katra_reduce8 =
+  [%kernel
+    fun (inp : float32 vector) (out : float32 vector) ->
+      let g = (block_idx_x * 64l) + thread_idx_x in
+      let s0 = inp.(g) in
+      let s1 = s0 +. warp_shuffle_xor s0 4l in
+      let s2 = s1 +. warp_shuffle_xor s1 2l in
+      let s3 = s2 +. warp_shuffle_xor s2 1l in
+      if thread_idx_x land 7l = 0l then out.(g / 8l) <- s3]
+
+(* OK: a shuffle loop with a uniform bound, accumulating in a mutable that is
+   varying (it only feeds a store, never a shuffle condition) *)
+let kernel_loop_tree =
+  [%kernel
+    fun (v : float32 vector) ->
+      let acc = mut v.(thread_idx_x) in
+      for i = 0 to 2 do
+        acc := acc +. warp_shuffle_down acc (1l lsl i)
+      done ;
+      v.(thread_idx_x) <- acc]
+
+(* OK: a helper parameter that is thread-varying but only feeds the shuffled
+   value, never a condition *)
+let kernel_varying_param_value =
+  [%kernel
+    fun (v : int32 vector) ->
+      let reduce (x : int32) = x + warp_shuffle_xor x 1l in
+      v.(thread_idx_x) <- reduce (thread_idx_x + v.(thread_idx_x))]
+
+(* OK: a helper whose shuffle is under a test on a parameter, called with a
+   uniform argument *)
+let kernel_uniform_param_condition =
+  [%kernel
+    fun (v : int32 vector) (n : int32) ->
+      let gate (k : int32) (x : int32) =
+        if k > 16l then warp_shuffle_xor x 1l else x
+      in
+      v.(thread_idx_x) <- gate n v.(thread_idx_x)]
+
+(* OK: a helper result that is uniform (reads only block_idx_x) gating a
+   shuffle *)
+let kernel_uniform_helper_result =
+  [%kernel
+    fun (v : int32 vector) ->
+      let blk (k : int32) = block_idx_x + k in
+      if blk 0l > 0l then
+        v.(thread_idx_x) <- warp_shuffle_xor v.(thread_idx_x) 1l]
+
+(* OK: a mutable assigned only from uniform values in uniform control flow *)
+let kernel_uniform_mutable =
+  [%kernel
+    fun (v : int32 vector) (n : int32) ->
+      let m = mut 0l in
+      if block_idx_x > 0l then m := n ;
+      if m > 0l then v.(thread_idx_x) <- warp_shuffle_xor v.(thread_idx_x) 1l]
+
 let () = print_endline "All warp shuffle convergence tests passed (compilation)"
