@@ -2,6 +2,56 @@
 
 ### Added
 
+- Warp shuffles: `warp_shuffle`, `warp_shuffle_down`, `warp_shuffle_up` and `warp_shuffle_xor`
+  are callable from `[%kernel]` code on `int32`, `float32` and `float64` values (one name,
+  overloaded by the typer; the IR carries the type in the name, `warp_shuffle_down_f32`), with
+  `warp_size` and `lane_id` (`int32`). One contract on every backend, specified independently of
+  any vendor (`Sarek_warp.source_lane`, `sarek/sarek/BSP.md`): lane `i` reads lane `x land (W-1)`
+  (`warp_shuffle`), `i + d`, `i - d` or `i lxor m`, and its own value when the source is out of
+  range (`d` or `m` negative, or the source outside `[0, W)`). Every lane of the warp takes part;
+  a shuffle in diverged flow is a compile-time error. Coverage, one row per backend: CUDA C
+  (NVRTC) `__shfl*_sync`, source tested as text only; PTX `shfl.sync` (two shuffles for a
+  `float64`), run through ZLUDA on gfx1100; HIP `__shfl*` with `width = warpSize`, run on gfx1100;
+  OpenCL `sub_group_shuffle` (extension `cl_khr_subgroup_shuffle`, built at the OpenCL C level of the
+  device), run on the RX 7900 XTX under rusticl at W = 64; Vulkan GLSL `subgroupShuffle`, validated
+  with `glslangValidator`/`spirv-val` but not run (Vulkan stays off the shared workstation); Metal
+  `simd_shuffle` and WGSL `subgroupShuffle`, text only (decision D7 of the plan, WGSL is unverified:
+  the validators in the tree do not know the `subgroups` extension yet); Native and the Interpreter
+  simulate a warp (default 32 lanes, `Sarek_warp.with_width` as the test hook) with a per-block
+  exchange array and two barriers per call. Device results equal Native and Interpreter bit for bit
+  over the boundary operands `{0, 1, W-1, W, W+1, -1, 2W+1}`, for a 1-D and a 2-D block
+  (`test_warp_shuffle_parity`), and an 8-lane xor-tree float32 sum equals the same tree through shared
+  memory (`test_warp_shuffle_reduce`). The up, down and xor flavours are emitted as index shuffles with
+  a computed source lane on OpenCL, Vulkan, Metal and WGSL, so only the base shuffle extension is
+  needed. A device without the capability refuses a kernel that uses a warp operation with the
+  capability model's message (`warp-shuffle unavailable`); shared-memory emulation on those devices
+  is planned. **Launch rule:** a kernel that shuffles is refused with
+  `Execute_error.Invalid_dimensions` when its block is not a multiple of the device's warp width
+  (`Execute.check_launch_warp`; Native and the Interpreter use the simulated width). **API change for
+  out-of-tree code:** `Sarek_ir_analysis.feature` gains `Warp_shuffle` (listed in a device's
+  `device_features`; every in-tree backend is updated); `Sarek_core_primitives.purity` gains
+  `Convergent` (the shuffles are no longer `Pure`) and the table gains `lane_id`;
+  `Sarek_ir_intrinsic_dispatch.spec` gains `warp_dialect`; `Sarek_error.unlowered_reason` loses
+  `Warp_size` and `Sarek_error.error` gains `Warp_shuffle_value_type`;
+  `Sarek_native_intrinsics.gen_intrinsic_fun` gains `?result_ty`; `Sarek_ir_ptx_expr.intrinsic_category`
+  gains `Warp`; the Vulkan device record gains `subgroup_shuffle`, the OpenCL one `version` and
+  `supports_subgroup_shuffle`. The user-facing names `warp_shuffle*`, `warp_size` and `lane_id` now
+  resolve to the intrinsics, as `block_barrier` does: a kernel-local helper with one of these names no
+  longer shadows it. A kernel that uses a shuffle is a barrier kernel for the CPU runtimes, and
+  no IR pass that moves threads touches one: horizontal and epilogue fusion, the launch window, the
+  matrix rewrite, `Index_slice` and `Coverage_affine` refuse such a kernel (`test_warp_pass_safety`).
+  **Known limits:** the convergence analysis still does not track a helper parameter made varying
+  by its caller, a helper result that reads a thread index, or a `mut` variable assigned under
+  divergence (the same holes exist for barriers), so a shuffle reached through those routes is not
+  refused; Vulkan claims the feature only with `SPOC_VULKAN_SUBGROUP_SHUFFLE=1` (no lane-mapping
+  probe, full subgroups not required); the OpenCL probe runs at device enumeration and measures the
+  width of its own kernel. Consumers that read `Device.warp_size` (Katra's `Gdn.threads_for`) see the
+  new values above.
+  Tests: also `test_sarek_warp`, `test_warp_capability`, `test_opencl_warp_capability`,
+  `test_vulkan_warp_capability`, `test_warp_shuffle_golden` (six goldens), `test_warp_shuffle_converged`,
+  seven new `make test_negative` cases. Docs: `sarek/sarek/BSP.md`, `gh-pages/docs/kernel_language.md`,
+  the backend READMEs, `specs/convergence-semantics.md`, `docs/plans/warp-shuffle-intake-2026-10-17.md`.
+
 - Launch bounds: `pragma ["sarek.max_threads N"]` around a kernel body declares an upper bound
   on the block size (`kern_launch_bounds : launch_bounds option` in `Sarek_ir_types.kernel`;
   `Sarek_ir_types.combine_launch_bounds`). Default unchanged: no pragma, byte-identical source.
@@ -32,6 +82,19 @@
   downloaded when the launch arguments are built, even if the kernel never reads it (it becomes
   `Both`); vectors of other element types or storage are untouched; the native
   argument record is valid for the launch that built it only.
+- `warp_size` as reported by a device: Native and the Interpreter report the simulated warp width
+  (32 by default; the Interpreter reported 32 only when running in parallel and Native reported 1),
+  and OpenCL reports the sub-group size measured by a probe kernel (it reported the constant 32; a
+  device without sub-groups now reports 1). Nothing in the tree compared them with the old values.
+- Convergence rule H-2 of `specs/convergence-semantics.md` is now implemented: a call reached in
+  diverged flow to a kernel-local or module helper that contains a synchronisation point
+  (transitively), a block barrier or a warp collective, is rejected at the call. Before, a barrier
+  hidden in a helper escaped the divergence check (scenario G-9 of the spec compiled). New
+  `make test_negative` cases `test_barrier_helper_diverged` and `test_warp_diverged_helper`.
+- Vulkan compiles a shader that uses subgroup operations for the Vulkan 1.1 environment (SPIR-V
+  1.3), through shaderc and through `glslangValidator`; every other shader keeps the default
+  environment.
+
 - `Transfer.create_stream ?non_blocking:bool` (default `false`, unchanged): `~non_blocking:true`
   makes a stream the device's default stream does not wait for (HIP `hipStreamNonBlocking`,
   CUDA `CU_STREAM_NON_BLOCKING`), so a copy stream can overlap kernels on the default stream;

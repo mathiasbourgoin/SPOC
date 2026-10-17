@@ -79,12 +79,12 @@ cost. The doc framing should lead with these, not apologize for them.
    `Sarek_convergence.ml` reject a warp-collective call from
    divergent control flow *at compile time*
    (`sarek/tests/negative/test_warp_diverged.ml` — "Warp collective
-   'warp_shuffle' called in diverged control flow"; **update:** since the
-   refusal of unlowered intrinsics, a PPX kernel that names a warp
-   intrinsic is rejected earlier, as "not lowered by any backend yet"; the
-   convergence rule stays covered by unit tests on hand-built typed ASTs
-   until warp-scope supersteps (S1) lower these intrinsics). CUDA's equivalent
-   mistake (calling `__shfl_sync` under a divergent predicate with a
+   'warp_shuffle' called in diverged control flow"; **update (2026-10-17):**
+   the shuffles are lowered on every backend, so that message is again what a
+   `warp_shuffle` under a varying condition reports, directly or through a
+   helper (rule H-2). The votes and the ballot are still refused as "not
+   lowered by any backend yet" until warp-scope supersteps (S1)). CUDA's
+   equivalent mistake (calling `__shfl_sync` under a divergent predicate with a
    stale mask) is a runtime hang or wrong-answer bug with no compiler
    diagnostic.
 
@@ -164,17 +164,14 @@ effort, not a backlog item alongside L8/L9/L10.
 Ranked by (user value × how much of the remaining engineering is
 "already half-done" evidence found in the tree):
 
-1. **Finish warp-level primitives (gap 1).** The semantic layer already
-   exists and is tested (`Sarek_core_primitives.ml:380-457`, convergence
-   checks in `test_warp_diverged.ml`, `test_core_primitives.ml`) — but
-   *zero* backend emits them (`grep` for `warp_shuffle`/`shfl`/`ballot`
-   across all 6 codegen files returns nothing outside PTX-adjacent
-   analysis code; the PPX now refuses these names with a located error
-   until they are lowered, roadmap S1). This is the single highest-leverage item: the hard
-   design work (variance/convergence semantics) is done, only the
-   mechanical emitter work (PTX `shfl.sync` variants, OpenCL/Vulkan/Metal
-   `sub_group_*`/`simd_*` intrinsics) remains, and it directly unblocks
-   gaps 5 and 13.
+1. **Finish warp-level primitives (gap 1).** *Shuffles done (2026-10-17):*
+   `warp_shuffle`, `_down`, `_up`, `_xor` on int32/float32/float64, `warp_size`
+   and `lane_id` are lowered on CUDA C, PTX, HIP, OpenCL, Vulkan, Metal and
+   WGSL and simulated on Native and the Interpreter
+   (`docs/plans/warp-shuffle-intake-2026-10-17.md`, `sarek/sarek/BSP.md`). Still
+   to do: votes and ballot (S1), a `width` argument for segmented
+   `down`/`up`, and the shared-memory emulation on devices without subgroup
+   shuffles (OpenCL, WebGPU). The shuffles unblock gaps 5 and 13.
 2. **`printf`/`assert` in kernels (gap 8).** Highest DX-value-per-cost item
    on the list; PTX and OpenCL both have a real target, and the current
    debug workflow (host-side dump-and-diff) is a genuine friction point
