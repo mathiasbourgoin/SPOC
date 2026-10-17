@@ -204,4 +204,7 @@ let kernel (k : kernel) (g : P.gemm) ~waves =
         kern_body = body g ~a ~b ~c ~fresh ~me ~ne ~waves;
         kern_funcs = [];
         kern_native_fn = None;
+        (* The rewrite chooses its own launch geometry, which the author's
+           [sarek.max_threads] bound was not written against. *)
+        kern_launch_bounds = None;
       }

@@ -1412,7 +1412,11 @@ and lower_stmt (state : state) (te : texpr) : Ir.stmt =
       in
       Ir.SMatch (lower_expr state e, ir_cases)
   | TEReturn e -> Ir.SReturn (lower_expr state e)
-  | TEPragma (opts, body) -> Ir.SPragma (opts, lower_stmt state body)
+  | TEPragma (opts, body) ->
+      Sarek_launch_bounds.reject_misplaced
+        ~loc:(Sarek_ast.loc_to_ppxlib te.te_loc)
+        opts ;
+      Ir.SPragma (opts, lower_stmt state body)
   | TELetShared (name, id, elem_ty, size_opt, body) ->
       (* Shared memory declaration: __shared__ type name[size]; or __local type name[size]; *)
       let size_ir =
@@ -1672,7 +1676,8 @@ let lower_kernel (kernel : tkernel) : Ir.kernel =
   in
 
   (* Lower body *)
-  let body_ir = lower_stmt state kernel.tkern_body in
+  let max_threads, kernel_body = Sarek_launch_bounds.peel kernel.tkern_body in
+  let body_ir = lower_stmt state kernel_body in
   Sarek_debug.log_to_file
     (Printf.sprintf
        "  [IR] lower_kernel done: %s (expr=%d, stmt=%d)"
@@ -1712,6 +1717,7 @@ let lower_kernel (kernel : tkernel) : Ir.kernel =
     kern_funcs = funcs_list;
     kern_native_fn = None;
     (* Native fn is added during quoting *)
+    kern_launch_bounds = Option.map (fun n -> {Ir.max_threads = n}) max_threads;
   }
 
 (** Get the return value declaration for a kernel *)

@@ -154,6 +154,9 @@ type helper_func = {
   hf_body : stmt;
 }
 
+(** Work-group size bound; mirrors {!Sarek_ir_types.launch_bounds}. *)
+type launch_bounds = {max_threads : int}
+
 (** Kernel representation *)
 type kernel = {
   kern_name : string;
@@ -171,6 +174,8 @@ type kernel = {
   kern_native_fn : unit option;
       (** Placeholder for native function - actual function added during quoting
       *)
+  kern_launch_bounds : launch_bounds option;
+      (** Work-group size bound from [pragma ["sarek.max_threads N"]] *)
 }
 
 (** Base for a record update, mirroring {!Sarek_ir_types.default_kernel}.
@@ -191,4 +196,5 @@ let default_kernel =
     kern_variants = [];
     kern_funcs = [];
     kern_native_fn = None;
+    kern_launch_bounds = None;
   }

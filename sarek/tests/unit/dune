@@ -459,3 +459,22 @@
    SAREK_OPT_DISABLE
    epilogue
    (run %{test}))))
+
+; Launch bounds, pragma ["sarek.max_threads N"] (specs/launch-bounds-hint.md):
+; IR, per-backend source, the portable launch check and fusion, no device.
+
+(test
+ (name test_launch_bounds)
+ (modules test_launch_bounds)
+ (libraries
+  sarek
+  sarek.codegen
+  sarek.stdlib
+  sarek.execute
+  spoc_framework
+  sarek_ir
+  alcotest)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33)))

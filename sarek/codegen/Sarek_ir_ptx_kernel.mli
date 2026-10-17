@@ -52,10 +52,20 @@ val make_ptx_header : ?sm_target:string -> ?ptx_version:string -> unit -> string
     @param soa_params
       Vector parameters to lower as Structure-of-Arrays; defaults to [[]] (all
       packed AoS, byte-identical to the pre-SoA emitter). *)
-val generate : ?sm_target:string -> ?soa_params:string list -> kernel -> string
+val generate :
+  ?sm_target:string ->
+  ?soa_params:string list ->
+  ?block:int * int * int ->
+  kernel ->
+  string
 
 (** [generate_with_types ~types ?soa_params k] is [generate ?soa_params k].
     Record and variant type definitions are not representable as PTX struct
     types; the [~types] argument is accepted for interface compatibility with
     other backends and is ignored. *)
-val generate_with_types : types:_ -> ?soa_params:string list -> kernel -> string
+val generate_with_types :
+  types:_ ->
+  ?soa_params:string list ->
+  ?block:int * int * int ->
+  kernel ->
+  string

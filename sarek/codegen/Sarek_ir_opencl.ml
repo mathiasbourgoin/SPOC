@@ -1168,8 +1168,8 @@ let resolve_recursive_helpers (k : kernel) : kernel =
     its own name — exactly the value the constant already is — and the one
     consumer that would have distinguished them, [SNative], now refuses
     outright. *)
-let generate_with_types ~(types : (string * (string * elttype) list) list)
-    (k : kernel) : string =
+let generate_with_types ?block
+    ~(types : (string * (string * elttype) list) list) (k : kernel) : string =
   reject_float16_kernel k ;
   reject_coopmat_kernel k ;
   let k = resolve_recursive_helpers k in
@@ -1196,6 +1196,19 @@ let generate_with_types ~(types : (string * (string * elttype) list) list)
   gen_helpers st buf k.kern_funcs ;
 
   (* Kernel signature *)
+  (* OpenCL has no max-only attribute, so a declared bound becomes the exact
+     [reqd_work_group_size] of the launch block (the source is memoised per
+     block). Emitted only when the block respects the bound; an oversized block
+     is refused before launch by the portable check. *)
+  (match (k.kern_launch_bounds, block) with
+  | Some lb, Some (bx, by, bz) when bx * by * bz <= lb.max_threads ->
+      Printf.bprintf
+        buf
+        "__attribute__((reqd_work_group_size(%d, %d, %d))) "
+        bx
+        by
+        bz
+  | _ -> ()) ;
   Buffer.add_string buf "__kernel void " ;
   Buffer.add_string buf k.kern_name ;
   Buffer.add_char buf '(' ;
