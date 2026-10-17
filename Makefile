@@ -165,6 +165,8 @@ test_negative:
 	@out=$$(mktemp); dune build --profile=negative sarek/tests/negative/neg_test_barrier_helper_diverged.cma > "$$out" 2>&1; if grep -q "Barrier called in diverged control flow" "$$out"; then echo "  PASS: barrier helper diverged"; else cat "$$out"; rm -f "$$out"; exit 1; fi; rm -f "$$out"
 	@echo "Testing barrier steered by a varying helper parameter..."
 	@out=$$(mktemp); dune build --profile=negative sarek/tests/negative/neg_test_barrier_diverged_param.cma > "$$out" 2>&1; if grep -q "Barrier called in diverged control flow" "$$out"; then echo "  PASS: barrier diverged by helper parameter"; else cat "$$out"; rm -f "$$out"; exit 1; fi; rm -f "$$out"
+	@echo "Testing barrier hidden by a redefined module helper..."
+	@out=$$(mktemp); dune build --profile=negative sarek/tests/negative/neg_test_barrier_diverged_dup_helper.cma > "$$out" 2>&1; if grep -q "Barrier called in diverged control flow" "$$out"; then echo "  PASS: barrier diverged by helper parameter"; else cat "$$out"; rm -f "$$out"; exit 1; fi; rm -f "$$out"
 	@echo "Testing barrier steered by a varying helper result..."
 	@out=$$(mktemp); dune build --profile=negative sarek/tests/negative/neg_test_barrier_diverged_result.cma > "$$out" 2>&1; if grep -q "Barrier called in diverged control flow" "$$out"; then echo "  PASS: barrier diverged by helper result"; else cat "$$out"; rm -f "$$out"; exit 1; fi; rm -f "$$out"
 	@echo "Testing barrier steered by a varying mutable..."
