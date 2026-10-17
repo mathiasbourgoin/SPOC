@@ -629,6 +629,37 @@ let arg_label = function
   | Float32 _ -> "a float32 scalar"
   | Float64 _ -> "a float64 scalar"
 
+(** Portable half of [pragma ["sarek.max_threads N"]]: refuse, before any
+    backend sees the launch, a block whose thread count exceeds the declared
+    bound. Applies to every backend, Native and Interpreter included, so the
+    mistake is the same Sarek error everywhere rather than a driver failure on
+    some of them. A kernel without a bound is never refused here. *)
+let check_launch_bounds ~(kernel : string) (ir : Sarek_ir_types.kernel)
+    ~(block : Framework_sig.dims) : unit =
+  match ir.Sarek_ir_types.kern_launch_bounds with
+  | None -> ()
+  | Some {Sarek_ir_types.max_threads} ->
+      let threads = block.Framework_sig.x * block.y * block.z in
+      if threads > max_threads then
+        Execute_error.raise_error
+          (Invalid_dimensions
+             {
+               grid = "-";
+               block =
+                 Printf.sprintf
+                   "(%d, %d, %d)"
+                   block.Framework_sig.x
+                   block.y
+                   block.z;
+               reason =
+                 Printf.sprintf
+                   "kernel %S declares pragma [\"sarek.max_threads %d\"] but \
+                    the block has %d threads"
+                   kernel
+                   max_threads
+                   threads;
+             })
+
 let check_launch_args ~(kernel : string) (ir : Sarek_ir_types.kernel)
     (args : vector_arg list) : unit =
   let params = Array.of_list ir.Sarek_ir_types.kern_params in
@@ -1426,6 +1457,7 @@ let run_jit (module B : Framework_sig.BACKEND) ?stream ~(device : Device.t)
   | None -> Execute_error.raise_error (Missing_ir {kernel = name})
   | Some ir_lazy ->
       let ir = Lazy.force ir_lazy in
+      check_launch_bounds ~kernel:name ir ~block ;
       check_launch_args ~kernel:name ir args ;
       (* Before generate_source, so the diagnostic names the missing device
          capability rather than letting the backend emit a shader the device
@@ -1559,7 +1591,11 @@ let run ?(stream : Transfer.stream option) ~(device : Device.t) ~(name : string)
           let dev = B.Device.get device.backend_id in
           B.Device.set_current dev ;
           let ir_val = Option.map Lazy.force ir in
-          Option.iter (fun ir -> check_launch_args ~kernel:name ir args) ir_val ;
+          Option.iter
+            (fun ir ->
+              check_launch_bounds ~kernel:name ir ~block ;
+              check_launch_args ~kernel:name ir args)
+            ir_val ;
           Option.iter
             (fun ir -> check_device_capabilities_memo ~device ir)
             ir_val ;
@@ -1570,7 +1606,11 @@ let run ?(stream : Transfer.stream option) ~(device : Device.t) ~(name : string)
           let dev = B.Device.get device.backend_id in
           B.Device.set_current dev ;
           let ir_val = Option.map Lazy.force ir in
-          Option.iter (fun ir -> check_launch_args ~kernel:name ir args) ir_val ;
+          Option.iter
+            (fun ir ->
+              check_launch_bounds ~kernel:name ir ~block ;
+              check_launch_args ~kernel:name ir args)
+            ir_val ;
           Option.iter
             (fun ir -> check_device_capabilities_memo ~device ir)
             ir_val ;
@@ -1748,6 +1788,7 @@ let run_interpreter_vectors ~(ir : Sarek_ir_types.kernel)
      f32-precision results. The positional zip below would also have quietly
      renamed or dropped arguments on an arity mismatch (it falls back to
      "param%d") instead of reporting it. *)
+  check_launch_bounds ~kernel:ir.Sarek_ir_types.kern_name ir ~block ;
   check_launch_args ~kernel:ir.Sarek_ir_types.kern_name ir args ;
   (* The capability half of the same discipline (backlog-154). Placed next to
      check_launch_args because the two together are what the three [run]

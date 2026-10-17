@@ -1138,7 +1138,14 @@ let generate_with_types ?block
   List.iter (gen_helper_func st buf) k.kern_funcs ;
 
   (* Kernel signature *)
-  Buffer.add_string buf "__global__ void " ;
+  Buffer.add_string buf "__global__ " ;
+  (* [pragma ["sarek.max_threads N"]]: lets the compiler lift the register cap
+     it applies for the worst-case 1024-thread block. Absent hint, absent text. *)
+  Option.iter
+    (fun (lb : launch_bounds) ->
+      Printf.bprintf buf "__launch_bounds__(%d) " lb.max_threads)
+    k.kern_launch_bounds ;
+  Buffer.add_string buf "void " ;
   Buffer.add_string buf k.kern_name ;
   Buffer.add_char buf '(' ;
 

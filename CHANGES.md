@@ -1,5 +1,22 @@
 ## 2026-10
 
+### Added
+
+- Launch bounds: `pragma ["sarek.max_threads N"]` around a kernel body declares an upper bound
+  on the block size (`kern_launch_bounds : launch_bounds option` in `Sarek_ir_types.kernel`;
+  `Sarek_ir_types.combine_launch_bounds`). Default unchanged: no pragma, byte-identical source.
+  Coverage: HIP and CUDA-C `__launch_bounds__(N)`; CUDA PTX `.maxntid` and OpenCL
+  `reqd_work_group_size`, both from the launch block (`?block` is now used by
+  `Sarek_ir_ptx.generate*` and by the OpenCL plugin) when it respects `N`; Metal
+  `[[max_total_threads_per_threadgroup(N)]]` (generation tested, not compiled on a Mac);
+  Vulkan, WebGPU, Native, Interpreter: no source change. A launch whose block exceeds `N`
+  is refused on every backend with `Execute_error.Invalid_dimensions`
+  (`Execute.check_launch_bounds`). Fused kernels take the minimum bound. **API change for
+  out-of-tree code:** `Sarek_ir_types.kernel` gains the field `kern_launch_bounds` (use
+  `{default_kernel with ...}`), `Sarek_ir_opencl.generate_with_types` gains `?block`, and
+  `Sarek_ir_ptx.generate` / `generate_with_types` gain `?block`. Tests: `test_launch_bounds`,
+  `make test_negative` (four refusals). Docs: `kernel_language.md`, Launch bounds.
+
 ### Changed
 
 - `Transfer.create_stream ?non_blocking:bool` (default `false`, unchanged): `~non_blocking:true`

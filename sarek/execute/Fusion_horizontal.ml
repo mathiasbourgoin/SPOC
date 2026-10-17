@@ -178,6 +178,8 @@ let fuse ~(name : string) (members : kernel list) : kernel =
         (fun h -> h.hf_name)
         (List.map (fun m -> m.kern_funcs) members);
     kern_native_fn = None;
+    kern_launch_bounds =
+      combine_launch_bounds (List.map (fun m -> m.kern_launch_bounds) members);
   }
 
 (** [k] renamed [prefix ^ digest], the digest of everything in [k] but its name:

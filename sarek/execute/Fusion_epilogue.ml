@@ -298,4 +298,7 @@ let fuse ~name ~(producer : kernel) ~(p_array : string) ~(consumer : kernel)
     kern_variants;
     kern_funcs;
     kern_native_fn = None;
+    kern_launch_bounds =
+      combine_launch_bounds
+        [producer.kern_launch_bounds; consumer.kern_launch_bounds];
   }

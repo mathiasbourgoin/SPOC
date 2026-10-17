@@ -34,9 +34,15 @@ module Backend : Framework_sig.BACKEND = struct
      IR node) is allowed to PROPAGATE so callers surface it, rather than being
      converted to [None] and re-raised by Execute as the opaque
      "generate_source returned None" with the detail lost (PR #259). *)
-  let generate_source ?block:_ ?(soa_params = []) (ir : Sarek_ir_types.kernel) :
+  let generate_source ?block ?(soa_params = []) (ir : Sarek_ir_types.kernel) :
       string option =
-    Some (Sarek_ir_ptx.generate_with_types ~types:ir.kern_types ~soa_params ir)
+    Some
+      (Sarek_ir_ptx.generate_with_types
+         ~types:ir.kern_types
+         ~soa_params
+         ?block:
+           (Option.map (fun (d : Framework_sig.dims) -> (d.x, d.y, d.z)) block)
+         ir)
 
   let execute_direct ~native_fn:_ ~ir:_ ~block:_ ~grid:_ _args =
     Cuda_error.raise_error

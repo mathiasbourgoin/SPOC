@@ -389,6 +389,13 @@ type native_fn_t =
       native_arg array ->
       unit)
 
+(** Upper bound on the work-group size a kernel may be launched with.
+
+    Declared in the kernel body with [pragma ["sarek.max_threads N"]]. It lets
+    backends that compile for the worst case (1024 threads) lift the register
+    cap. A kernel without the hint is generated exactly as before. *)
+type launch_bounds = {max_threads : int}
+
 (** Kernel representation *)
 type kernel = {
   kern_name : string;
@@ -405,7 +412,24 @@ type kernel = {
       (** Helper functions defined in kernel scope *)
   kern_native_fn : native_fn_t option;
       (** Optional pre-compiled native function for CPU execution *)
+  kern_launch_bounds : launch_bounds option;
+      (** Optional work-group size bound ([sarek.max_threads]); [None] means the
+          backend default. *)
 }
+
+(** Bound of a kernel built from several kernels (fusion): the smallest declared
+    bound, since the fused kernel must satisfy every member. [None] when no
+    member declares one. *)
+let combine_launch_bounds (bounds : launch_bounds option list) :
+    launch_bounds option =
+  List.fold_left
+    (fun acc b ->
+      match (acc, b) with
+      | None, b -> b
+      | a, None -> a
+      | Some x, Some y -> Some {max_threads = min x.max_threads y.max_threads})
+    None
+    bounds
 
 (** A kernel with every field at its empty value, for use as the base of a
     record update: [{default_kernel with kern_name = "k"; kern_body = b}].
@@ -428,12 +452,13 @@ let default_kernel =
     kern_variants = [];
     kern_funcs = [];
     kern_native_fn = None;
+    kern_launch_bounds = None;
   }
 
 (** {!default_kernel} with labels. [~name] and [~body] are required because a
     kernel with neither is not a kernel; everything else defaults to empty. *)
 let make_kernel ?(params = []) ?(locals = []) ?(types = []) ?(variants = [])
-    ?(funcs = []) ?native_fn ~name ~body () =
+    ?(funcs = []) ?native_fn ?launch_bounds ~name ~body () =
   {
     kern_name = name;
     kern_params = params;
@@ -443,4 +468,5 @@ let make_kernel ?(params = []) ?(locals = []) ?(types = []) ?(variants = [])
     kern_variants = variants;
     kern_funcs = funcs;
     kern_native_fn = native_fn;
+    kern_launch_bounds = launch_bounds;
   }

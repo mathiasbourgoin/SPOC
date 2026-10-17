@@ -32,6 +32,7 @@
   Sarek_typed_ast
   Sarek_typer
   Sarek_convergence
+  Sarek_launch_bounds
   Sarek_lower_ir
   Sarek_quote_ir
   Sarek_ir_conv

@@ -423,7 +423,8 @@ let reject_coopmat_kernel (k : kernel) : unit =
       must be a flat-record custom vector; anything else is rejected. Defaults
       to [[]] (all AoS) — so the standard backend path emits byte-identical PTX
       to before. *)
-let generate ?(sm_target = "sm_86") ?(soa_params = []) (k : kernel) : string =
+let generate ?(sm_target = "sm_86") ?(soa_params = []) ?block (k : kernel) :
+    string =
   reject_float16_kernel k ;
   reject_coopmat_kernel k ;
   let alloc = make_alloc () in
@@ -461,7 +462,14 @@ let generate ?(sm_target = "sm_86") ?(soa_params = []) (k : kernel) : string =
   end ;
   Printf.bprintf out ".entry %s(\n" k.kern_name ;
   Buffer.add_string out param_str ;
-  Buffer.add_string out "\n)\n{\n" ;
+  Buffer.add_string out "\n)\n" ;
+  (* [.maxntid] is per-dimension, so a declared [sarek.max_threads] bound is
+     expressed through the launch block, and only when the block respects it. *)
+  (match (k.kern_launch_bounds, block) with
+  | Some lb, Some (bx, by, bz) when bx * by * bz <= lb.max_threads ->
+      Printf.bprintf out ".maxntid %d, %d, %d\n" bx by bz
+  | _ -> ()) ;
+  Buffer.add_string out "{\n" ;
   emit_reg_decls out alloc ;
   Buffer.add_buffer out shared_buf ;
   (* Shared arrays declared mid-body (SLet-bound let%shared). *)
@@ -477,5 +485,6 @@ let generate ?(sm_target = "sm_86") ?(soa_params = []) (k : kernel) : string =
 (** Same interface as [Sarek_ir_cuda.generate_with_types]. Record and variant
     type definitions are not representable as PTX struct types; this is a
     documented design gap in ptx-spike-findings.md. *)
-let generate_with_types ~types:_ ?(soa_params = []) (k : kernel) : string =
-  generate ~soa_params k
+let generate_with_types ~types:_ ?(soa_params = []) ?block (k : kernel) : string
+    =
+  generate ~soa_params ?block k

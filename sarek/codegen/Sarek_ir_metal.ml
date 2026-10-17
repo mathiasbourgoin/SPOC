@@ -1238,6 +1238,13 @@ let generate_with_types ?block
   List.iter (gen_helper_func st buf) k.kern_funcs ;
 
   (* Kernel signature *)
+  Option.iter
+    (fun (lb : launch_bounds) ->
+      Printf.bprintf
+        buf
+        "[[max_total_threads_per_threadgroup(%d)]] "
+        lb.max_threads)
+    k.kern_launch_bounds ;
   Buffer.add_string buf "kernel void " ;
   Buffer.add_string buf k.kern_name ;
   Buffer.add_char buf '(' ;

@@ -375,6 +375,7 @@ let f16_narrow_to_f32_sink_ir () =
     kern_variants = [];
     kern_funcs = [];
     kern_native_fn = None;
+    kern_launch_bounds = None;
   }
 
 let test_interp_e2e_f32_sink () =
@@ -570,6 +571,7 @@ let kern params =
     kern_variants = [];
     kern_funcs = [];
     kern_native_fn = None;
+    kern_launch_bounds = None;
   }
 
 let rejects what ir args =

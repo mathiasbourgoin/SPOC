@@ -490,6 +490,9 @@ let kernel ?(subgroup = 32) ?(frag = 16) (k : kernel) (g : P.gemm) lowering =
       kern_body = body c;
       kern_funcs = [];
       kern_native_fn = None;
+      (* The rewrite chooses its own launch geometry, which the author's
+         [sarek.max_threads] bound was not written against. *)
+      kern_launch_bounds = None;
     }
 
 (** Launch geometry of the rewritten kernel for a region. *)

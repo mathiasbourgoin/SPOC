@@ -379,6 +379,13 @@ let quote_kernel ~loc ?(native_fn_expr : expression option) (k : Ir.kernel) :
     | Some e -> [%expr Some (Sarek.Sarek_ir.NativeFn [%e e])]
     | None -> [%expr None]
   in
+  let launch_bounds_field =
+    match k.kern_launch_bounds with
+    | None -> [%expr None]
+    | Some {max_threads} ->
+        [%expr
+          Some {Sarek.Sarek_ir.max_threads = [%e quote_int ~loc max_threads]}]
+  in
   [%expr
     {
       Sarek.Sarek_ir.kern_name = [%e quote_string ~loc k.kern_name];
@@ -389,4 +396,5 @@ let quote_kernel ~loc ?(native_fn_expr : expression option) (k : Ir.kernel) :
       kern_variants = [%e quote_list ~loc quote_variant_def k.kern_variants];
       kern_funcs = [%e quote_list ~loc quote_helper_func k.kern_funcs];
       kern_native_fn = [%e native_fn_field];
+      kern_launch_bounds = [%e launch_bounds_field];
     }]

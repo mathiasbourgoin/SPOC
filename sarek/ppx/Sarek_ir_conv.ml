@@ -235,4 +235,8 @@ let conv_kernel (k : P.kernel) : T.kernel =
         k.P.kern_variants;
     T.kern_funcs = List.map conv_helper_func k.P.kern_funcs;
     T.kern_native_fn = None;
+    T.kern_launch_bounds =
+      Option.map
+        (fun (lb : P.launch_bounds) -> {T.max_threads = lb.P.max_threads})
+        k.P.kern_launch_bounds;
   }
