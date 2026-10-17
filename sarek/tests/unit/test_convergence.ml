@@ -529,6 +529,54 @@ let test_strict_barrier_while_condition () =
     "barrier in a uniform while condition"
     (loop (cond (gt (int 1) (int 0))))
 
+let test_strict_superstep_helper_param () =
+  (* let gate n = if n > 16 then superstep in gate thread_idx_x *)
+  let unit_e = mk_texpr TEUnit typ_unit in
+  let superstep =
+    mk_texpr (TESuperstep ("s", false, unit_e, unit_e)) typ_unit
+  in
+  let params = [tparam "n" 3] in
+  let body = if_ (gt (var "n") (int 16)) superstep in
+  barrier_refused
+    "superstep under a varying argument"
+    (let_rec "gate" params body (call "gate" [tid_x])) ;
+  accepted
+    "superstep under a uniform argument"
+    (let_rec "gate" params body (call "gate" [int 20]))
+
+let test_strict_barrier_helper_uniform_result () =
+  (* let load base = (let t = thread_idx_x in ...; base + 32) in
+     if load 0 > 16 then barrier: the result does not depend on the thread *)
+  let add_to a b = mk_texpr (TEBinop (Sarek_ast.Add, a, b)) typ_int32 in
+  let body =
+    mk_texpr (TELet ("t", 7, tid_x, add_to (var "base") (int 32))) typ_int32
+  in
+  accepted
+    "helper binding a thread index but returning a uniform value"
+    (let_rec
+       "load"
+       [tparam "base" 3]
+       body
+       (if_ (gt (call "load" [int 0]) (int 16)) barrier_call))
+
+let test_strict_barrier_shadowed_helper () =
+  (* let f x = (if x > 16 then barrier; x) in let g y = f y in
+     let f x = x + 1 in g thread_idx_x : g calls the first f *)
+  let old_f = seq [if_ (gt (var "n") (int 16)) barrier_call; var "n"] in
+  let new_f = mk_texpr (TEBinop (Sarek_ast.Add, var "n", int 1)) typ_int32 in
+  let p = [tparam "n" 3] in
+  barrier_refused
+    "barrier hidden by a redefinition of the helper"
+    (let_rec
+       "f"
+       p
+       old_f
+       (let_rec
+          "g"
+          [tparam "y" 4]
+          (call "f" [var "y"])
+          (let_rec "f" p new_f (call "g" [tid_x]))))
+
 let test_shuffle_makes_barrier_kernel () =
   (* A shuffle kernel is a barrier kernel for the CPU runtimes: the Native
      simulation exchanges through shared memory between two barriers. *)
@@ -1199,6 +1247,18 @@ let () =
             "strict barrier: while condition"
             `Quick
             test_strict_barrier_while_condition;
+          test_case
+            "strict barrier: superstep"
+            `Quick
+            test_strict_superstep_helper_param;
+          test_case
+            "strict barrier: uniform helper result"
+            `Quick
+            test_strict_barrier_helper_uniform_result;
+          test_case
+            "strict barrier: shadowed helper"
+            `Quick
+            test_strict_barrier_shadowed_helper;
           test_case
             "a shuffle kernel is a barrier kernel"
             `Quick

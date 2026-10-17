@@ -23,7 +23,8 @@
  * (section 2): a superstep reached in diverged flow is an error with or
  * without [@divergent], which is inert; the body and the continuation are
  * checked in the outer mode. Let-bound variance is tracked through
- * [varying_vars]; assignment, helper and array variance (section 3) are not
+ * [varying_vars]; the strict pass also follows helper parameters, helper
+ * results and mutables assigned in divergence (section 3); array variance is not
  * tracked yet.
  ******************************************************************************)
 
@@ -44,8 +45,13 @@ type sync_kind =
 
 (** A helper function in scope: what a call to it can be analysed against. *)
 type helper_def = {
+  hd_self : string;  (** the name it was defined under *)
   hd_params : string list;
   hd_body : texpr;
+  hd_defs : (string * helper_def) list Lazy.t;
+      (** The helpers in scope at its definition (itself excluded): a call
+          resolves names lexically, as the generated code does, not in the
+          caller's scope. *)
   hd_captured : StringSet.t;
       (** Thread-varying variables a nested helper captures from its definition
           site; empty for a module-level function. *)
@@ -164,6 +170,11 @@ let helper_name (f : texpr) : string option =
   | TEVar (name, _) | TEGlobalRef (name, _) -> Some name
   | _ -> None
 
+(** The helpers in scope inside the body of [def]: those of its definition site
+    plus itself. *)
+let body_defs (def : helper_def) =
+  (def.hd_self, def) :: List.remove_assoc def.hd_self (Lazy.force def.hd_defs)
+
 (** The environment a helper body is evaluated in at a call: what it captured,
     minus its own parameters, plus the parameters whose argument is varying. *)
 let helper_call_env (def : helper_def) (varying_args : bool list) : StringSet.t
@@ -231,7 +242,9 @@ let rec varying (vi : variance) (env : StringSet.t) (te : texpr) : bool =
   | TELet (name, _, value, body) ->
       let vv = v value in
       let env' = if vv then StringSet.add name env else env in
-      vv || varying (alias_def vi name value) env' body
+      (* Strict: the value of a [let] is that of its body, the bound value
+         reaches it only through the name. *)
+      ((not vi.strict) && vv) || varying (alias_def vi name value) env' body
   | TELetMut (name, _, value, body) ->
       let vv = v value in
       let env' =
@@ -239,7 +252,7 @@ let rec varying (vi : variance) (env : StringSet.t) (te : texpr) : bool =
           StringSet.add name env
         else env
       in
-      vv || varying vi env' body
+      ((not vi.strict) && vv) || varying vi env' body
   | TESeq es -> List.exists v es
   (* BSP constructs: check body/continuation *)
   | TELetShared (_, _, _, size_opt, body) ->
@@ -282,8 +295,10 @@ and alias_def vi name (value : texpr) =
 and add_def vi env name (params : tparam list) body =
   let def =
     {
+      hd_self = name;
       hd_params = List.map (fun p -> p.tparam_name) params;
       hd_body = body;
+      hd_defs = Lazy.from_val (List.remove_assoc name vi.defs);
       hd_captured = env;
     }
   in
@@ -298,7 +313,9 @@ and helper_result_varying vi env (f : texpr) (args : texpr list) : bool =
       match List.assoc_opt name vi.defs with
       | Some def ->
           let flags = List.map (varying vi env) args in
-          let vi' = {vi with visiting = name :: vi.visiting} in
+          let vi' =
+            {vi with visiting = name :: vi.visiting; defs = body_defs def}
+          in
           varying vi' (helper_call_env def flags) def.hd_body
       | None -> false)
   | _ -> false
@@ -657,6 +674,7 @@ and check_helper_call ctx (f : texpr) (args : texpr list) :
               {
                 ctx with
                 varying_vars = helper_call_env def flags;
+                variance = {ctx.variance with defs = body_defs def};
                 call_stack = name :: ctx.call_stack;
               }
             in
@@ -732,21 +750,25 @@ let check_kernel (kernel : tkernel) : (unit, Sarek_error.error list) result =
       kernel.tkern_module_items
   in
   (* Module functions as strict-analysis helpers; they capture nothing. *)
-  let defs =
-    List.filter_map
-      (fun (item : tmodule_item) ->
-        match item with
-        | TMFun (name, _, params, body) ->
-            Some
-              ( name,
-                {
-                  hd_params = List.map (fun p -> p.tparam_name) params;
-                  hd_body = body;
-                  hd_captured = StringSet.empty;
-                } )
-        | TMConst _ -> None)
-      kernel.tkern_module_items
+  let rec defs =
+    lazy
+      (List.filter_map
+         (fun (item : tmodule_item) ->
+           match item with
+           | TMFun (name, _, params, body) ->
+               Some
+                 ( name,
+                   {
+                     hd_self = name;
+                     hd_params = List.map (fun p -> p.tparam_name) params;
+                     hd_body = body;
+                     hd_defs = defs;
+                     hd_captured = StringSet.empty;
+                   } )
+           | TMConst _ -> None)
+         kernel.tkern_module_items)
   in
+  let defs = Lazy.force defs in
   let ctx = {init_ctx with sync_helpers} in
   let strict_ctx = {ctx with variance = {strict = true; defs; visiting = []}} in
   let all_errors =
