@@ -259,19 +259,44 @@ production and extracted model stays green).
 - **AC-10** `dune build @fmt`, `dune build`, `dune test` green; no existing test
   changed except those named in section 7; new files <= 500 lines, functions <= 50.
 
-## 11. Coverage table (to fill in the PR, one row per backend)
+## 11. Coverage table (filled at implementation, 2026-10-17)
+
+Machine for the device runs: tartarus (Ryzen 9 7950X, RX 7900 XTX gfx1100 only,
+`HIP_VISIBLE_DEVICES=0`, `ROCR_VISIBLE_DEVICES=0`, `RUSTICL_ENABLE=radeonsi:0`,
+`SPOC_DISABLE_VULKAN=1`, under `flock /tmp/katra-gpu.lock` and
+`scripts/gpu-kernel-log-gate.sh`; the kernel log stayed clean). Raw outputs are
+kept outside the repository, in `/tmp/ws-evidence/` on tartarus. The load
+average read 2 to 4 during the runs (other sessions), which does not matter for
+the pass/fail parity runs and is why the timing is marked provisional.
 
 | Backend | Lowered | Capability gate | Golden | Device test | Parity vs Native | Status |
 |---|---|---|---|---|---|---|
-| CUDA C (NVRTC) | | | | | | |
-| PTX | | | | | | |
-| HIP | | | | | | |
-| OpenCL | | | | | | |
-| Vulkan | | | | | | |
-| Metal | | | | | | |
-| WGSL | | | | | | |
-| Native | | | | | | |
-| Interpreter | | | | | | |
+| CUDA C (NVRTC) | `__shfl*_sync`, `warpSize`, clamped delta/mask (shared generator with HIP) | `Warp_shuffle` listed (sm_30 and above) | `warp_shuffle_cuda.expected` | none (no NVIDIA device; the `#else` branch is never compiled) | by text | golden only, unverified on NVRTC |
+| PTX | `shfl.sync.{idx,down,up,bfly}.b32`, `laneid`, `WARP_SZ`, f64 as two halves, idx masked and relative modes clamped | listed | `warp_shuffle_ptx.expected` | ZLUDA on gfx1100: 24/24 shapes and types (`test_warp_shuffle_parity`), reduce (`test_warp_shuffle_reduce`) | bit for bit | tested through ZLUDA; found and fixed: ZLUDA returns the own value for `idx` operands >= 32, hence the explicit `and 31` |
+| HIP | `__shfl*` with `width = warpSize`, clamped | listed | same source as CUDA C | gfx1100 (W = 32): 24/24, reduce | bit for bit | tested; W = 64 not run (no device) |
+| OpenCL | `sub_group_shuffle` with a computed source lane, `-cl-std=CL3.0` | `cl_khr_subgroup_shuffle` and the measured lane mapping (`Opencl_warp_probe`), `warp_size` measured | `warp_shuffle_opencl.expected` (also syntax-checked by clang `-cl-std=CL3.0`) | RX 7900 XTX under rusticl, W = 64: 16/16 (no fp64 on that device), reduce | bit for bit | tested at W = 64; pocl and llvmpipe CPU refuse (8x8 lane mapping fails) |
+| Vulkan | `subgroupShuffle` with a computed source lane, f64 as two halves, Vulkan 1.1 environment | `BASIC` and `SHUFFLE` for compute (`subgroup_shuffle_supported`) | `warp_shuffle_glsl.expected`, `glslangValidator --target-env vulkan1.1`, `spirv-val` | none: Vulkan is not run on tartarus (owner rule) | by text | golden and offline validation only; lane mapping not probed |
+| Metal | `simd_shuffle` with a computed source lane; attributes passed to helpers | listed | `warp_shuffle_metal.expected` | none (decision D7) | by text | golden only; a warp operation in a user helper is refused |
+| WGSL | `subgroupShuffle`, `enable subgroups;`, `var<private>` lane and width | no WebGPU runtime device in the tree | `warp_shuffle_wgsl.expected` | none | by text | golden only, unverified (naga 30 does not implement `subgroups` yet); no f64 |
+| Native | `Sarek_cpu_runtime.Warp` (exchange array, two barriers), width 32 by default | `Warp_shuffle` listed | n/a | `test_warp_shuffle_parity` W in {8, 16, 32, 64}, `test_warp_shuffle_reduce` | oracle | tested |
+| Interpreter | same algorithm on the effect-based threads | listed | n/a | same tests | equal to Native | tested |
+
+Provisional timing (AC-9, not a gate), `bench_warp_shuffle` on gfx1100 HIP,
+2026-10-17, 4096 dependent 8-lane float32 reductions per thread, 1,048,576
+threads, median of 7 alternating pairs, machine loaded: 3 shuffles 5.55 ms,
+shared memory with 2 barriers 11.65 ms (2.10x). No performance claim for Katra
+rests on this number; Katra must measure its own kernel in a quiet window.
+
+Deviations from the brief, all recorded in the PR:
+- the launch error is the existing `Execute_error.Invalid_dimensions` (there is
+  no `Invalid_launch`);
+- OpenCL, Vulkan, Metal and WGSL lower `down`, `up` and `xor` as index shuffles
+  with a computed source lane (no `_relative` extension, no relative bit);
+- the lane-mapping probe (section 6.5) is implemented for OpenCL only; Vulkan is
+  not run, and CUDA and HIP rely on the architecture;
+- the PPX typing is an overload in the typer (decision D1, option a);
+- rule H-2 of the convergence spec (a barrier or collective hidden in a helper)
+  was documented but not implemented; it is now, for barriers and collectives.
 
 ## 12. Documentation
 
@@ -287,7 +312,7 @@ with `xor`.
 
 ## 13. Decisions (owner, validated 2026-10-17)
 
-Options considered are kept in the brief history (commit 2995e672). Binding decisions:
+Options considered are in the earlier versions of this file (Git history). Binding decisions:
 
 - **D1 Typing.** `int32`, `float32`, `float64`. Overloaded on the value type if the Sarek
   typer allows it (precedent to check: how `abs`/`min` are typed); otherwise type-suffixed

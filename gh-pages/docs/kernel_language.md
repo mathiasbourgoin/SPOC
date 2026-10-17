@@ -137,3 +137,41 @@ let tile_in_shared =
 Source: `Sarek_typer.ml` (`const_int_value`, `fold_const_size`, `check_create_array`).
 
 On WGSL a constant-size `Local` array lowers to a function-scope `var a : array<T, N>`.
+
+## Warp shuffles
+
+A warp is the group of threads that a device runs in lockstep: a wave on AMD, a SIMD-group on Apple, a subgroup in Vulkan, OpenCL and WebGPU. Four primitives read a value from another lane of the warp, for `int32`, `float32` and `float64` values (the compiler picks the instance from the type of the value). `W` is `warp_size`, an `int32` constant that depends on the device (32 on NVIDIA, RDNA and Apple GPUs, 32 or 64 on AMD, 8 to 64 on Vulkan and OpenCL devices), and the calling lane is `lane_id`.
+
+| Call | Lane read by lane `i` | Out of range |
+|---|---|---|
+| `warp_shuffle v x` | `x land (W-1)` | cannot occur |
+| `warp_shuffle_down v d` | `i + d` | `d < 0` or `i + d >= W`: the lane's own `v` |
+| `warp_shuffle_up v d` | `i - d` | `d < 0` or `i - d < 0`: the lane's own `v` |
+| `warp_shuffle_xor v m` | `i lxor m` | `m < 0` or `i lxor m >= W`: the lane's own `v` |
+
+The lane operand is an `int32`, read in two's complement. The table holds on every backend: the emitters add the guards that make it so where a vendor leaves a case undefined.
+
+```ocaml
+(* Sum of 8 consecutive lanes, delivered to each of them: the masks 4, 2, 1
+   stay inside aligned groups of 8 whatever the warp width. *)
+let sum8 =
+  [%kernel
+    fun (input : float32 vector) (output : float32 vector) ->
+      let open Sarek_stdlib.Std in
+      let tid = global_thread_id in
+      let s0 = input.(tid) in
+      let s1 = s0 +. warp_shuffle_xor s0 4l in
+      let s2 = s1 +. warp_shuffle_xor s1 2l in
+      let s3 = s2 +. warp_shuffle_xor s2 1l in
+      output.(tid) <- s3]
+```
+
+Rules:
+
+- Every lane of the warp takes part. A shuffle under a thread-varying `if`, in a loop whose bound varies per thread, or in a helper called from such code is refused at compile time (`Warp collective 'warp_shuffle_xor' called in diverged control flow`). There is no mask and no `width` argument; use `xor` with masks below a power of two for sub-warp groups.
+- The launch block must be a whole number of warps: a kernel that shuffles is refused with `Execute_error.Invalid_dimensions` when `bx * by * bz` is not a multiple of the device's warp width. A thread's lane is its linear index `tx + bx * (ty + by * tz)` modulo `W`.
+- CUDA, HIP, Metal, Vulkan and OpenCL devices run the shuffles natively (Vulkan needs the `BASIC` and `SHUFFLE` subgroup operations in the compute stage, OpenCL needs `cl_khr_subgroup_shuffle` and a lane mapping measured once per device, WebGPU needs the `subgroups` feature). A device without the feature refuses the kernel with a message naming it; emulation through shared memory on those devices is planned.
+- Native and the Interpreter simulate a warp of 32 lanes with two block barriers per shuffle. They are slow and exact: they are the reference the device results are compared with, bit for bit.
+- `warp_vote_all`, `warp_vote_any`, `warp_ballot` and `warp_active_mask` are not available yet.
+
+Sources: `Sarek_warp.ml` (the table, executable), `Sarek_ir_warp_text.ml` (the source backends), `Sarek_cpu_runtime_warp.ml` (Native), `Execute.check_launch_warp`.

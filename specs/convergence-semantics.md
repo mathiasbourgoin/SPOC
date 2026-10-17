@@ -189,12 +189,22 @@ and the model.
 
 | Name | Refusal | Reason |
 |---|---|---|
-| `warp_shuffle`, `warp_shuffle_down`, `warp_shuffle_up`, `warp_shuffle_xor`, `warp_vote_all`, `warp_vote_any`, `warp_ballot`, `warp_active_mask`, `warp_size` | located PPX error: not yet lowered by any backend; warp-level collectives arrive with S1 | every backend fails with "Unknown intrinsic" late (C-49); `warp_size` is not a constant 32 |
+| `warp_vote_all`, `warp_vote_any`, `warp_ballot`, `warp_active_mask` | located PPX error: not yet lowered by any backend; warp-level collectives arrive with S1 | every backend fails with "Unknown intrinsic" late (C-49) |
 | `return_unit` | located PPX error: Sarek has no early return; restructure with `if`/`else` | CUDA emits `return` and then skips later barriers, while Native and the interpreter continue (C-6) |
 
-The convergence classes of the warp primitives stay in the table and in the
-checker, unit-tested on hand-built typed ASTs, so S1 starts from a checked
-base.
+`warp_shuffle`, `warp_shuffle_down`, `warp_shuffle_up`, `warp_shuffle_xor`,
+`warp_size` and `lane_id` left this table when every backend gained their
+lowering (docs/plans/warp-shuffle-intake-2026-10-17.md). The shuffles keep the
+`WarpConvergence` class: a shuffle reached in `Diverged` mode, directly or
+through a helper (H-2), is `Warp_collective_in_diverged_flow`. They are
+`Convergent` in the purity table, which is not `Pure`: no pass may hoist, sink,
+duplicate or move them across control flow, and a kernel that uses any warp
+operation is never fused, windowed with another launch, rewritten to a matrix
+unit or index-sliced. A kernel that shuffles is also a barrier kernel for the
+CPU runtimes (the simulation exchanges through shared memory between two
+barriers) and its launch block must be a whole number of warps. The convergence
+classes of the votes stay in the table and in the checker, unit-tested on
+hand-built typed ASTs, so S1 starts from a checked base.
 
 ## 8. What S1 (warp-scope supersteps) adds on top
 
@@ -241,5 +251,7 @@ S1 is not implemented here. The rules above are its block-scope instance.
 | G-12 | an `atomic_add_int32` result conditioning a barrier | compiled | rejected (C-4) |
 | G-13 | a `create_array 4l Local` read conditioning a barrier | compiled | rejected (C-5) |
 | G-14 | `if tid = 0l then s.(0l) <- v; block_barrier (); if s.(0l) > 0l then block_barrier ()` with `s` shared | compiled | accepted (race freedom) |
-| G-15 | any `warp_*` intrinsic, any context | compiled | rejected, not yet lowered (C-49) |
+| G-15 | `warp_vote_all`, `warp_vote_any`, `warp_ballot` or `warp_active_mask`, any context | compiled | rejected, not yet lowered (C-49) |
+| G-17 | `if thread_idx_x > 16l then warp_shuffle_xor v 1l` | compiled | rejected, `Warp collective 'warp_shuffle_xor' called in diverged control flow` (H-2 for a helper) |
+| G-18 | `warp_shuffle_xor v 1l` after a varying `if` that has ended, or under a block-uniform `if` | compiled | accepted |
 | G-16 | `return_unit ()` anywhere | compiled | rejected (C-6) |
