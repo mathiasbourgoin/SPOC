@@ -165,6 +165,53 @@
 
 <p>A loop that already carries a pragma is left alone, so <code class="language-plaintext highlighter-rouge">pragma ["unroll 1"] (for ...)</code> opts one loop out. <code class="language-plaintext highlighter-rouge">SAREK_OPT_DISABLE=unroll</code> turns the pass off for every loop. The variable is read when the program starts; the generated source of a kernel is memoised with the policy it was made under, so nothing is stale. <code class="language-plaintext highlighter-rouge">SAREK_EXPLAIN=1</code> prints <code class="language-plaintext highlighter-rouge">sarek-explain &lt;kernel&gt; gen:&lt;generator&gt; unroll applied exact</code> once per kernel and generator. Only the CUDA, HIP, OpenCL, Metal and GLSL generators run the pass, so WGSL and PTX never get a hint. Unrolling does not change which operations run or their order. Sources: <code class="language-plaintext highlighter-rouge">Sarek_ir_unroll.ml</code> (<code class="language-plaintext highlighter-rouge">max_trip</code>, <code class="language-plaintext highlighter-rouge">annotate</code>, <code class="language-plaintext highlighter-rouge">trip_count</code>), called from <code class="language-plaintext highlighter-rouge">Sarek_ir_cuda.ml</code>, <code class="language-plaintext highlighter-rouge">Sarek_ir_opencl.ml</code>, <code class="language-plaintext highlighter-rouge">Sarek_ir_metal.ml</code> and <code class="language-plaintext highlighter-rouge">Sarek_ir_glsl.ml</code> (<code class="language-plaintext highlighter-rouge">generate_with_types</code>). All variables are in <a href="environment.html">Environment variables</a>.</p>
 
+<h3 id="launch-bounds">Launch bounds</h3>
+
+<p><code class="language-plaintext highlighter-rouge">pragma ["sarek.max_threads N"] (body)</code> around the whole kernel body declares that the kernel is never launched with more than <code class="language-plaintext highlighter-rouge">N</code> threads per block (<code class="language-plaintext highlighter-rouge">1 &lt;= N &lt;= 1024</code>). A device compiler that assumes the worst case (1024 threads) must then cap registers per thread; a smaller bound lifts that cap. Measured offline with hipcc on gfx1100 (2026-10-16, a kernel holding 240 floats in registers): without the hint <code class="language-plaintext highlighter-rouge">.vgpr_count 192</code> with 216 bytes of scratch spill; with <code class="language-plaintext highlighter-rouge">__launch_bounds__(256)</code> <code class="language-plaintext highlighter-rouge">.vgpr_count 249</code> and no spill. The default is unchanged: a kernel without the pragma generates exactly the source it did before.</p>
+
+<div class="language-ocaml highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">let</span> <span class="n">k</span> <span class="o">=</span> <span class="p">[</span><span class="o">%</span><span class="n">kernel</span> <span class="k">fun</span> <span class="p">(</span><span class="n">out</span> <span class="o">:</span> <span class="n">int32</span> <span class="n">vector</span><span class="p">)</span> <span class="p">(</span><span class="n">n</span> <span class="o">:</span> <span class="n">int32</span><span class="p">)</span> <span class="o">-&gt;</span>
+  <span class="n">pragma</span> <span class="p">[</span><span class="s2">"sarek.max_threads 256"</span><span class="p">]</span>
+    <span class="p">(</span><span class="k">let</span> <span class="n">tid</span> <span class="o">=</span> <span class="n">thread_idx_x</span> <span class="o">+</span> <span class="p">(</span><span class="n">block_dim_x</span> <span class="o">*</span> <span class="n">block_idx_x</span><span class="p">)</span> <span class="k">in</span>
+     <span class="k">if</span> <span class="n">tid</span> <span class="o">&lt;</span> <span class="n">n</span> <span class="k">then</span> <span class="n">out</span><span class="o">.</span><span class="p">(</span><span class="n">tid</span><span class="p">)</span> <span class="o">&lt;-</span> <span class="n">tid</span><span class="p">)]</span>
+</code></pre></div></div>
+
+<table>
+  <thead>
+    <tr>
+      <th>Backend</th>
+      <th>What is emitted</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>CUDA (CUDA/C), HIP</td>
+      <td><code class="language-plaintext highlighter-rouge">__global__ __launch_bounds__(N) void</code></td>
+    </tr>
+    <tr>
+      <td>CUDA (PTX)</td>
+      <td><code class="language-plaintext highlighter-rouge">.maxntid bx, by, bz</code> from the launch block (per-dimension in PTX), when the block respects <code class="language-plaintext highlighter-rouge">N</code></td>
+    </tr>
+    <tr>
+      <td>OpenCL</td>
+      <td><code class="language-plaintext highlighter-rouge">__attribute__((reqd_work_group_size(bx, by, bz)))</code> from the launch block, when it respects <code class="language-plaintext highlighter-rouge">N</code>; the kernel is then valid for that block only (the source is memoised per block)</td>
+    </tr>
+    <tr>
+      <td>Metal</td>
+      <td><code class="language-plaintext highlighter-rouge">[[max_total_threads_per_threadgroup(N)]] kernel void</code> (generation tested; not compiled on a Mac in this change)</td>
+    </tr>
+    <tr>
+      <td>Vulkan (GLSL), WebGPU (WGSL)</td>
+      <td>nothing: the work-group size is the launch block already</td>
+    </tr>
+    <tr>
+      <td>Native, Interpreter</td>
+      <td>nothing in source</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>On every backend, Native and Interpreter included, a launch whose block has more than <code class="language-plaintext highlighter-rouge">N</code> threads is refused before it starts with <code class="language-plaintext highlighter-rouge">Execute_error.Invalid_dimensions</code> naming the kernel, the bound and the block. A fused kernel (horizontal or epilogue fusion) takes the smallest bound of its members. The pragma is refused at compile time if <code class="language-plaintext highlighter-rouge">N</code> is not an integer in <code class="language-plaintext highlighter-rouge">1..1024</code>, if it is not around the whole kernel body, or if it appears twice. A matrix-pattern rewrite chooses its own launch geometry and drops the bound. Sources: <code class="language-plaintext highlighter-rouge">Sarek_launch_bounds.ml</code>, <code class="language-plaintext highlighter-rouge">Execute.check_launch_bounds</code>, the <code class="language-plaintext highlighter-rouge">kern_launch_bounds</code> field of <code class="language-plaintext highlighter-rouge">Sarek_ir_types.kernel</code>.</p>
+
 <h2 id="private-and-shared-arrays">Private and shared arrays</h2>
 
 <table>
