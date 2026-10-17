@@ -140,6 +140,17 @@ let scalar_param v = DParam (v, None)
     [Ok]) into one kernel named [name]. Raises [Incompatible] when two members
     define the same type or helper name differently. *)
 let fuse ~(name : string) (members : kernel list) : kernel =
+  (* Re-numbering and guarding the members' blocks changes which threads share
+     a warp, which a warp shuffle depends on: such a kernel is never a member,
+     whatever the caller's own verdict said. *)
+  List.iter
+    (fun (m : kernel) ->
+      if Sarek_ir_analysis.kernel_uses_warp_ops m then
+        raise
+          (Incompatible
+             (m.kern_name
+            ^ " uses a warp operation (shuffle, warp_size, lane_id)")))
+    members ;
   let stride =
     1 + List.fold_left (fun m k -> max m (Ir_rename.max_var_id k)) 0 members
   in

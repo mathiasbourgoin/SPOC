@@ -363,6 +363,13 @@ let decide ?precision ~explicit ~stream ~(device : Device.t) ~ir ~launch () =
     else Ok ()
   in
   let* () = device_possible device ~explicit ~stream in
+  let* () =
+    (* The rewrite chooses its own geometry; a warp shuffle is defined over the
+       warp the kernel was written for. *)
+    if Sarek_ir_analysis.kernel_uses_warp_ops ir then
+      Error "the kernel uses a warp operation (shuffle, warp_size or lane_id)"
+    else Ok ()
+  in
   let e = entry ir in
   let* plan = e.plan in
   let* () =

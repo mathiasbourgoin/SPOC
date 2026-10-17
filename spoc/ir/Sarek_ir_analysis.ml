@@ -213,15 +213,16 @@ let exists_folder ~leaf ?(type_leaf = fun _ -> false)
     [Kernel.requirements] capability field reduces to, and it lives in the right
     layer already ([spoc/ir], no backend dependencies). *)
 
-type feature = Float64 | Float16 | Int64 | Coopmat
+type feature = Float64 | Float16 | Int64 | Coopmat | Warp_shuffle
 
-let all_features = [Float64; Float16; Int64; Coopmat]
+let all_features = [Float64; Float16; Int64; Coopmat; Warp_shuffle]
 
 let feature_name = function
   | Float64 -> "float64"
   | Float16 -> "float16"
   | Int64 -> "int64"
   | Coopmat -> "cooperative-matrix"
+  | Warp_shuffle -> "warp-shuffle"
 
 (** Does element type [t] mention the width [f], transitively through records,
     variants, arrays and vectors? *)
@@ -253,6 +254,7 @@ let const_uses (f : feature) c =
   | _ -> false
 
 let feature_leaf f = function
+  | EIntrinsic (_, name, _) -> f = Warp_shuffle && Sarek_warp.is_warp_name name
   | EConst c -> const_uses f c
   | EVar v -> elttype_uses f v.var_type
   | ECast (ty, _) | EArrayCreate (ty, _, _) -> elttype_uses f ty
@@ -267,7 +269,7 @@ let feature_leaf f = function
 let feature_stmt_leaf f s =
   match (f, s) with
   | Coopmat, SCoopmat _ -> true
-  | (Coopmat | Float64 | Float16 | Int64), _ -> false
+  | (Coopmat | Float64 | Float16 | Int64 | Warp_shuffle), _ -> false
 
 let folder_of f =
   exists_folder
@@ -288,11 +290,14 @@ let int64_folder = folder_of Int64
 
 let coopmat_folder = folder_of Coopmat
 
+let warp_shuffle_folder = folder_of Warp_shuffle
+
 let folder = function
   | Float64 -> float64_folder
   | Float16 -> float16_folder
   | Int64 -> int64_folder
   | Coopmat -> coopmat_folder
+  | Warp_shuffle -> warp_shuffle_folder
 
 (** Does expression [e] use width [f]? *)
 let expr_uses f e = expr_fold (folder f) false e
@@ -344,6 +349,50 @@ let decl_uses_float16 d = decl_uses Float16 d
 let helper_uses_float16 hf = helper_uses Float16 hf
 
 let kernel_uses_float16 k = kernel_uses Float16 k
+
+(** {2 Warp operations}
+
+    [kernel_uses Warp_shuffle] is true for any warp-structure intrinsic
+    ([warp_shuffle*], [warp_size], [lane_id]; see {!Sarek_warp}): it is the
+    capability a device must provide to run the kernel. {!kernel_uses_shuffle}
+    is narrower: only the collective shuffles, which carry the launch rule (the
+    block must be a whole number of warps). *)
+
+let shuffle_leaf = function
+  | EIntrinsic (_, name, _) -> Sarek_warp.is_shuffle_name name
+  | _ -> false
+
+let shuffle_folder = exists_folder ~leaf:shuffle_leaf ~native:false ()
+
+let kernel_uses_shuffle k = kernel_fold shuffle_folder false k
+
+let kernel_uses_warp_ops k = kernel_uses Warp_shuffle k
+
+(** Every distinct warp operation ({!Sarek_warp.call}) a kernel contains, helper
+    functions included, in order of first occurrence. The source backends use it
+    to emit exactly the helper functions and extensions the kernel needs. *)
+let warp_calls_folder =
+  {
+    fe =
+      (fun acc e ->
+        match e with
+        | EIntrinsic (_, name, _) -> (
+            match Sarek_warp.classify name with
+            | Some call when not (List.mem call acc) -> call :: acc
+            | _ -> acc)
+        | _ -> acc);
+    ft = (fun acc _ -> acc);
+    fs = (fun acc _ -> acc);
+    fnative = Fun.id;
+    visit_lvalue = true;
+  }
+
+let kernel_warp_calls k = List.rev (kernel_fold warp_calls_folder [] k)
+
+(** The warp operations used by helper function [hf] alone. A target whose
+    helpers cannot read the warp built-ins refuses a kernel for which this is
+    non-empty. *)
+let helper_warp_calls hf = List.rev (helper_fold warp_calls_folder [] hf)
 
 (** {1 Atomic-operation detection}
 

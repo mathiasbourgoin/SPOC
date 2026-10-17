@@ -7,8 +7,10 @@
  * Sarek PPX - intrinsics that type-check but are refused at compile time.
  *
  * Findings C-49 and C-6 of the 2026-10-11 review: no backend lowers the warp
- * intrinsics or [return_unit] soundly, so the typer refuses them at the use
- * site ({!Sarek_error.Unlowered_intrinsic}).
+ * votes, the ballot, the active mask or [return_unit] soundly, so the typer
+ * refuses them at the use site ({!Sarek_error.Unlowered_intrinsic}). The warp
+ * shuffles, [warp_size] and [lane_id] were removed from this table when the
+ * backends gained their lowering (docs/plans/warp-shuffle-intake-2026-10-17.md).
  *
  * This module has no dependency on {!Sarek_env}: the environment consults it
  * (to let a user function shadow a refused name) and the typer consults it (to
@@ -35,15 +37,10 @@
     [test_unlowered.ml] pins this. *)
 let table : ((string option * string) * Sarek_error.unlowered_reason) list =
   [
-    ((None, "warp_shuffle"), Sarek_error.Warp_collective);
-    ((None, "warp_shuffle_down"), Warp_collective);
-    ((None, "warp_shuffle_up"), Warp_collective);
-    ((None, "warp_shuffle_xor"), Warp_collective);
-    ((None, "warp_vote_all"), Warp_collective);
+    ((None, "warp_vote_all"), Sarek_error.Warp_collective);
     ((None, "warp_vote_any"), Warp_collective);
     ((None, "warp_ballot"), Warp_collective);
     ((None, "warp_active_mask"), Warp_collective);
-    ((None, "warp_size"), Warp_size);
     ((Some "Gpu", "return_unit"), Early_return);
   ]
 

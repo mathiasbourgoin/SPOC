@@ -112,6 +112,84 @@ let eval_barrier_intrinsic name =
       Some VUnit
   | _ -> None
 
+(** {1 Warp operations}
+
+    The interpreter simulates the warp: [Sarek_warp.simulated_width ()]
+    consecutive threads of the block (linear thread id, x fastest). A shuffle is
+    an exchange through a per-block array in the block's shared table between
+    two barriers, exactly as Native does ({!Sarek_cpu_runtime_warp}), and the
+    source lane is {!Sarek_warp.source_lane}. *)
+
+let warp_linear_thread_id state =
+  let tx, ty, tz = state.thread_idx and bx, by, _ = state.block_dim in
+  tx + (bx * (ty + (by * tz)))
+
+let warp_block_size state =
+  let bx, by, bz = state.block_dim in
+  bx * by * bz
+
+let warp_exchange_slots (shared : (string, value array) Hashtbl.t) ty n =
+  let key = "__warp_xchg_" ^ Sarek_warp.type_suffix ty in
+  match Hashtbl.find_opt shared key with
+  | Some slots -> slots
+  | None ->
+      let slots = Array.make n VUnit in
+      Hashtbl.add shared key slots ;
+      slots
+
+(* A block that is not a whole number of warps would read slots that do not
+   exist. The launch rule refuses it first; this is the defensive half. *)
+let warp_check_block state ~width ~name =
+  let n = warp_block_size state in
+  if n mod width <> 0 then
+    Interp_error.raise_error
+      (Unsupported_operation
+         {
+           operation = name;
+           reason =
+             Printf.sprintf
+               "block of %d threads is not a multiple of the warp width %d"
+               n
+               width;
+         })
+
+let eval_warp_shuffle shared state ~name op ty value lane_operand =
+  let width = Sarek_warp.simulated_width () in
+  warp_check_block state ~width ~name ;
+  let slots = warp_exchange_slots shared ty (warp_block_size state) in
+  let t = warp_linear_thread_id state in
+  let lane = Sarek_warp.lane_of_thread ~width t in
+  slots.(t) <- value ;
+  Effect.perform Barrier ;
+  let source =
+    Sarek_warp.source_lane
+      op
+      ~width
+      ~lane
+      (Int32.to_int (to_int32 lane_operand))
+  in
+  let result = slots.(t - lane + source) in
+  Effect.perform Barrier ;
+  result
+
+(** Evaluate a warp operation ([warp_shuffle*], [warp_size], [lane_id]).
+    [shared] is the block's shared table. *)
+let eval_warp_call shared state ~name call args =
+  match (call, args) with
+  | Sarek_warp.Warp_size, [] ->
+      VInt32 (Int32.of_int (Sarek_warp.simulated_width ()))
+  | Sarek_warp.Lane_id, [] ->
+      let width = Sarek_warp.simulated_width () in
+      VInt32
+        (Int32.of_int
+           (Sarek_warp.lane_of_thread ~width (warp_linear_thread_id state)))
+  | Sarek_warp.Shuffle (op, ty), [value; lane_operand] ->
+      eval_warp_shuffle shared state ~name op ty value lane_operand
+  | _ ->
+      Interp_error.raise_error
+        (Unsupported_operation
+           {operation = name; reason = "wrong number of arguments"})
+
 (* Serialises global-memory atomics. The sequential interpreter needs no lock,
    but the parallel interpreter distributes blocks across a domain pool sharing
    the same global VArray, so the read-modify-write must be atomic. *)

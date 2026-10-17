@@ -71,6 +71,14 @@ let rec eval_intrinsic state path name args =
                     eval_intrinsic_by_type path name args))
       else eval_intrinsic_by_type path name args
 
+(** {!eval_intrinsic} for a call that may need the block's shared table: the
+    warp operations exchange through it. Everything else is path-dispatched as
+    before. *)
+and eval_intrinsic_in_env env state path name args =
+  match Sarek_warp.classify name with
+  | Some call -> eval_warp_call env.shared state ~name call args
+  | None -> eval_intrinsic state path name args
+
 (** Try type-specific intrinsics based on path *)
 and eval_intrinsic_by_type path name args =
   let builtin =
@@ -275,7 +283,7 @@ and eval_control_flow state env = function
 and eval_special_expr state env = function
   | EIntrinsic (path, name, args) ->
       let arg_vals = List.map (eval_expr state env) args in
-      eval_intrinsic state path name arg_vals
+      eval_intrinsic_in_env env state path name arg_vals
   | ECast (ty, e) -> (
       let v = eval_expr state env e in
       match ty with
@@ -371,7 +379,7 @@ and eval_app state env fn_expr args =
   match fn_expr with
   | EIntrinsic (path, name, []) ->
       let arg_vals = List.map (eval_expr state env) args in
-      eval_intrinsic state path name arg_vals
+      eval_intrinsic_in_env env state path name arg_vals
   | EVar v -> (
       match Hashtbl.find_opt env.funcs v.var_name with
       | Some hf ->

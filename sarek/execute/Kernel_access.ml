@@ -322,8 +322,19 @@ let check_helper (k : kernel) hf =
   in
   check_stmt sc hf.hf_body
 
-(* Under [Refuse]: the shared memory [k] declares, in bytes. *)
+(* Under [Refuse]: the shared memory [k] declares, in bytes.
+
+   A kernel that uses a warp operation (a shuffle, [warp_size], [lane_id]) is
+   never merged, fused or re-launched with another: a shuffle is a convergent
+   operation whose result depends on which threads share its warp, and every
+   transformation built on this check changes that membership - horizontal
+   fusion re-numbers the blocks of its members and guards them, an epilogue
+   adds threads and a guard around the producer. Refused here, at the one gate
+   all of them go through ([horizontal_verdict], which Launch_window,
+   Launch_epilogue and Fusion_epilogue's consumer shape read). *)
 let check_kernel (k : kernel) : int =
+  if Sarek_ir_analysis.kernel_uses_warp_ops k then
+    refuse "uses a warp operation (shuffle, warp_size or lane_id)" ;
   let sc = kernel_scope k in
   let binds, body = shared_prefix k.kern_body in
   let sc, bytes =

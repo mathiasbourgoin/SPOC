@@ -239,6 +239,23 @@ let atomic_recipe name =
   in
   [(name, kernel name out (EIntrinsic (stdlib_path, name, args)))]
 
+(* The warp operations: lane_id and warp_size read a special register; a typed
+   shuffle moves a value of its own type with a lane operand. *)
+let warp_recipe name =
+  let lane = rd "ai32" in
+  let one label out args =
+    (label, kernel label out (EIntrinsic ([], name, args)))
+  in
+  match Sarek_warp.classify name with
+  | Some (Sarek_warp.Shuffle (_, Sarek_warp.I32)) ->
+      [one name "oi32" [rd "ai32"; lane]]
+  | Some (Sarek_warp.Shuffle (_, Sarek_warp.F32)) ->
+      [one name "of32" [rd "af32"; lane]]
+  | Some (Sarek_warp.Shuffle (_, Sarek_warp.F64)) ->
+      [one name "of64" [rd "af64"; lane]]
+  | Some (Sarek_warp.Warp_size | Sarek_warp.Lane_id) -> [one name "oi32" []]
+  | None -> []
+
 (** [cases_for name] is every (label, kernel) pair exercising intrinsic [name],
     or [None] when the name has no recipe (a drift alarm, not a skip). *)
 let cases_for name =
@@ -294,6 +311,8 @@ let cases_for name =
              rs)
   else if List.mem name Sarek_ir_ptx_expr.atomic_intrinsic_names then
     Some (atomic_recipe name)
+  else if List.mem name Sarek_ir_ptx_expr.warp_intrinsic_names then
+    Some (warp_recipe name)
   else if
     List.mem name Sarek_ir_ptx_expr.transcendental_intrinsic_names
     || List.mem name Sarek_ir_ptx_expr.float_ops_intrinsic_names
@@ -337,10 +356,11 @@ let named_sets =
     ("bitcast", Sarek_ir_ptx_expr.bitcast_intrinsic_names);
     ("convert", Sarek_ir_ptx_expr.convert_intrinsic_names);
     ("atomic", Sarek_ir_ptx_expr.atomic_intrinsic_names);
+    ("warp", Sarek_ir_ptx_expr.warp_intrinsic_names);
   ]
 
-(** The six emitter name sets must PARTITION the intrinsic surface. Dispatch
-    picks an emitter by name, so a name claimed twice is ambiguous: before the
+(** The emitter name sets must PARTITION the intrinsic surface. Dispatch picks
+    an emitter by name, so a name claimed twice is ambiguous: before the
     dispatch table it was silently won by whichever emitter came first in the
     candidate list (no warning, no failure, wrong lowering). *)
 let test_name_sets_disjoint () =

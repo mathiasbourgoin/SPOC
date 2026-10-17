@@ -32,6 +32,11 @@ type purity =
   | Pure  (** No side effects *)
   | Impure  (** Has side effects *)
   | Atomic  (** Atomic memory operation *)
+  | Convergent
+      (** Pure in the sense of having no side effect, but its result depends on
+          OTHER threads of the warp: it must not be hoisted, sunk, duplicated,
+          merged (CSE) or moved across control flow, and it is not {!Pure} for
+          any motion purpose. Warp shuffles. *)
 
 (** A core primitive definition *)
 type primitive = {
@@ -666,7 +671,10 @@ let primitives =
       category = "fence";
     };
     (* === Warp-Level Primitives === *)
-    (* Warp shuffle: exchange values between lanes *)
+    (* Warp shuffle: exchange values between lanes. The table type is the
+       int32 instance; the typer overloads these four names on int32, float32
+       and float64 (see [is_warp_shuffle] and Sarek_typer), so [typ] here is
+       what a bare, unapplied reference sees. *)
     {
       name = "warp_shuffle";
       typ = t_fun [t_int32; t_int32] t_int32;
@@ -674,7 +682,7 @@ let primitives =
       (* Output varies per thread *)
       convergence = WarpConvergence;
       (* All warp threads must participate *)
-      purity = Pure;
+      purity = Convergent;
       category = "warp";
     };
     {
@@ -682,7 +690,7 @@ let primitives =
       typ = t_fun [t_int32; t_int32] t_int32;
       variance = ThreadVarying;
       convergence = WarpConvergence;
-      purity = Pure;
+      purity = Convergent;
       category = "warp";
     };
     {
@@ -690,7 +698,7 @@ let primitives =
       typ = t_fun [t_int32; t_int32] t_int32;
       variance = ThreadVarying;
       convergence = WarpConvergence;
-      purity = Pure;
+      purity = Convergent;
       category = "warp";
     };
     {
@@ -698,7 +706,7 @@ let primitives =
       typ = t_fun [t_int32; t_int32] t_int32;
       variance = ThreadVarying;
       convergence = WarpConvergence;
-      purity = Pure;
+      purity = Convergent;
       category = "warp";
     };
     (* Warp vote: collective predicates *)
@@ -747,6 +755,15 @@ let primitives =
       purity = Pure;
       category = "warp";
     };
+    {
+      name = "lane_id";
+      typ = t_int32;
+      variance = ThreadVarying;
+      (* Index of the thread in its warp: linear thread id modulo warp_size *)
+      convergence = NoEffect;
+      purity = Pure;
+      category = "warp";
+    };
   ]
 
 (* Build lookup table for O(1) access *)
@@ -760,6 +777,17 @@ let find name = Hashtbl.find_opt primitive_table name
 let find_exn name = Hashtbl.find primitive_table name
 
 let is_core_primitive name = Hashtbl.mem primitive_table name
+
+(** The four warp shuffles, overloaded on the value type (int32, float32,
+    float64). They are the only core primitives whose typing is not the table's
+    [typ]: see {!Sarek_typer}. *)
+let is_warp_shuffle name = Sarek_warp.is_user_shuffle_name name
+
+(** Names of the core primitives {!Sarek_stdlib.Gpu} / [Std] do not declare as
+    [%sarek_intrinsic] (they need typing rules the registry cannot express) but
+    that must nevertheless resolve in their qualified spelling [Gpu.x] and
+    [Std.x]. *)
+let qualified_aliases = Sarek_warp.user_shuffle_names @ ["warp_size"; "lane_id"]
 
 let is_thread_varying name =
   match find name with Some p -> p.variance = ThreadVarying | None -> false
@@ -836,6 +864,7 @@ let pp_purity fmt = function
   | Pure -> Format.fprintf fmt "Pure"
   | Impure -> Format.fprintf fmt "Impure"
   | Atomic -> Format.fprintf fmt "Atomic"
+  | Convergent -> Format.fprintf fmt "Convergent"
 
 let pp_primitive fmt p =
   Format.fprintf

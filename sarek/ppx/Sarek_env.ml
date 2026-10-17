@@ -334,6 +334,44 @@ let with_stdlib env =
       Sarek_core_primitives.primitives
   in
 
+  (* Step 1b: the warp primitives resolve in their qualified spellings too
+     ([Gpu.warp_shuffle], [Std.lane_id]). They are core primitives with typing
+     rules the [%sarek_intrinsic] registry cannot express (the shuffles are
+     overloaded on the value type), so they are not declared in Sarek_stdlib.Gpu
+     and are aliased here. *)
+  let env =
+    List.fold_left
+      (fun env name ->
+        match Sarek_core_primitives.find name with
+        | None -> env
+        | Some prim ->
+            let qualified_names = ["Gpu." ^ name; "Std." ^ name] in
+            List.fold_left
+              (fun env qualified ->
+                match prim.typ with
+                | TFun _ ->
+                    add_intrinsic_fun
+                      qualified
+                      {
+                        intr_type = prim.typ;
+                        intr_ref = CorePrimitiveRef name;
+                        intr_convergence =
+                          (if prim.convergence = Sarek_core_primitives.NoEffect
+                           then None
+                           else Some prim.convergence);
+                      }
+                      env
+                | _ ->
+                    add_intrinsic_const
+                      qualified
+                      {const_type = prim.typ; const_ref = CorePrimitiveRef name}
+                      env)
+              env
+              qualified_names)
+      env
+      Sarek_core_primitives.qualified_aliases
+  in
+
   (* Step 2: Import all intrinsics from the PPX registry.
      These provide device implementations and may shadow core primitives. *)
   let intrinsics = Sarek_ppx_registry.all_intrinsics () in

@@ -883,6 +883,35 @@ let refuse_if_unlowered (ref : Sarek_env.intrinsic_ref) loc : unit result =
   | None -> Ok ()
   | Some reason -> Error [Unlowered_intrinsic {name; reason; loc}]
 
+(** The four warp shuffles are overloaded on the value type: the table's
+    [int32 -> int32 -> int32] is the int32 instance, and a call is typed
+    [a -> int32 -> a] for a fresh [a] that {!check_warp_shuffle_value} restricts
+    to int32, float32 and float64. Any other intrinsic keeps its declared
+    parameter and return types. *)
+let overload_warp_shuffle (ref : Sarek_env.intrinsic_ref) param_tys ret_ty =
+  match (ref, param_tys) with
+  | CorePrimitiveRef name, [_; lane_ty]
+    when Sarek_core_primitives.is_warp_shuffle name ->
+      let value_ty = fresh_tvar () in
+      ([value_ty; lane_ty], value_ty)
+  | _ -> (param_tys, ret_ty)
+
+(** Restrict the value type of a warp shuffle to int32, float32 or float64.
+    [bool], vectors, records and the other registered types are out of scope. A
+    type still unresolved here is recorded as numeric-required (it is never
+    float16) and re-checked at lowering, where types are final. *)
+let check_warp_shuffle_value (ref : Sarek_env.intrinsic_ref) value_ty loc :
+    unit result =
+  match ref with
+  | CorePrimitiveRef name when Sarek_core_primitives.is_warp_shuffle name -> (
+      match repr value_ty with
+      | TPrim TInt32 | TReg (Float32 | Float64) -> Ok ()
+      | TVar _ as tv ->
+          register_numeric_required tv ;
+          Ok ()
+      | t -> Error [Warp_shuffle_value_type (name, t, loc)])
+  | _ -> Ok ()
+
 (** Main type inference function *)
 let rec infer (env : t) (expr : expr) : (texpr * t) result =
   let loc = expr.expr_loc in
@@ -963,6 +992,9 @@ let rec infer (env : t) (expr : expr) : (texpr * t) result =
           | Some info -> (
               match info.intr_type with
               | TFun (param_tys, ret_ty) ->
+                  let param_tys, ret_ty =
+                    overload_warp_shuffle info.intr_ref param_tys ret_ty
+                  in
                   if List.length param_tys <> List.length targs then
                     Error
                       [
@@ -975,6 +1007,9 @@ let rec infer (env : t) (expr : expr) : (texpr * t) result =
                       ]
                   else begin
                     let* () = unify_args param_tys targs loc in
+                    let* () =
+                      check_warp_shuffle_value info.intr_ref ret_ty loc
+                    in
                     Ok
                       ( mk_texpr
                           (TEIntrinsicFun

@@ -212,6 +212,76 @@ let intrinsic_const_tests =
     Alcotest.test_case "simple mode" `Quick test_gen_intrinsic_const_simple_mode;
   ]
 
+(* ===== Test: the Native lowering of the warp operations ===== *)
+
+let contains s sub =
+  let n = String.length sub and m = String.length s in
+  let rec go i = i + n <= m && (String.sub s i n = sub || go (i + 1)) in
+  go 0
+
+let test_gen_warp_shuffle_by_type () =
+  let args =
+    [
+      Ast_builder.Default.eint ~loc:dummy_loc 1;
+      Ast_builder.Default.eint ~loc:dummy_loc 2;
+    ]
+  in
+  List.iter
+    (fun (ty, runtime) ->
+      List.iter
+        (fun (name, op) ->
+          let str =
+            expr_to_string
+              (gen_intrinsic_fun
+                 ~loc:dummy_loc
+                 ~gen_mode:FullMode
+                 ~result_ty:ty
+                 (CorePrimitiveRef name)
+                 args)
+          in
+          Alcotest.(check bool)
+            (name ^ ": " ^ runtime)
+            true
+            (contains str ("Warp." ^ runtime) && contains str ("Warp." ^ op)))
+        [
+          ("warp_shuffle", "Idx");
+          ("warp_shuffle_down", "Down");
+          ("warp_shuffle_up", "Up");
+          ("warp_shuffle_xor", "Xor");
+        ])
+    [
+      (Sarek_types.t_int32, "shuffle_i32");
+      (Sarek_types.t_float32, "shuffle_f32");
+      (Sarek_types.t_float64, "shuffle_f64");
+    ]
+
+let test_gen_warp_shuffle_needs_a_supported_type () =
+  match
+    gen_intrinsic_fun
+      ~loc:dummy_loc
+      ~gen_mode:FullMode
+      ~result_ty:Sarek_types.t_bool
+      (CorePrimitiveRef "warp_shuffle")
+      []
+  with
+  | (_ : Ppxlib.expression) ->
+      Alcotest.fail "a bool shuffle must not generate native code"
+  | exception _ -> ()
+
+let test_gen_warp_constants () =
+  let str name =
+    expr_to_string
+      (gen_intrinsic_const
+         ~loc:dummy_loc
+         ~gen_mode:FullMode
+         (CorePrimitiveRef name))
+  in
+  Alcotest.(check bool) "lane_id" true (contains (str "lane_id") "Warp.lane_id") ;
+  Alcotest.(check bool)
+    "warp_size"
+    true
+    (contains (str "warp_size") "Warp.warp_size")
+
 let intrinsic_fun_tests =
   [
     Alcotest.test_case
@@ -221,6 +291,15 @@ let intrinsic_fun_tests =
     Alcotest.test_case "global_idx" `Quick test_gen_intrinsic_fun_global_idx;
     Alcotest.test_case "Gpu function" `Quick test_gen_intrinsic_fun_gpu_function;
     Alcotest.test_case "with args" `Quick test_gen_intrinsic_fun_with_args;
+    Alcotest.test_case
+      "warp shuffle by value type"
+      `Quick
+      test_gen_warp_shuffle_by_type;
+    Alcotest.test_case
+      "warp shuffle needs int32/float32/float64"
+      `Quick
+      test_gen_warp_shuffle_needs_a_supported_type;
+    Alcotest.test_case "warp constants" `Quick test_gen_warp_constants;
   ]
 
 let () =

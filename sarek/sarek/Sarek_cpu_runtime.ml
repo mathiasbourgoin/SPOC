@@ -63,6 +63,10 @@ let alloc_shared_int64 = Sarek_cpu_runtime_types.alloc_shared_int64
 
 let alloc_shared_with_key = Sarek_cpu_runtime_types.alloc_shared_with_key
 
+(** {1 Warp shuffles} *)
+
+module Warp = Sarek_cpu_runtime_warp
+
 (** {1 Sequential Execution} *)
 
 let run_sequential = Sarek_cpu_runtime_exec.run_sequential

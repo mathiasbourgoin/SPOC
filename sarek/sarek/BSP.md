@@ -97,13 +97,68 @@ superstep ~divergent {
 
 ## Warp-Level Operations
 
-Warp-synchronous operations (shuffle, vote, ballot, active mask, warp size) are
-**not available yet**. `warp_shuffle`, `warp_shuffle_up`, `warp_shuffle_down`,
-`warp_shuffle_xor`, `warp_vote_all`, `warp_vote_any`, `warp_ballot`,
-`warp_active_mask` and `warp_size` are refused at PPX time because no backend
-lowers them; they arrive with warp-scope supersteps (roadmap S1). The
-convergence checker already knows their warp-convergence classes, so S1 starts
-from a checked base.
+### Shuffles, `warp_size`, `lane_id`
+
+A warp is the hardware subgroup (a wave on AMD, a SIMD-group on Apple, a
+subgroup in Vulkan and OpenCL). Four shuffles move a value between the lanes of
+the warp, on `int32`, `float32` and `float64` (the compiler picks the instance
+from the type of the value):
+
+| Call | Value read by lane `i` | When the source is out of range |
+|---|---|---|
+| `warp_shuffle v x` | lane `x land (W-1)` | cannot occur |
+| `warp_shuffle_down v d` | lane `i + d` | `d < 0` or `i + d >= W`: own `v` |
+| `warp_shuffle_up v d` | lane `i - d` | `d < 0` or `i - d < 0`: own `v` |
+| `warp_shuffle_xor v m` | lane `i lxor m` | `m < 0` or `i lxor m >= W`: own `v` |
+
+`W` is `warp_size` (an `int32` constant that depends on the device: 32 on NVIDIA,
+RDNA and Apple GPUs, 32 or 64 on AMD, 8 to 64 on Vulkan and OpenCL devices) and
+`i` is `lane_id`, the index of the thread in its warp. The lane operand is read
+as a two's-complement `int32`. This table is the contract of every backend; it
+does not depend on what a vendor leaves undefined (for example PTX reads only
+the low five bits of a delta, and Metal leaves an out-of-range source
+undefined): the emitters add the guards that make it hold.
+
+```ocaml
+(* Sum of 8 consecutive lanes, in every lane of the group: masks 4, 2, 1 stay
+   inside aligned groups of 8, whatever the warp width. *)
+let s = x +. warp_shuffle_xor x 4l in
+let s = s +. warp_shuffle_xor s 2l in
+s +. warp_shuffle_xor s 1l
+```
+
+Rules:
+
+- **Every lane of the warp takes part.** There is no mask and no `width`
+  argument. A shuffle in thread-varying control flow (under a varying `if`, in a
+  loop with a varying bound, after a varying early exit, in a helper called from
+  such flow) is a compile-time error: `Warp collective 'warp_shuffle_xor' called
+  in diverged control flow`. Sub-warp groups are expressed with `xor` masks
+  below a power of two, as above. `down` and `up` inside a segment of the warp
+  need a `width` argument, which does not exist yet.
+- **The block is a whole number of warps.** A kernel that uses a shuffle is
+  refused at launch (`Invalid_dimensions`) when the number of threads of the
+  block, `bx * by * bz`, is not a multiple of the warp width of the device. The
+  lane of a thread is its linear index `tx + bx * (ty + by * tz)` modulo `W`.
+- **Devices.** CUDA (C and PTX), HIP, Metal (generated, not run in CI), Vulkan
+  (needs the `BASIC` and `SHUFFLE` subgroup operations in the compute stage) and
+  OpenCL (needs `cl_khr_subgroup_shuffle`, and the lane mapping is measured once
+  per device) run the shuffles natively. WebGPU/WGSL needs the `subgroups`
+  feature (generated, not run in CI). A device without the feature refuses the
+  kernel with a message naming the feature (`warp-shuffle unavailable`);
+  emulation through shared memory on such devices is planned, not available.
+- **Native and the Interpreter** simulate a warp of `Sarek_warp.simulated_width
+  ()` lanes (32 by default; `Sarek_warp.with_width` is the test hook): each
+  shuffle writes the value to a per-block array, passes a block barrier, reads
+  its source and passes a second barrier. This is slow and exact: it is the
+  oracle the device results are compared with, bit for bit.
+- A shuffle is not `Pure` for the IR passes: kernels that use a warp operation
+  are never fused (horizontal or epilogue), windowed together, rewritten to a
+  matrix unit, or sliced for host evaluation.
+
+`warp_vote_all`, `warp_vote_any`, `warp_ballot` and `warp_active_mask` are not
+available yet; they are refused at PPX time. They arrive with warp-scope
+supersteps (roadmap S1).
 
 ## Best Practices
 

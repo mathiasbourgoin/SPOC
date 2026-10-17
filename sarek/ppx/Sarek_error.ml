@@ -18,11 +18,9 @@ open Sarek_types
     {!Sarek_unlowered.table}; this type only selects the wording. *)
 type unlowered_reason =
   | Warp_collective
-      (** A warp-level collective (shuffle, vote, ballot, active mask): typed
-          and convergence-checked, but no backend lowers it. *)
-  | Warp_size
-      (** [warp_size]: not lowered, and also not a constant: the warp width
-          varies by vendor and device. *)
+      (** A warp-level collective that is typed and convergence-checked but not
+          lowered by any backend yet (vote, ballot, active mask). The shuffles,
+          [warp_size] and [lane_id] ARE lowered and never reach this reason. *)
   | Early_return
       (** [return_unit]: Sarek has no early return and no backend lowers it
           soundly. *)
@@ -96,6 +94,9 @@ type error =
           [Type_mismatch {expected = int32}] (what [check_numeric]'s
           fall-through produced) told the user nothing. The string names the
           operator. *)
+  | Warp_shuffle_value_type of string * typ * loc
+      (** A warp shuffle applied to a value that is not int32, float32 or
+          float64: the primitive's name, the offending type. *)
 
 (** Get the location from an error *)
 let error_loc = function
@@ -137,6 +138,7 @@ let error_loc = function
   | Aggregate_equality_operand (_, _, loc) -> loc
   | Unlowered_intrinsic {loc; _} -> loc
   | Float16_operand (_, loc) -> loc
+  | Warp_shuffle_value_type (_, _, loc) -> loc
 
 (** Human-readable operator name for diagnostics, e.g. ['=' -> "'='"]. Lives
     here rather than in {!Sarek_typer} because two modules render an operator
@@ -217,16 +219,11 @@ let aggregate_equality_body (ty : typ) : string =
     Separate from {!pp_error} so the wording per reason is read in one place. *)
 let unlowered_reason_body = function
   | Warp_collective ->
-      "is not lowered by any backend yet. Warp-level collectives (shuffle, \
-       vote, ballot, active mask) arrive with warp-scope supersteps (roadmap \
-       S1). Until then, exchange values between threads through shared memory \
-       and block_barrier."
-  | Warp_size ->
-      "is not lowered by any backend yet, and has no single value to fall back \
-       on: the warp width varies by vendor and device (for example 32 on \
-       NVIDIA, 32 or 64 on AMD, 8 to 32 on Intel, 4 to 128 on WGSL). \
-       Warp-level operations arrive with warp-scope supersteps (roadmap S1). \
-       Until then, pass the width you need as a kernel argument."
+      "is not lowered by any backend yet. Warp votes, ballots and the active \
+       mask arrive with warp-scope supersteps (roadmap S1); the warp shuffles \
+       (warp_shuffle, warp_shuffle_down, warp_shuffle_up, warp_shuffle_xor), \
+       warp_size and lane_id are available. Until then, exchange other values \
+       between threads through shared memory and block_barrier."
   | Early_return ->
       "(early return) is not supported: Sarek has no early return, and no \
        backend lowers it soundly. CUDA emits `return((void)0);`, which makes \
@@ -401,6 +398,15 @@ let pp_error fmt = function
       Format.fprintf fmt "%s %s" what (aggregate_equality_body ty)
   | Unlowered_intrinsic {name; reason; _} ->
       Format.fprintf fmt "'%s' %s" name (unlowered_reason_body reason)
+  | Warp_shuffle_value_type (name, ty, _) ->
+      Format.fprintf
+        fmt
+        "'%s' shuffles int32, float32 or float64 values; got %a. Convert other \
+         values first (for example through the int32 bitcasts of the stdlib), \
+         or shuffle their int32 / float32 components one by one."
+        name
+        pp_typ
+        ty
   | Float16_operand (what, _) ->
       Format.fprintf
         fmt

@@ -1228,6 +1228,27 @@ let rec lower_expr (state : state) (te : texpr) : Ir.expr =
   | TEIntrinsicFun (Sarek_env.CorePrimitiveRef "float32_of_float16", _, [arg])
     ->
       Ir.ECast (Ir.TFloat32, lower_expr state arg)
+  (* The warp shuffles are overloaded in the front end and TYPED in the IR: the
+     value type is appended to the name (Sarek_warp.ir_name), so no backend has
+     to infer the type of an operand expression to pick a spelling. Types are
+     final here; an unresolved or unsupported one is a compile-time error. *)
+  | TEIntrinsicFun (Sarek_env.CorePrimitiveRef name, _, args)
+    when Sarek_core_primitives.is_warp_shuffle name ->
+      let value_type =
+        match repr te.ty with
+        | TPrim TInt32 -> Sarek_warp.I32
+        | TReg Float32 -> Sarek_warp.F32
+        | TReg Float64 -> Sarek_warp.F64
+        | other ->
+            Location.raise_errorf
+              ~loc:(Sarek_ast.loc_to_ppxlib te.te_loc)
+              "%s shuffles int32, float32 or float64 values; got %s"
+              name
+              (Format.asprintf "%a" Sarek_types.pp_typ other)
+      in
+      let op = Option.get (Sarek_warp.op_of_user_name name) in
+      Ir.EIntrinsic
+        ([], Sarek_warp.ir_name op value_type, List.map (lower_expr state) args)
   | TEIntrinsicFun (ref, _conv, args) -> (
       match ref with
       | Sarek_env.IntrinsicRef (path, name) ->

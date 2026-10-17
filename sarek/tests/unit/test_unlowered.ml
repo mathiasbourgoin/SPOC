@@ -5,8 +5,10 @@
 
 (******************************************************************************
  * Unit tests for the refusal of unlowered intrinsics (Sarek_unlowered, and its
- * use in Sarek_typer and Sarek_env): warp_* and return_unit type-check but no
- * backend lowers them, so the typer refuses them at the use site.
+ * use in Sarek_typer and Sarek_env): the warp votes, the ballot, the active
+ * mask and return_unit type-check but no backend lowers them, so the typer
+ * refuses them at the use site. The warp shuffles, warp_size and lane_id are
+ * lowered and must NOT be refused.
  ******************************************************************************)
 
 (* Force stdlib initialization to register intrinsics *)
@@ -76,20 +78,36 @@ let check_unlowered msg env expr ~name ~reason =
         msg
         (typ_to_string te.ty)
 
+(* The warp primitives that are STILL unlowered: the votes, the ballot and the
+   active mask. The shuffles, [warp_size] and [lane_id] are lowered on every
+   backend and are no longer in [Sarek_unlowered.table]. *)
 let warp_primitives =
   List.filter
     (fun (p : Sarek_core_primitives.primitive) -> p.category = "warp")
     Sarek_core_primitives.primitives
 
-let reason_of_warp (p : Sarek_core_primitives.primitive) =
-  if p.name = "warp_size" then Sarek_error.Warp_size
-  else Sarek_error.Warp_collective
+let lowered_warp_names =
+  Sarek_warp.user_shuffle_names @ ["warp_size"; "lane_id"]
 
-(* Every primitive of category "warp" is refused, so a new warp primitive added
-   to the core table cannot silently become usable before a backend lowers it. *)
+let still_unlowered =
+  List.filter
+    (fun (p : Sarek_core_primitives.primitive) ->
+      not (List.mem p.name lowered_warp_names))
+    warp_primitives
+
+let reason_of_warp (_ : Sarek_core_primitives.primitive) =
+  Sarek_error.Warp_collective
+
+(* Every warp primitive that is not lowered is refused, so a new warp primitive
+   added to the core table cannot silently become usable before a backend
+   lowers it; and every lowered one is accepted in all three spellings. *)
 let test_unlowered_every_warp_primitive () =
   let env = with_stdlib empty in
   Alcotest.(check bool) "warp category is non-empty" true (warp_primitives <> []) ;
+  Alcotest.(check bool)
+    "some warp primitives remain unlowered"
+    true
+    (still_unlowered <> []) ;
   List.iter
     (fun (p : Sarek_core_primitives.primitive) ->
       let reason = reason_of_warp p in
@@ -106,26 +124,38 @@ let test_unlowered_every_warp_primitive () =
         (var_expr ("Std." ^ p.name))
         ~name:p.name
         ~reason)
-    warp_primitives
+    still_unlowered ;
+  List.iter
+    (fun name ->
+      List.iter
+        (fun spelling ->
+          match infer env (var_expr spelling) with
+          | Ok _ -> ()
+          | Error errors ->
+              Alcotest.failf
+                "%s must type-check now that it is lowered: %s"
+                spelling
+                (String.concat
+                   ", "
+                   (List.map Sarek_error.error_to_string errors)))
+        [name; "Gpu." ^ name; "Std." ^ name])
+    lowered_warp_names
 
 let test_unlowered_warp_application () =
   let env = with_stdlib empty in
-  let call =
-    mk_expr (EApp (var_expr "warp_shuffle", [int32_expr 1l; int32_expr 1l]))
-  in
-  check_unlowered
-    "warp_shuffle applied"
-    env
-    call
-    ~name:"warp_shuffle"
-    ~reason:Sarek_error.Warp_collective ;
   let opened = open_module ["Std"] env in
   check_unlowered
     "warp_ballot under open Std"
     opened
     (mk_expr (EApp (var_expr "warp_ballot", [bool_expr true])))
     ~name:"warp_ballot"
-    ~reason:Sarek_error.Warp_collective
+    ~reason:Sarek_error.Warp_collective ;
+  (* A lowered shuffle applied at int32 is accepted and typed int32. *)
+  check_infer_ok
+    "warp_shuffle applied"
+    env
+    (mk_expr (EApp (var_expr "warp_shuffle", [int32_expr 1l; int32_expr 1l])))
+    t_int32
 
 let test_unlowered_return_unit () =
   let env = with_stdlib empty in
@@ -160,7 +190,7 @@ let test_unlowered_not_by_spelling () =
         mk_expr (ELet (p.name, None, int32_expr 32l, var_expr p.name))
       in
       check_infer_ok ("local " ^ p.name) env local t_int32)
-    warp_primitives ;
+    still_unlowered ;
   let info =
     {
       vi_type = t_int32;
@@ -170,8 +200,12 @@ let test_unlowered_not_by_spelling () =
       vi_is_vec = false;
     }
   in
-  let with_param = add_var "warp_size" info env in
-  check_infer_ok "parameter warp_size" with_param (var_expr "warp_size") t_int32 ;
+  let with_param = add_var "warp_ballot" info env in
+  check_infer_ok
+    "parameter warp_ballot"
+    with_param
+    (var_expr "warp_ballot")
+    t_int32 ;
   let with_param = add_var "return_unit" info env in
   check_infer_ok
     "parameter return_unit"
@@ -197,8 +231,7 @@ let test_unlowered_not_by_helper_name () =
            mk_expr (EBinop (Add, var_expr "q", int32_expr 1l)),
            mk_expr (EApp (var_expr name, [int32_expr 1l])) ))
   in
-  check_infer_ok "helper warp_size" env (helper "warp_size") t_int32 ;
-  check_infer_ok "helper warp_shuffle" env (helper "warp_shuffle") t_int32 ;
+  check_infer_ok "helper warp_ballot" env (helper "warp_ballot") t_int32 ;
   check_infer_ok "helper return_unit" env (helper "return_unit") t_int32
 
 (* The coupling documented on Sarek_unlowered.table: a row both refuses the
@@ -207,15 +240,22 @@ let test_unlowered_not_by_helper_name () =
 let test_unlowered_shadowing_coupling () =
   let env = with_stdlib empty in
   let scheme = Sarek_scheme.mono (TFun ([t_int32], t_int32)) in
-  let refused = add_local_fun "warp_size" scheme env in
+  let refused = add_local_fun "warp_ballot" scheme env in
   Alcotest.(check bool)
-    "refused name: the intrinsic constant is shadowed"
+    "refused name: the intrinsic function is shadowed"
     true
-    (find_intrinsic_const "warp_size" refused = None) ;
+    (find_intrinsic_fun "warp_ballot" refused = None) ;
   Alcotest.(check bool)
     "refused name: the local function is found"
     true
-    (find_local_fun "warp_size" refused <> None) ;
+    (find_local_fun "warp_ballot" refused <> None) ;
+  (* [warp_size] left the table when it was lowered: it keeps the existing
+     resolution order, where the intrinsic constant wins. *)
+  let lowered = add_local_fun "warp_size" scheme env in
+  Alcotest.(check bool)
+    "lowered name: the intrinsic constant is still found"
+    true
+    (find_intrinsic_const "warp_size" lowered <> None) ;
   let refused = add_local_fun "return_unit" scheme env in
   Alcotest.(check bool)
     "refused name: the intrinsic function is shadowed"

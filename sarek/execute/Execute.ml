@@ -660,6 +660,52 @@ let check_launch_bounds ~(kernel : string) (ir : Sarek_ir_types.kernel)
                    threads;
              })
 
+(** The warp width a kernel will run on, on [device]. A hardware device reports
+    its own; Native and the interpreter simulate one, whose width is read at
+    launch time ({!Sarek_warp.simulated_width}) because it is the test hook of
+    the parity tests and is not frozen into the device's capabilities. *)
+let warp_width_of_device (device : Device.t) : int =
+  match device.Device.framework with
+  | "Native" | "Interpreter" -> Sarek_warp.simulated_width ()
+  | _ -> device.Device.capabilities.Framework_sig.warp_size
+
+(** Refuse a launch whose kernel shuffles and whose block is not a whole number
+    of warps (docs/plans/warp-shuffle-intake-2026-10-17.md, decision D3). The
+    lanes of a partial warp would read sources that do not exist, which is
+    undefined on CUDA, HIP and Metal; the rule is the same on every backend
+    (Native and the interpreter included) so the mistake is one Sarek error
+    everywhere. Kernels without a shuffle are never refused here. The error is
+    {!Execute_error.Invalid_dimensions}, the one [check_launch_bounds] raises
+    for the sibling [sarek.max_threads] rule. *)
+let check_launch_warp_width ~(kernel : string) ~(width : int)
+    (ir : Sarek_ir_types.kernel) ~(block : Framework_sig.dims) : unit =
+  if Sarek_ir_analysis.kernel_uses_shuffle ir then begin
+    let threads = block.Framework_sig.x * block.y * block.z in
+    if width <= 0 || threads mod width <> 0 then
+      Execute_error.raise_error
+        (Invalid_dimensions
+           {
+             grid = "-";
+             block =
+               Printf.sprintf
+                 "(%d, %d, %d)"
+                 block.Framework_sig.x
+                 block.y
+                 block.z;
+             reason =
+               Printf.sprintf
+                 "kernel %S uses a warp shuffle, so its block must be a \
+                  multiple of the warp width %d; the block has %d threads"
+                 kernel
+                 width
+                 threads;
+           })
+  end
+
+let check_launch_warp ~(device : Device.t) ~(kernel : string)
+    (ir : Sarek_ir_types.kernel) ~(block : Framework_sig.dims) : unit =
+  check_launch_warp_width ~kernel ~width:(warp_width_of_device device) ir ~block
+
 let check_launch_args ~(kernel : string) (ir : Sarek_ir_types.kernel)
     (args : vector_arg list) : unit =
   let params = Array.of_list ir.Sarek_ir_types.kern_params in
@@ -881,7 +927,16 @@ let check_device_capabilities ~(device : Device.t) (ir : Sarek_ir_types.kernel)
      evidence behind it, which is the mirror image of the #142 defect rather
      than a fix for it. Widening this list is the work that must come WITH the
      f16 probe, not before it. *)
-  let gated = [Sarek_ir_analysis.Float64; Sarek_ir_analysis.Int64] in
+  let gated =
+    [
+      Sarek_ir_analysis.Float64;
+      Sarek_ir_analysis.Int64;
+      (* Warp shuffles, warp_size and lane_id: a device lists the feature in
+         [device_features] only when it probed (or, for CUDA, HIP, Metal,
+         Native and the interpreter, by construction) that it can run them. *)
+      Sarek_ir_analysis.Warp_shuffle;
+    ]
+  in
   let required =
     List.filter (fun f -> Sarek_ir_analysis.kernel_uses f ir) gated
   in
@@ -1463,6 +1518,7 @@ let run_jit (module B : Framework_sig.BACKEND) ?stream ~(device : Device.t)
          capability rather than letting the backend emit a shader the device
          cannot legally load. *)
       check_device_capabilities_memo ~device ir ;
+      check_launch_warp ~device ~kernel:name ir ~block ;
       (* SoA param names, derived from the ARGUMENTS by the same
                  predicate the transfer and expansion use (backlog-54). The
                  emitted signature and the bound argument list are then two
@@ -1597,7 +1653,9 @@ let run ?(stream : Transfer.stream option) ~(device : Device.t) ~(name : string)
               check_launch_args ~kernel:name ir args)
             ir_val ;
           Option.iter
-            (fun ir -> check_device_capabilities_memo ~device ir)
+            (fun ir ->
+              check_device_capabilities_memo ~device ir ;
+              check_launch_warp ~device ~kernel:name ir ~block)
             ir_val ;
           let exec_args = vector_args_to_exec_array args in
           B.execute_direct ~native_fn ~ir:ir_val ~block ~grid exec_args
@@ -1612,7 +1670,9 @@ let run ?(stream : Transfer.stream option) ~(device : Device.t) ~(name : string)
               check_launch_args ~kernel:name ir args)
             ir_val ;
           Option.iter
-            (fun ir -> check_device_capabilities_memo ~device ir)
+            (fun ir ->
+              check_device_capabilities_memo ~device ir ;
+              check_launch_warp ~device ~kernel:name ir ~block)
             ir_val ;
           let exec_args = vector_args_to_exec_array args in
           B.execute_direct ~native_fn ~ir:ir_val ~block ~grid exec_args)
@@ -1789,6 +1849,11 @@ let run_interpreter_vectors ~(ir : Sarek_ir_types.kernel)
      renamed or dropped arguments on an arity mismatch (it falls back to
      "param%d") instead of reporting it. *)
   check_launch_bounds ~kernel:ir.Sarek_ir_types.kern_name ir ~block ;
+  check_launch_warp_width
+    ~kernel:ir.Sarek_ir_types.kern_name
+    ~width:(Sarek_warp.simulated_width ())
+    ir
+    ~block ;
   check_launch_args ~kernel:ir.Sarek_ir_types.kern_name ir args ;
   (* The capability half of the same discipline (backlog-154). Placed next to
      check_launch_args because the two together are what the three [run]
@@ -1989,6 +2054,7 @@ let run_vectors_outcome ?(stream : Transfer.stream option) ?precision ?explicit
   (* Against the caller's kernel, before a matrix rewrite (which chooses its
      own geometry and carries no bound) can replace it. *)
   check_launch_bounds ~kernel:ir.Sarek_ir_types.kern_name ir ~block ;
+  check_launch_warp ~device ~kernel:ir.Sarek_ir_types.kern_name ir ~block ;
   let outcome =
     Matrix_specialise.choose
       ?precision

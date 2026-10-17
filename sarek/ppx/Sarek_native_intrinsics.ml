@@ -178,6 +178,11 @@ let gen_intrinsic_const ~loc ~gen_mode (ref : intrinsic_ref) =
   | FullMode, "global_size_z" ->
       let state = evar ~loc state_var in
       [%expr Sarek.Sarek_cpu_runtime.global_size_z [%e state]]
+  (* Warp introspection: simulated warp (Sarek_cpu_runtime.Warp) *)
+  | FullMode, "lane_id" ->
+      let state = evar ~loc state_var in
+      [%expr Sarek.Sarek_cpu_runtime.Warp.lane_id [%e state]]
+  | FullMode, "warp_size" -> [%expr Sarek.Sarek_cpu_runtime.Warp.warp_size ()]
   (* Aliases *)
   | FullMode, "global_thread_id" ->
       let state = evar ~loc state_var in
@@ -223,10 +228,42 @@ let gen_intrinsic_const ~loc ~gen_mode (ref : intrinsic_ref) =
   | FullMode, _ ->
       failwith (Printf.sprintf "Unknown intrinsic constant: %s" const)
 
+(** The Native lowering of a warp shuffle: a call into
+    {!Sarek_cpu_runtime.Warp}, which simulates the warp by exchanging through
+    the block's shared memory between two barriers. The runtime function is
+    chosen by the (final) value type; a shuffle is only generated in full-state
+    mode (the convergence analysis makes a shuffle kernel a barrier kernel). *)
+let gen_warp_shuffle ~loc ?result_ty name args =
+  let open Sarek_native_helpers in
+  let state = evar ~loc state_var and shared = evar ~loc shared_var in
+  let op =
+    match Sarek_warp.op_of_user_name name with
+    | Some Sarek_warp.Idx -> [%expr Sarek.Sarek_cpu_runtime.Warp.Idx]
+    | Some Sarek_warp.Down -> [%expr Sarek.Sarek_cpu_runtime.Warp.Down]
+    | Some Sarek_warp.Up -> [%expr Sarek.Sarek_cpu_runtime.Warp.Up]
+    | Some Sarek_warp.Xor -> [%expr Sarek.Sarek_cpu_runtime.Warp.Xor]
+    | None -> Location.raise_errorf ~loc "not a warp shuffle: %s" name
+  in
+  let fn =
+    match Option.map Sarek_types.repr result_ty with
+    | Some (TPrim TInt32) -> [%expr Sarek.Sarek_cpu_runtime.Warp.shuffle_i32]
+    | Some (TReg Float32) -> [%expr Sarek.Sarek_cpu_runtime.Warp.shuffle_f32]
+    | Some (TReg Float64) -> [%expr Sarek.Sarek_cpu_runtime.Warp.shuffle_f64]
+    | _ ->
+        Location.raise_errorf
+          ~loc
+          "%s shuffles int32, float32 or float64 values"
+          name
+  in
+  match args with
+  | [value; lane] ->
+      [%expr [%e fn] [%e state] [%e shared] [%e op] [%e value] [%e lane]]
+  | _ -> Location.raise_errorf ~loc "%s expects two arguments" name
+
 (** Generate intrinsic function call based on generation mode. For simple modes,
     we use thread_state for most operations. stdlib functions are called
     directly from their runtime implementations. *)
-let gen_intrinsic_fun ~loc ~gen_mode (ref : intrinsic_ref) args =
+let gen_intrinsic_fun ~loc ~gen_mode ?result_ty (ref : intrinsic_ref) args =
   let open Sarek_native_helpers in
   (* Helper for simple mode global index functions *)
   let use_simple_gid_fn name =
@@ -253,6 +290,8 @@ let gen_intrinsic_fun ~loc ~gen_mode (ref : intrinsic_ref) args =
               [%expr Sarek.Sarek_cpu_runtime.global_idx_x [%e state]]
           | "global_size" ->
               [%expr Sarek.Sarek_cpu_runtime.global_size_x [%e state]]
+          | _ when Sarek_core_primitives.is_warp_shuffle name ->
+              gen_warp_shuffle ~loc ?result_ty name args
           (* f16 width conversions on the NATIVE path (#57 slice 1). Without
              these two arms the catch-all below emits `Gpu.float16_of_float32`,
              which does not exist -- a native f16 kernel fails to compile with

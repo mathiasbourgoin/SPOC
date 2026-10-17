@@ -262,6 +262,11 @@ let run_soa ~(device : Device.t) ~(ir : Sarek_ir_types.kernel)
          still declares ONE parameter per record vector — the expansion into N
          leaf pointers happens in the emitter, under ~soa_params, not here. *)
       Execute.check_launch_bounds ~kernel:ir.Sarek_ir_types.kern_name ir ~block ;
+      Execute.check_launch_warp
+        ~device
+        ~kernel:ir.Sarek_ir_types.kern_name
+        ir
+        ~block ;
       Execute.check_launch_args
         ~kernel:ir.Sarek_ir_types.kern_name
         ir

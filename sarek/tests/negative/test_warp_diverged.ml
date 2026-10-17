@@ -6,23 +6,11 @@
 (* Test kernel that should FAIL to compile.
 
    It calls warp_shuffle (a warp collective) inside a thread-varying
-   conditional. Two checks apply to it, in this order:
-
-   1. The refusal of unlowered intrinsics (Sarek_unlowered.table): no
-      backend lowers warp_shuffle yet, so the PPX refuses it at the call with
-      "'warp_shuffle' is not lowered by any backend yet". This fires while
-      typing and is what this case now asserts.
-   2. The convergence check ("Warp collective 'warp_shuffle' called in diverged
-      control flow"), which this source used to reach. It is no longer
-      reachable from source while warp_shuffle is refused; it stays covered on
-      hand-built typed ASTs by sarek/tests/unit/test_convergence.ml
-      (test_check_expr_warp_collective_diverged), so warp-scope supersteps
-      (roadmap S1) start from a checked base. When warp_shuffle is lowered and
-      removed from the refusal table, assert message 2 here again. *)
+   conditional: only the threads above 16 would take part. The warp shuffles
+   are lowered on every backend, so the convergence check is what refuses it,
+   with "Warp collective 'warp_shuffle' called in diverged control flow". *)
 
 let () =
-  (* Refused as unlowered; the divergence (only threads > 16 participate) is
-     what the convergence check would otherwise report. *)
   let _bad_kernel =
     [%kernel
       fun (v : int32 vector) ->
