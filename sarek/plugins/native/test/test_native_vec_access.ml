@@ -103,10 +103,58 @@ let test_i32_allocation () =
   let w = words_per_read acc.get_i32 in
   if w > 3.0 then Alcotest.failf "get_i32: %.1f words per read (max 3)" w
 
+let native_arg v =
+  match Sarek.Execute.exec_arg_of_vector v with
+  | Spoc_framework.Framework_sig.EA_Vec m ->
+      Sarek_native.Native_vec_access.native_vec_of_exec_vector m
+  | _ -> Alcotest.fail "exec_arg_of_vector: not a vector"
+
+module Fast = Sarek.Sarek_native_fast
+
+(* The record the PPX-generated kernels read: the vector's own storage and
+   length for a matching float32/int32 vector, nothing for any other. *)
+let test_fast_record () =
+  let f = f32_vector () and i = i32_vector () in
+  let ff = Fast.f32_of_native_arg (native_arg f) in
+  Alcotest.(check int) "f32 length" n ff.Fast.f32_len ;
+  Bigarray.Array1.set ff.Fast.f32_ba 5 2.5 ;
+  Alcotest.(check (float 0.0)) "f32 shares storage" 2.5 (Vector.get f 5) ;
+  let fi = Fast.i32_of_native_arg (native_arg i) in
+  Alcotest.(check int) "i32 length" n fi.Fast.i32_len ;
+  Alcotest.(check int)
+    "int32 vector has no f32 record"
+    0
+    (Fast.f32_of_native_arg (native_arg i)).Fast.f32_len ;
+  Alcotest.(check int)
+    "float32 vector has no i32 record"
+    0
+    (Fast.i32_of_native_arg (native_arg f)).Fast.i32_len
+
+(* A store marks the device copy stale, the transition [Vector.set] makes. *)
+let test_mark_written () =
+  Sarek_native.Native_plugin.init () ;
+  let dev = (Spoc_core.Device.init ~frameworks:["Native"] ()).(0) in
+  let v = f32_vector () in
+  v.Vector.location <- Vector.Both dev ;
+  Fast.mark_written v ;
+  (match v.Vector.location with
+  | Vector.Stale_GPU _ -> ()
+  | _ -> Alcotest.fail "Both not turned into Stale_GPU") ;
+  v.Vector.location <- Vector.CPU ;
+  Fast.mark_written v ;
+  match v.Vector.location with
+  | Vector.CPU -> ()
+  | _ -> Alcotest.fail "CPU location changed"
+
 let () =
   Alcotest.run
     "native_vec_access"
     [
+      ( "fast",
+        [
+          Alcotest.test_case "record" `Quick test_fast_record;
+          Alcotest.test_case "mark written" `Quick test_mark_written;
+        ] );
       ( "values",
         [
           Alcotest.test_case "float32" `Quick test_f32_values;

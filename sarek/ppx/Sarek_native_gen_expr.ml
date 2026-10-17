@@ -60,32 +60,106 @@ let gen_field_read ~loc ~ctx rec_e ty field_name =
       in
       Ast_builder.Default.pexp_apply ~loc method_call [(Nolabel, rec_e)]
 
+(** The direct-access kind and fast-record variable of [vec] when it is a
+    float32/int32 vector parameter bound for the fast path. *)
+let fast_vec_of ~loc ctx (vec : texpr) =
+  if not ctx.use_native_arg then None
+  else
+    match vec.te with
+    | TEVar (_, id) ->
+        Option.map
+          (fun kind -> (kind, evar ~loc (fast_var_name id)))
+          (IntMap.find_opt id ctx.fast_vecs)
+    | _ -> None
+
+(** [v.(i)] on a fast vector: in range (the vector's length, as [Vector.get]
+    tests it) it reads the Bigarray, otherwise it calls the accessor object,
+    which raises [Vector.get]'s error. The index is evaluated once. *)
+let gen_fast_get ~loc kind fast vec_e idx_e =
+  match kind with
+  | Fast_f32 ->
+      [%expr
+        let sarek_fi = Int32.to_int [%e idx_e] in
+        if sarek_fi >= 0 && sarek_fi < [%e fast].Sarek.Sarek_native_fast.f32_len
+        then
+          Bigarray.Array1.unsafe_get
+            [%e fast].Sarek.Sarek_native_fast.f32_ba
+            sarek_fi
+        else [%e vec_e]#get sarek_fi]
+  | Fast_i32 ->
+      [%expr
+        let sarek_fi = Int32.to_int [%e idx_e] in
+        if sarek_fi >= 0 && sarek_fi < [%e fast].Sarek.Sarek_native_fast.i32_len
+        then
+          Bigarray.Array1.unsafe_get
+            [%e fast].Sarek.Sarek_native_fast.i32_ba
+            sarek_fi
+        else [%e vec_e]#get sarek_fi]
+
+(** [v.(i) <- x] on a fast vector. The value is evaluated before the index, the
+    order of the arguments of [v#set i x]; a store marks the device copy stale
+    as [Vector.set] does. *)
+let gen_fast_set ~loc kind fast vec_e idx_e val_e =
+  match kind with
+  | Fast_f32 ->
+      [%expr
+        let sarek_fx = [%e val_e] in
+        let sarek_fi = Int32.to_int [%e idx_e] in
+        if sarek_fi >= 0 && sarek_fi < [%e fast].Sarek.Sarek_native_fast.f32_len
+        then (
+          Bigarray.Array1.unsafe_set
+            [%e fast].Sarek.Sarek_native_fast.f32_ba
+            sarek_fi
+            sarek_fx ;
+          Sarek.Sarek_native_fast.mark_written_f32 [%e fast])
+        else [%e vec_e]#set sarek_fi sarek_fx]
+  | Fast_i32 ->
+      [%expr
+        let sarek_fx = [%e val_e] in
+        let sarek_fi = Int32.to_int [%e idx_e] in
+        if sarek_fi >= 0 && sarek_fi < [%e fast].Sarek.Sarek_native_fast.i32_len
+        then (
+          Bigarray.Array1.unsafe_set
+            [%e fast].Sarek.Sarek_native_fast.i32_ba
+            sarek_fi
+            sarek_fx ;
+          Sarek.Sarek_native_fast.mark_written_i32 [%e fast])
+        else [%e vec_e]#set sarek_fi sarek_fx]
+
 (** Generate memory access operations (vectors, arrays, record fields) *)
 let gen_memory_access ~loc ~ctx ~gen_expr (te : texpr) : expression =
   match te.te with
   (* Vector/array access - V2 only *)
-  | TEVecGet (vec, idx) ->
+  | TEVecGet (vec, idx) -> (
       let vec_e = gen_expr ~loc vec in
       let idx_e = gen_expr ~loc idx in
-      if ctx.use_native_arg then
-        (* Native arg mode: vectors are accessor objects with #get method *)
-        [%expr [%e vec_e]#get (Int32.to_int [%e idx_e])]
-      else [%expr Spoc_core.Vector.get [%e vec_e] (Int32.to_int [%e idx_e])]
-  | TEVecSet (vec, idx, value) ->
+      match fast_vec_of ~loc ctx vec with
+      | Some (kind, fast) -> gen_fast_get ~loc kind fast vec_e idx_e
+      | None ->
+          if ctx.use_native_arg then
+            (* Native arg mode: vectors are accessor objects with #get *)
+            [%expr [%e vec_e]#get (Int32.to_int [%e idx_e])]
+          else [%expr Spoc_core.Vector.get [%e vec_e] (Int32.to_int [%e idx_e])]
+      )
+  | TEVecSet (vec, idx, value) -> (
       let vec_e = gen_expr ~loc vec in
       let idx_e = gen_expr ~loc idx in
       let val_e = gen_expr ~loc value in
-      if ctx.use_native_arg then
-        (* Native arg mode: vectors are accessor objects with #set method *)
-        [%expr [%e vec_e]#set (Int32.to_int [%e idx_e]) [%e val_e]]
-      else
-        (* Use kernel_set: no bounds check, no location update race.
-           Safe for parallel execution - kernel code ensures valid indices. *)
-        [%expr
-          Spoc_core.Vector.kernel_set
-            [%e vec_e]
-            (Int32.to_int [%e idx_e])
-            [%e val_e]]
+      match fast_vec_of ~loc ctx vec with
+      | Some (kind, fast) -> gen_fast_set ~loc kind fast vec_e idx_e val_e
+      | None ->
+          if ctx.use_native_arg then
+            (* Native arg mode: vectors are accessor objects with #set *)
+            [%expr [%e vec_e]#set (Int32.to_int [%e idx_e]) [%e val_e]]
+          else
+            (* Use kernel_set: no bounds check, no location update race.
+               Safe for parallel execution - kernel code ensures valid
+               indices. *)
+            [%expr
+              Spoc_core.Vector.kernel_set
+                [%e vec_e]
+                (Int32.to_int [%e idx_e])
+                [%e val_e]])
   (* Array access - for shared memory (regular OCaml arrays) *)
   | TEArrGet (arr, idx) ->
       let arr_e = gen_expr ~loc arr in

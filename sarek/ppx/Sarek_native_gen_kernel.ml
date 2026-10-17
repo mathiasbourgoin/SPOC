@@ -46,10 +46,15 @@ let gen_arg_cast ?current_module ?inline_types
           [%expr
             match [%e arr_access] with
             | Sarek_ir_types.NA_Vec (Sarek_ir_types.NV __v) ->
+                let __fast =
+                  Sarek.Sarek_native_fast.f32_of_native_arg [%e arr_access]
+                in
                 object
                   method get i = __v.get_f32 i
 
                   method set i x = __v.set_f32 i x
+
+                  method fast_f32 = __fast
 
                   method length = __v.length
 
@@ -92,10 +97,15 @@ let gen_arg_cast ?current_module ?inline_types
           [%expr
             match [%e arr_access] with
             | Sarek_ir_types.NA_Vec (Sarek_ir_types.NV __v) ->
+                let __fast =
+                  Sarek.Sarek_native_fast.i32_of_native_arg [%e arr_access]
+                in
                 object
                   method get i = __v.get_i32 i
 
                   method set i x = __v.set_i32 i x
+
+                  method fast_i32 = __fast
 
                   method length = __v.length
 
@@ -351,6 +361,48 @@ let gen_types_object ~loc (decls : ttype_decl list) : expression =
     id_bindings
     object_expr
 
+(** Vector parameters that take the direct Bigarray path, by variable id: those
+    of element type float32 or int32 (the types [gen_arg_cast] gives accessor
+    objects with a [fast_f32]/[fast_i32] method). *)
+let fast_vecs_of_params (params : tparam list) : fast_kind IntMap.t =
+  List.fold_left
+    (fun acc p ->
+      match repr p.tparam_type with
+      | TVec elem -> (
+          match repr elem with
+          | TReg Float32 -> IntMap.add p.tparam_id Fast_f32 acc
+          | TReg Int | TPrim TInt32 -> IntMap.add p.tparam_id Fast_i32 acc
+          | _ -> acc)
+      | _ -> acc)
+    IntMap.empty
+    params
+
+(** Bind, at the top of a kernel body, the fast record of each fast vector
+    parameter ([let __fast_<id> = v#fast_f32 in ...]). *)
+let wrap_fast_bindings ~loc (params : tparam list) (fast : fast_kind IntMap.t)
+    (body : expression) : expression =
+  List.fold_right
+    (fun p body ->
+      match IntMap.find_opt p.tparam_id fast with
+      | None -> body
+      | Some kind ->
+          let meth =
+            match kind with Fast_f32 -> "fast_f32" | Fast_i32 -> "fast_i32"
+          in
+          let fast_e =
+            Ast_builder.Default.pexp_send
+              ~loc
+              (evar ~loc p.tparam_name)
+              {txt = meth; loc}
+          in
+          [%expr
+            let [%p Ast_builder.Default.pvar ~loc (fast_var_name p.tparam_id)] =
+              [%e fast_e]
+            in
+            [%e body]])
+    params
+    body
+
 (** Generate V2 cpu_kern - uses Spoc_core.Vector.get/set instead of Spoc.Mem.
 
     Generated signature: thread_state -> shared_mem -> args_tuple -> unit This
@@ -372,6 +424,7 @@ let gen_cpu_kern_native ~loc (kernel : tkernel) : expression =
     else StringSet.empty
   in
   let current_module = Some (module_name_of_sarek_loc kernel.tkern_loc) in
+  let fast_vecs = fast_vecs_of_params kernel.tkern_params in
 
   (* Use native_arg mode - vectors are accessor objects with typed helpers.
      Complex types use vec_get_custom/vec_set_custom from runtime. *)
@@ -383,11 +436,14 @@ let gen_cpu_kern_native ~loc (kernel : tkernel) : expression =
           inline_types = inline_type_names;
           current_module;
           use_native_arg = true;
+          fast_vecs;
         }
       in
       gen_expr_impl ~loc ~ctx kernel.tkern_body
     else
-      let ctx = {empty_ctx with current_module; use_native_arg = true} in
+      let ctx =
+        {empty_ctx with current_module; use_native_arg = true; fast_vecs}
+      in
       gen_expr_impl ~loc ~ctx kernel.tkern_body
   in
 
@@ -401,7 +457,13 @@ let gen_cpu_kern_native ~loc (kernel : tkernel) : expression =
     in
     drop skip_count all_items
   in
-  let body_with_items = wrap_module_items ~loc inline_items body_e in
+  let body_with_items =
+    wrap_fast_bindings
+      ~loc
+      kernel.tkern_params
+      fast_vecs
+      (wrap_module_items ~loc inline_items body_e)
+  in
 
   (* Build parameter tuple pattern - no type constraints since vectors are
      accessor objects, not Vector.t *)
@@ -476,6 +538,7 @@ let gen_simple_cpu_kern_native ~loc ~exec_strategy (kernel : tkernel) :
   in
   let current_module = Some (module_name_of_sarek_loc kernel.tkern_loc) in
   let gen_mode = gen_mode_of_exec_strategy exec_strategy in
+  let fast_vecs = fast_vecs_of_params kernel.tkern_params in
 
   let ctx =
     {
@@ -484,6 +547,7 @@ let gen_simple_cpu_kern_native ~loc ~exec_strategy (kernel : tkernel) :
       inline_types = inline_type_names;
       gen_mode;
       use_native_arg = true;
+      fast_vecs;
     }
   in
   let body_e = gen_expr_impl ~loc ~ctx kernel.tkern_body in
@@ -498,7 +562,13 @@ let gen_simple_cpu_kern_native ~loc ~exec_strategy (kernel : tkernel) :
     in
     drop skip_count all_items
   in
-  let body_with_items = wrap_module_items ~loc inline_items body_e in
+  let body_with_items =
+    wrap_fast_bindings
+      ~loc
+      kernel.tkern_params
+      fast_vecs
+      (wrap_module_items ~loc inline_items body_e)
+  in
 
   (* Build parameter tuple pattern - no type constraints since vectors are
      accessor objects, not Vector.t *)
