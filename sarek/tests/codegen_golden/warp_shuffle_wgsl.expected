@@ -1,0 +1,68 @@
+enable subgroups;
+@group(0) @binding(0) var<storage, read_write> src_i : array<i32>;
+@group(0) @binding(1) var<storage, read_write> src_f : array<f32>;
+@group(0) @binding(2) var<storage, read_write> out_i : array<i32>;
+@group(0) @binding(3) var<storage, read_write> out_f : array<f32>;
+struct Params {
+  sarek_src_i_length : i32,
+  sarek_src_f_length : i32,
+  sarek_out_i_length : i32,
+  sarek_out_f_length : i32,
+}
+@group(0) @binding(4) var<uniform> params : Params;
+
+var<private> sarek_lane : u32;
+var<private> sarek_w : u32;
+fn sarek_warp_shuffle_i32(v : i32, x : i32) -> i32 {
+  return subgroupShuffle(v, (u32(x) & (sarek_w - 1u)));
+}
+
+fn sarek_warp_shuffle_f32(v : f32, x : i32) -> f32 {
+  return subgroupShuffle(v, (u32(x) & (sarek_w - 1u)));
+}
+
+fn sarek_warp_shuffle_down_i32(v : i32, x : i32) -> i32 {
+  return subgroupShuffle(v, select(sarek_lane, sarek_lane + u32(x), u32(x) < sarek_w - sarek_lane));
+}
+
+fn sarek_warp_shuffle_down_f32(v : f32, x : i32) -> f32 {
+  return subgroupShuffle(v, select(sarek_lane, sarek_lane + u32(x), u32(x) < sarek_w - sarek_lane));
+}
+
+fn sarek_warp_shuffle_up_i32(v : i32, x : i32) -> i32 {
+  return subgroupShuffle(v, select(sarek_lane, sarek_lane - u32(x), u32(x) <= sarek_lane));
+}
+
+fn sarek_warp_shuffle_up_f32(v : f32, x : i32) -> f32 {
+  return subgroupShuffle(v, select(sarek_lane, sarek_lane - u32(x), u32(x) <= sarek_lane));
+}
+
+fn sarek_warp_shuffle_xor_i32(v : i32, x : i32) -> i32 {
+  return subgroupShuffle(v, select(sarek_lane, sarek_lane ^ u32(x), u32(x) < sarek_w && (sarek_lane ^ u32(x)) < sarek_w));
+}
+
+fn sarek_warp_shuffle_xor_f32(v : f32, x : i32) -> f32 {
+  return subgroupShuffle(v, select(sarek_lane, sarek_lane ^ u32(x), u32(x) < sarek_w && (sarek_lane ^ u32(x)) < sarek_w));
+}
+// Sarek-generated compute shader: warp_golden
+@compute @workgroup_size(256, 1, 1)
+fn main(
+  @builtin(global_invocation_id) sarek_gid : vec3<u32>,
+  @builtin(local_invocation_id) sarek_lid : vec3<u32>,
+  @builtin(workgroup_id) sarek_wid : vec3<u32>,
+  @builtin(num_workgroups) sarek_nwg : vec3<u32>,
+  @builtin(subgroup_invocation_id) sarek_sg_lane : u32,
+  @builtin(subgroup_size) sarek_sg_size : u32
+) {
+  sarek_lane = sarek_sg_lane;
+  sarek_w = sarek_sg_size;
+  out_i[0i] = sarek_warp_shuffle_i32(src_i[0i], i32(sarek_lane));
+  out_f[0i] = sarek_warp_shuffle_f32(src_f[0i], i32(sarek_lane));
+  out_i[0i] = sarek_warp_shuffle_down_i32(src_i[0i], i32(sarek_lane));
+  out_f[0i] = sarek_warp_shuffle_down_f32(src_f[0i], i32(sarek_lane));
+  out_i[0i] = sarek_warp_shuffle_up_i32(src_i[0i], i32(sarek_lane));
+  out_f[0i] = sarek_warp_shuffle_up_f32(src_f[0i], i32(sarek_lane));
+  out_i[0i] = sarek_warp_shuffle_xor_i32(src_i[0i], i32(sarek_lane));
+  out_f[0i] = sarek_warp_shuffle_xor_f32(src_f[0i], i32(sarek_lane));
+  out_i[0i] = i32(sarek_w);
+}

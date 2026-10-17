@@ -80,6 +80,7 @@ type intrinsic_category =
   | Bitcast
   | Convert
   | Atomic
+  | Warp
 
 (** Every intrinsic name the PTX backend lowers, with the registry that owns it,
     in dispatch order. Derived from the handler values themselves: an entry here
@@ -99,6 +100,9 @@ val bitcast_intrinsic_names : string list
 val convert_intrinsic_names : string list
 
 val atomic_intrinsic_names : string list
+
+(** [lane_id], [warp_size] and the twelve typed shuffles of {!Sarek_warp}. *)
+val warp_intrinsic_names : string list
 
 (** All of the above concatenated, in dispatch order — i.e. the names of
     {!intrinsic_registry}. *)

@@ -477,6 +477,7 @@ type intrinsic_category =
   | Bitcast
   | Convert
   | Atomic
+  | Warp
 
 (* Flattened registry, built once on first use. The per-category registries are
    thunks because their handlers close over [emit_expr], so they live inside the
@@ -2473,6 +2474,107 @@ and atomic_intrinsic_handlers () : (string list * intrinsic_handler) list =
              args) );
   ]
 
+(* Warp operations (Sarek_warp): the typed shuffles, [warp_size] and [lane_id].
+
+   [shfl.sync] needs PTX ISA 6.0 / sm_30; the header this backend emits is
+   [.version 8.0] [.target sm_86] by default, above both. The mask is the full
+   warp (every lane participates: the front end refuses a shuffle in diverged
+   flow and the launch refuses a block that is not a multiple of the warp).
+
+   The instruction reads only the LOW FIVE BITS of its lane operand [b] (PTX ISA
+   9.7.9.6): [shfl.sync.idx] with b = 33 reads lane 1, and a negative delta wraps.
+   Sarek_warp specifies the table independently of that, so the relative modes
+   take their operand clamped to 0 when it is outside [0, 32) (0 selects the own
+   value in every relative mode) and [idx] takes the operand as is (its low five
+   bits ARE [x land 31], but it is masked explicitly all the same: see below). *)
+and warp_intrinsic_handlers () : (string list * intrinsic_handler) list =
+  [
+    ( ["lane_id"],
+      fun buf alloc _env _path name args ->
+        match args with
+        | [] ->
+            let d = new_u32 alloc in
+            emit buf "mov.u32 %s, %%laneid;" d ;
+            Some d
+        | _ -> unsupported (name ^ " arity != 0") );
+    ( ["warp_size"],
+      fun buf alloc _env _path name args ->
+        match args with
+        | [] ->
+            let d = new_u32 alloc in
+            emit buf "mov.u32 %s, WARP_SZ;" d ;
+            Some d
+        | _ -> unsupported (name ^ " arity != 0") );
+    ( List.map fst Sarek_warp.typed_names,
+      fun buf alloc env _path name args ->
+        Some (intr_warp_shuffle buf alloc env name args) );
+  ]
+
+and intr_warp_shuffle buf alloc env name args =
+  match (Sarek_warp.classify name, args) with
+  | Some (Sarek_warp.Shuffle (op, ty)), [value; operand] -> (
+      let rv = emit_expr buf alloc env value in
+      let rx = emit_expr buf alloc env operand in
+      if is_f32_reg rx || is_f64_reg rx || intr_is_u64_reg rx then
+        unsupported (name ^ ": the lane operand must be int32") ;
+      let mode, clamp =
+        match op with
+        | Sarek_warp.Idx -> ("idx", "31")
+        | Down -> ("down", "31")
+        | Up -> ("up", "0")
+        | Xor -> ("bfly", "31")
+      in
+      let b =
+        match op with
+        | Sarek_warp.Idx ->
+            (* x land 31, explicitly: the PTX ISA says shfl.idx reads the low
+               five bits of its operand, and a translator that does not (ZLUDA
+               on gfx1100 returned the OWN value for x = 32, measured
+               2026-10-17) must not matter. *)
+            let masked = new_u32 alloc in
+            emit buf "and.b32 %s, %s, 31;" masked rx ;
+            masked
+        | Down | Up | Xor ->
+            let in_range = new_pred alloc in
+            emit buf "setp.lt.u32 %s, %s, 32;" in_range rx ;
+            let b = new_u32 alloc in
+            emit buf "selp.b32 %s, %s, 0, %s;" b rx in_range ;
+            b
+      in
+      let shuffle32 d a =
+        emit buf "shfl.sync.%s.b32 %s, %s, %s, %s, 0xffffffff;" mode d a b clamp
+      in
+      let expect ok what =
+        if not ok then unsupported (name ^ ": the value must be " ^ what)
+      in
+      match ty with
+      | Sarek_warp.I32 ->
+          expect
+            ((not (is_f32_reg rv))
+            && (not (is_f64_reg rv))
+            && not (intr_is_u64_reg rv))
+            "int32" ;
+          let d = new_u32 alloc in
+          shuffle32 d rv ;
+          d
+      | F32 ->
+          expect (is_f32_reg rv) "float32" ;
+          let d = new_f32 alloc in
+          shuffle32 d rv ;
+          d
+      | F64 ->
+          expect (is_f64_reg rv) "float64" ;
+          let lo = new_u32 alloc and hi = new_u32 alloc in
+          emit buf "mov.b64 {%s, %s}, %s;" lo hi rv ;
+          let lo' = new_u32 alloc and hi' = new_u32 alloc in
+          shuffle32 lo' lo ;
+          shuffle32 hi' hi ;
+          let d = new_f64 alloc in
+          emit buf "mov.b64 %s, {%s, %s};" d lo' hi' ;
+          d)
+  | Some (Sarek_warp.Shuffle _), _ -> unsupported (name ^ " arity != 2")
+  | _ -> unsupported ("intrinsic: " ^ name)
+
 (* Which handler registry owns which names, in dispatch order. Ownership is by
    NAME, not by "first emitter that returns [Some]": a name claimed twice would
    otherwise be silently won by whichever comes first (no warning, no test
@@ -2489,6 +2591,7 @@ and intrinsic_emitter_table () :
     (Bitcast, bitcast_intrinsic_handlers ());
     (Convert, convert_intrinsic_handlers ());
     (Atomic, atomic_intrinsic_handlers ());
+    (Warp, warp_intrinsic_handlers ());
   ]
 
 (* Every (name, handler) pair the PTX backend lowers natively, flattened out of
@@ -2559,11 +2662,13 @@ let convert_intrinsic_names = names_of_category Convert
 
 let atomic_intrinsic_names = names_of_category Atomic
 
+let warp_intrinsic_names = names_of_category Warp
+
 (** Every intrinsic name the PTX backend lowers natively, in dispatch order. *)
 let intrinsic_names =
   index_intrinsic_names @ transcendental_intrinsic_names
   @ float_ops_intrinsic_names @ bitcast_intrinsic_names
-  @ convert_intrinsic_names @ atomic_intrinsic_names
+  @ convert_intrinsic_names @ atomic_intrinsic_names @ warp_intrinsic_names
 
 (** Every intrinsic name the dispatch registry holds a handler for, with the
     registry that owns it, in dispatch order. Like the tables above, this is the

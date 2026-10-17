@@ -473,6 +473,7 @@ and cuda_backend st =
           path
           name
           args);
+    warp_dialect = Sarek_ir_warp_text.Cuda;
     invalid_arg_count = bad_arity;
     on_unknown =
       (fun full ->
@@ -1123,6 +1124,10 @@ let generate_with_types ?block
 
   (* Header *)
   Buffer.add_string buf (cuda_header_for k) ;
+
+  (* Warp shuffle helpers, one per (operation, value type) the kernel uses *)
+  let warp_calls = Sarek_ir_analysis.kernel_warp_calls k in
+  Buffer.add_string buf (Sarek_ir_warp_text.helpers Cuda warp_calls) ;
 
   (* Record and variant type definitions, ordered TOGETHER in one pass: a
      variant with a record payload and a record with a variant-typed field are

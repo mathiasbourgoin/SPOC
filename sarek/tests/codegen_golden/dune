@@ -257,3 +257,68 @@
  (alias runtest)
  (action
   (diff test_policy_golden.expected test_policy_golden.actual)))
+
+; Golden source of warp_shuffle / _down / _up / _xor, warp_size and lane_id on
+; every source backend (the shuffle plan, AC-5): one kernel, all operations, all
+; value types the backend has. CUDA also stands for HIP (the source selects its
+; dialect with __HIP_PLATFORM_AMD__). Metal and WGSL are golden-only: no device
+; runs them in CI (decision D7).
+
+(executable
+ (name test_warp_shuffle_golden)
+ (modules test_warp_shuffle_golden)
+ (libraries sarek_ir sarek_codegen))
+
+(rule
+ (alias runtest)
+ (action
+  (progn
+   (with-stdout-to
+    warp_shuffle_cuda.actual
+    (run %{dep:test_warp_shuffle_golden.exe} cuda))
+   (diff warp_shuffle_cuda.expected warp_shuffle_cuda.actual))))
+
+(rule
+ (alias runtest)
+ (action
+  (progn
+   (with-stdout-to
+    warp_shuffle_opencl.actual
+    (run %{dep:test_warp_shuffle_golden.exe} opencl))
+   (diff warp_shuffle_opencl.expected warp_shuffle_opencl.actual))))
+
+(rule
+ (alias runtest)
+ (action
+  (progn
+   (with-stdout-to
+    warp_shuffle_glsl.actual
+    (run %{dep:test_warp_shuffle_golden.exe} glsl))
+   (diff warp_shuffle_glsl.expected warp_shuffle_glsl.actual))))
+
+(rule
+ (alias runtest)
+ (action
+  (progn
+   (with-stdout-to
+    warp_shuffle_metal.actual
+    (run %{dep:test_warp_shuffle_golden.exe} metal))
+   (diff warp_shuffle_metal.expected warp_shuffle_metal.actual))))
+
+(rule
+ (alias runtest)
+ (action
+  (progn
+   (with-stdout-to
+    warp_shuffle_wgsl.actual
+    (run %{dep:test_warp_shuffle_golden.exe} wgsl))
+   (diff warp_shuffle_wgsl.expected warp_shuffle_wgsl.actual))))
+
+(rule
+ (alias runtest)
+ (action
+  (progn
+   (with-stdout-to
+    warp_shuffle_ptx.actual
+    (run %{dep:test_warp_shuffle_golden.exe} ptx))
+   (diff warp_shuffle_ptx.expected warp_shuffle_ptx.actual))))

@@ -860,6 +860,7 @@ and glsl_backend st =
        [unknown_intrinsic] instead: loud, and correct. That registry now REFUSES
        GLSL rather than guessing, so wiring this fails by name. *)
     post_hook = (fun _ _ _ _ -> false);
+    warp_dialect = Sarek_ir_warp_text.Glsl;
     invalid_arg_count = bad_arity;
     on_unknown =
       (fun full ->
@@ -1558,7 +1559,7 @@ let kernel_has_unroll_loop k =
 *)
 let glsl_header ~kernel_name ?(block = (256, 1, 1)) ?(uses_float64 = false)
     ?(uses_int64 = false) ?(uses_coopmat = false) ?(uses_uint8 = false)
-    ?(uses_loop_attributes = false) () =
+    ?(uses_loop_attributes = false) ?(warp_calls = []) () =
   let bx, by, bz = block in
   let fp64_extension =
     if uses_float64 then "#extension GL_ARB_gpu_shader_fp64 : require\n" else ""
@@ -1619,7 +1620,7 @@ let glsl_header ~kernel_name ?(block = (256, 1, 1)) ?(uses_float64 = false)
   in
   Printf.sprintf
     {|#version 450
-%s%s%s%s%s
+%s%s%s%s%s%s
 // Sarek-generated compute shader: %s
 layout(local_size_x = %d, local_size_y = %d, local_size_z = %d) in;
 
@@ -1629,6 +1630,7 @@ layout(local_size_x = %d, local_size_y = %d, local_size_z = %d) in;
     coopmat_extension
     uint8_extension
     loop_attributes_extension
+    (Sarek_ir_warp_text.glsl_extensions warp_calls)
     kernel_name
     bx
     by
@@ -2173,6 +2175,7 @@ let generate_with_types ?block ?(log : string -> unit = fun _ -> ())
   let st = state k in
 
   let buf = Buffer.create 1024 in
+  let warp_calls = Sarek_ir_analysis.kernel_warp_calls k in
   Buffer.add_string
     buf
     (glsl_header
@@ -2183,6 +2186,7 @@ let generate_with_types ?block ?(log : string -> unit = fun _ -> ())
        ~uses_coopmat:(Sarek_ir_analysis.kernel_has_coopmat_op k)
        ~uses_uint8:(Sarek_ir_analysis.kernel_uses Sarek_ir_analysis.Coopmat k)
        ~uses_loop_attributes:(kernel_has_unroll_loop k)
+       ~warp_calls
        ()) ;
 
   (* Generate record (plain struct) and variant (struct with tag) definitions
@@ -2238,6 +2242,10 @@ let generate_with_types ?block ?(log : string -> unit = fun _ -> ())
      after copysign which they may call, before user helpers which may call
      them) when the kernel invokes a [Float64] transcendental. *)
   gen_f64_softmath_helpers st ~pc_names ~len_names buf ;
+
+  (* Warp shuffle helpers (they read gl_SubgroupSize / gl_SubgroupInvocationID,
+     which are visible in every function) *)
+  Buffer.add_string buf (Sarek_ir_warp_text.helpers Glsl warp_calls) ;
 
   (* Generate helper functions *)
   List.iter (gen_helper_func st ~pc_names ~len_names buf) k.kern_funcs ;

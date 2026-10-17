@@ -840,6 +840,7 @@ and wgsl_backend st =
        [unknown_intrinsic] instead: loud, and correct. That registry now REFUSES
        WGSL rather than guessing, so wiring this fails by name. *)
     post_hook = (fun _ _ _ _ -> false);
+    warp_dialect = Sarek_ir_warp_text.Wgsl;
     invalid_arg_count = bad_arity;
     on_unknown =
       (fun full ->
@@ -1559,7 +1560,7 @@ let gen_bindings buf params =
 
 (** {1 Scalar-param shadow renaming} *)
 
-let wgsl_header ~kernel_name ?(block = (256, 1, 1)) () =
+let wgsl_header ~kernel_name ?(block = (256, 1, 1)) ?(warp_calls = []) () =
   let bx, by, bz = block in
   Printf.sprintf
     "@compute @workgroup_size(%d, %d, %d)\n\
@@ -1567,11 +1568,14 @@ let wgsl_header ~kernel_name ?(block = (256, 1, 1)) () =
     \  @builtin(global_invocation_id) sarek_gid : vec3<u32>,\n\
     \  @builtin(local_invocation_id) sarek_lid : vec3<u32>,\n\
     \  @builtin(workgroup_id) sarek_wid : vec3<u32>,\n\
-    \  @builtin(num_workgroups) sarek_nwg : vec3<u32>\n\
-     ) {\n"
+    \  @builtin(num_workgroups) sarek_nwg : vec3<u32>%s\n\
+     ) {\n\
+     %s"
     bx
     by
     bz
+    (Sarek_ir_warp_text.wgsl_main_params warp_calls)
+    (Sarek_ir_warp_text.wgsl_main_prologue warp_calls)
   |> fun s ->
   Printf.sprintf "// Sarek-generated compute shader: %s\n%s" kernel_name s
 
@@ -1630,6 +1634,9 @@ let generate_with_types ?block ?(log : string -> unit = fun _ -> ())
   (* A [for] bound is evaluated once (Sarek_ir_for_bound). *)
   let k = Sarek_ir_for_bound.hoist k in
   let buf = Buffer.create 1024 in
+  let warp_calls = Sarek_ir_analysis.kernel_warp_calls k in
+  (* [enable subgroups;] must be the first thing in the module *)
+  Buffer.add_string buf (Sarek_ir_warp_text.wgsl_enable warp_calls) ;
   (* Inner structs first: WGSL, like GLSL, requires a struct type to be declared
      before the field that names it (backlog-203) — records and variants in ONE
      dependency-ordered pass, because the edge can cross between the two kinds
@@ -1650,8 +1657,12 @@ let generate_with_types ?block ?(log : string -> unit = fun _ -> ())
   let wg_decls = collect_workgroup_decls k.kern_body in
   gen_workgroup_module_decls st buf wg_decls ;
   gen_fmod_helper buf k ;
+  Buffer.add_string buf (Sarek_ir_warp_text.wgsl_state warp_calls) ;
+  Buffer.add_string buf (Sarek_ir_warp_text.helpers Wgsl warp_calls) ;
   List.iter (gen_helper_func st buf) k.kern_funcs ;
-  Buffer.add_string buf (wgsl_header ~kernel_name:k.kern_name ?block ()) ;
+  Buffer.add_string
+    buf
+    (wgsl_header ~kernel_name:k.kern_name ?block ~warp_calls ()) ;
   (* Alpha-rename any body local that shadows a scalar param first (see
      rename_scalar_shadowing_locals). *)
   gen_stmt

@@ -1,0 +1,120 @@
+#version 450
+#extension GL_ARB_gpu_shader_fp64 : require
+#extension GL_KHR_shader_subgroup_basic : require
+#extension GL_KHR_shader_subgroup_shuffle : require
+
+// Sarek-generated compute shader: warp_golden
+layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+
+layout(std430, set=0, binding = 0) buffer Buffer_src_i {
+  int src_i[];
+};
+layout(std430, set=0, binding = 1) buffer Buffer_src_f {
+  float src_f[];
+};
+layout(std430, set=0, binding = 2) buffer Buffer_out_i {
+  int out_i[];
+};
+layout(std430, set=0, binding = 3) buffer Buffer_out_f {
+  float out_f[];
+};
+layout(std430, set=0, binding = 4) buffer Buffer_src_d {
+  double src_d[];
+};
+layout(std430, set=0, binding = 5) buffer Buffer_out_d {
+  double out_d[];
+};
+layout(push_constant) uniform PushConstants {
+  int sarek_src_i_length;
+  int sarek_src_f_length;
+  int sarek_out_i_length;
+  int sarek_out_f_length;
+  int sarek_src_d_length;
+  int sarek_out_d_length;
+} pc;
+
+#define sarek_src_i_length pc.sarek_src_i_length
+#define sarek_src_f_length pc.sarek_src_f_length
+#define sarek_out_i_length pc.sarek_out_i_length
+#define sarek_out_f_length pc.sarek_out_f_length
+#define sarek_src_d_length pc.sarek_src_d_length
+#define sarek_out_d_length pc.sarek_out_d_length
+
+int sarek_warp_shuffle_i32(int v, int x) {
+  uint src = (uint(x) & (gl_SubgroupSize - 1u));
+  return subgroupShuffle(v, src);
+}
+
+float sarek_warp_shuffle_f32(float v, int x) {
+  uint src = (uint(x) & (gl_SubgroupSize - 1u));
+  return subgroupShuffle(v, src);
+}
+
+double sarek_warp_shuffle_f64(double v, int x) {
+  uint src = (uint(x) & (gl_SubgroupSize - 1u));
+  uvec2 p = unpackDouble2x32(v);
+  return packDouble2x32(uvec2(subgroupShuffle(p.x, src), subgroupShuffle(p.y, src)));
+}
+
+int sarek_warp_shuffle_down_i32(int v, int x) {
+  uint src = ((uint(x) < gl_SubgroupSize - gl_SubgroupInvocationID) ? (gl_SubgroupInvocationID + uint(x)) : (gl_SubgroupInvocationID));
+  return subgroupShuffle(v, src);
+}
+
+float sarek_warp_shuffle_down_f32(float v, int x) {
+  uint src = ((uint(x) < gl_SubgroupSize - gl_SubgroupInvocationID) ? (gl_SubgroupInvocationID + uint(x)) : (gl_SubgroupInvocationID));
+  return subgroupShuffle(v, src);
+}
+
+double sarek_warp_shuffle_down_f64(double v, int x) {
+  uint src = ((uint(x) < gl_SubgroupSize - gl_SubgroupInvocationID) ? (gl_SubgroupInvocationID + uint(x)) : (gl_SubgroupInvocationID));
+  uvec2 p = unpackDouble2x32(v);
+  return packDouble2x32(uvec2(subgroupShuffle(p.x, src), subgroupShuffle(p.y, src)));
+}
+
+int sarek_warp_shuffle_up_i32(int v, int x) {
+  uint src = ((uint(x) <= gl_SubgroupInvocationID) ? (gl_SubgroupInvocationID - uint(x)) : (gl_SubgroupInvocationID));
+  return subgroupShuffle(v, src);
+}
+
+float sarek_warp_shuffle_up_f32(float v, int x) {
+  uint src = ((uint(x) <= gl_SubgroupInvocationID) ? (gl_SubgroupInvocationID - uint(x)) : (gl_SubgroupInvocationID));
+  return subgroupShuffle(v, src);
+}
+
+double sarek_warp_shuffle_up_f64(double v, int x) {
+  uint src = ((uint(x) <= gl_SubgroupInvocationID) ? (gl_SubgroupInvocationID - uint(x)) : (gl_SubgroupInvocationID));
+  uvec2 p = unpackDouble2x32(v);
+  return packDouble2x32(uvec2(subgroupShuffle(p.x, src), subgroupShuffle(p.y, src)));
+}
+
+int sarek_warp_shuffle_xor_i32(int v, int x) {
+  uint src = ((uint(x) < gl_SubgroupSize && (gl_SubgroupInvocationID ^ uint(x)) < gl_SubgroupSize) ? (gl_SubgroupInvocationID ^ uint(x)) : (gl_SubgroupInvocationID));
+  return subgroupShuffle(v, src);
+}
+
+float sarek_warp_shuffle_xor_f32(float v, int x) {
+  uint src = ((uint(x) < gl_SubgroupSize && (gl_SubgroupInvocationID ^ uint(x)) < gl_SubgroupSize) ? (gl_SubgroupInvocationID ^ uint(x)) : (gl_SubgroupInvocationID));
+  return subgroupShuffle(v, src);
+}
+
+double sarek_warp_shuffle_xor_f64(double v, int x) {
+  uint src = ((uint(x) < gl_SubgroupSize && (gl_SubgroupInvocationID ^ uint(x)) < gl_SubgroupSize) ? (gl_SubgroupInvocationID ^ uint(x)) : (gl_SubgroupInvocationID));
+  uvec2 p = unpackDouble2x32(v);
+  return packDouble2x32(uvec2(subgroupShuffle(p.x, src), subgroupShuffle(p.y, src)));
+}
+void main() {
+  out_i[0] = sarek_warp_shuffle_i32(src_i[0], int(gl_SubgroupInvocationID));
+  out_f[0] = sarek_warp_shuffle_f32(src_f[0], int(gl_SubgroupInvocationID));
+  out_d[0] = sarek_warp_shuffle_f64(src_d[0], int(gl_SubgroupInvocationID));
+  out_i[0] = sarek_warp_shuffle_down_i32(src_i[0], int(gl_SubgroupInvocationID));
+  out_f[0] = sarek_warp_shuffle_down_f32(src_f[0], int(gl_SubgroupInvocationID));
+  out_d[0] = sarek_warp_shuffle_down_f64(src_d[0], int(gl_SubgroupInvocationID));
+  out_i[0] = sarek_warp_shuffle_up_i32(src_i[0], int(gl_SubgroupInvocationID));
+  out_f[0] = sarek_warp_shuffle_up_f32(src_f[0], int(gl_SubgroupInvocationID));
+  out_d[0] = sarek_warp_shuffle_up_f64(src_d[0], int(gl_SubgroupInvocationID));
+  out_i[0] = sarek_warp_shuffle_xor_i32(src_i[0], int(gl_SubgroupInvocationID));
+  out_f[0] = sarek_warp_shuffle_xor_f32(src_f[0], int(gl_SubgroupInvocationID));
+  out_d[0] = sarek_warp_shuffle_xor_f64(src_d[0], int(gl_SubgroupInvocationID));
+  out_i[0] = int(gl_SubgroupSize);
+}

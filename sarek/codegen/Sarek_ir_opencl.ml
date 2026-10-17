@@ -409,6 +409,7 @@ and opencl_backend st =
           path
           name
           args);
+    warp_dialect = Sarek_ir_warp_text.Opencl;
     invalid_arg_count = bad_arity;
     on_unknown =
       (fun full ->
@@ -1182,6 +1183,11 @@ let generate_with_types ?block
   let st = state k in
   let buf = Buffer.create large_buffer_size in
 
+  (* Sub-group extensions and shuffle helpers, only for a kernel that uses a
+     warp operation *)
+  let warp_calls = Sarek_ir_analysis.kernel_warp_calls k in
+  Buffer.add_string buf (Sarek_ir_warp_text.opencl_pragmas warp_calls) ;
+
   (* Record and variant type definitions, ordered TOGETHER in one pass: a
      variant with a record payload and a record with a variant-typed field are
      both reachable, and two per-kind loops order neither (backlog-211). *)
@@ -1191,6 +1197,8 @@ let generate_with_types ?block
     buf
     ~records:types
     ~variants:k.kern_variants ;
+
+  Buffer.add_string buf (Sarek_ir_warp_text.helpers Opencl warp_calls) ;
 
   (* Generate helper functions before kernel *)
   gen_helpers st buf k.kern_funcs ;

@@ -51,6 +51,11 @@ type 'e spec = {
   on_unknown : string -> unit;
       (** Raise the backend's located [unknown_intrinsic] error. Never returns.
       *)
+  warp_dialect : Sarek_ir_warp_text.dialect;
+      (** The target's spelling of the warp operations ([warp_shuffle*],
+          [warp_size], [lane_id]). They are lowered by the shared
+          {!Sarek_ir_warp_text}, ahead of every other path: their IR names are
+          fixed by {!Sarek_warp}, so no per-backend arm is needed. *)
   invalid_arg_count : string -> int -> int -> unit;
       (** Raise the backend's located invalid-argument-count error, given the
           operation name, the expected count and the given one. Never returns.
@@ -168,6 +173,18 @@ let full_name path name =
     [(-2147483647 - 1)] is an [int]. *)
 let c_int32_literal n =
   if n = Int32.min_int then "(-2147483647 - 1)" else Int32.to_string n
+
+(** The module paths under which the core warp primitives are reached. *)
+let is_gpu_or_std_path = function
+  | ["Gpu"] | ["Std"] | ["Sarek_stdlib"; "Gpu"] | ["Sarek_stdlib"; "Std"] ->
+      true
+  | _ -> false
+
+(** Render one expression to a string with the backend generator. *)
+let render_expr ~gen_expr e =
+  let b = Buffer.create 64 in
+  gen_expr b e ;
+  Buffer.contents b
 
 (** Emit [arg0, arg1, ...] (comma-space separated) using the backend generator.
 *)
@@ -344,26 +361,39 @@ let gen_intrinsic (spec : 'e spec) buf path name (args : 'e list) =
   | Some expected when List.length args <> expected ->
       spec.invalid_arg_count name expected (List.length args)
   | _ -> ()) ;
-  if spec.pre_hook buf ~full_name:full path name args then ()
-  else
-    let pure_registry_hit =
-      match path with
-      | [] -> None
-      | _ -> (
-          match
-            Sarek_pure_registry.fun_device_template ~module_path:path name
-          with
-          | Some f -> Some (f ~framework:(spec.framework ()))
-          | None -> None)
-    in
-    match pure_registry_hit with
-    | Some device_name -> emit_call ~gen_expr:spec.gen_expr buf device_name args
-    | None -> (
-        if List.mem name thread_intrinsic_names then
-          Buffer.add_string buf (spec.thread_intrinsic name)
-        else
-          match spec.arm name with
-          | Some emit -> emit buf args
-          | None ->
-              if spec.post_hook buf path name args then ()
-              else spec.on_unknown full)
+  match
+    if path = [] || is_gpu_or_std_path path then Sarek_warp.classify name
+    else None
+  with
+  | Some call ->
+      Sarek_ir_warp_text.emit_call
+        spec.warp_dialect
+        ~bad_arity:spec.invalid_arg_count
+        buf
+        call
+        (List.map (render_expr ~gen_expr:spec.gen_expr) args)
+  | None -> (
+      if spec.pre_hook buf ~full_name:full path name args then ()
+      else
+        let pure_registry_hit =
+          match path with
+          | [] -> None
+          | _ -> (
+              match
+                Sarek_pure_registry.fun_device_template ~module_path:path name
+              with
+              | Some f -> Some (f ~framework:(spec.framework ()))
+              | None -> None)
+        in
+        match pure_registry_hit with
+        | Some device_name ->
+            emit_call ~gen_expr:spec.gen_expr buf device_name args
+        | None -> (
+            if List.mem name thread_intrinsic_names then
+              Buffer.add_string buf (spec.thread_intrinsic name)
+            else
+              match spec.arm name with
+              | Some emit -> emit buf args
+              | None ->
+                  if spec.post_hook buf path name args then ()
+                  else spec.on_unknown full))
