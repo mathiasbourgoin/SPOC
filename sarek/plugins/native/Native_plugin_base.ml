@@ -241,13 +241,24 @@ end = struct
         compute_capability = (0, 0);
         (* Native has no compute capability *)
         (* Host execution: OCaml floats are binary64 and Int64.t is native. *)
-        device_features = [Sarek_ir_analysis.Float64; Sarek_ir_analysis.Int64];
+        (* Warp_shuffle: simulated through shared memory and barriers
+           (Sarek_cpu_runtime.Warp), slow and exact. *)
+        device_features =
+          [
+            Sarek_ir_analysis.Float64;
+            Sarek_ir_analysis.Int64;
+            Sarek_ir_analysis.Warp_shuffle;
+          ];
         (* backlog-62: no cooperative-matrix probe on this backend. [None] is
            "not probed", which Sarek_coopmat.verdict maps to Unknown and therefore
            refuses; an empty list would be a positive claim nobody measured. *)
         coopmat = None;
         supports_atomics = true;
-        warp_size = 1;
+        (* The SIMULATED warp width (Sarek_warp.simulated_width, default 32,
+           overridable by the test hook Sarek_warp.with_width): the width the
+           shuffles of a kernel run on this device observe. It was 1, which
+           contradicted the interpreter's 32 and any shuffle guard. *)
+        warp_size = Sarek_warp.simulated_width ();
         max_registers_per_block = 0;
         clock_rate_khz = 0;
         multiprocessor_count = d.num_cores;

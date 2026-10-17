@@ -269,6 +269,14 @@ let merged_declarations (producer : kernel) (consumer : kernel) =
     P's, then C's that are not shared, then [ep_tc]. *)
 let fuse ~name ~(producer : kernel) ~(p_array : string) ~(consumer : kernel)
     ~(shared : (string * string) list) : kernel =
+  (* The fused kernel runs the producer's body for a subset of its threads
+     behind a guard: a producer that shuffles would see a different warp. (The
+     consumer is screened by [consumer_shape].) *)
+  if Sarek_ir_analysis.kernel_uses_warp_ops producer then
+    raise
+      (Incompatible
+         (producer.kern_name
+        ^ " uses a warp operation (shuffle, warp_size, lane_id)")) ;
   let c =
     match consumer_shape consumer with
     | c -> c

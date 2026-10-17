@@ -479,3 +479,28 @@
   (pps sarek_ppx))
  (flags
   (:standard -w -33)))
+
+; Warp shuffles are convergent (the shuffle plan, risk R2, AC-8): the codegen
+; passes keep each call where it was; the launch passes refuse a kernel that
+; uses a warp operation. No device.
+
+(test
+ (name test_warp_pass_safety)
+ (modules test_warp_pass_safety)
+ (libraries sarek.codegen sarek.execute sarek_ir alcotest))
+
+; Capability gate and launch rule of the warp operations on fake devices
+; (the shuffle plan, AC-6 / AC-7). No hardware.
+
+(test
+ (name test_warp_capability)
+ (modules test_warp_capability)
+ (libraries
+  sarek
+  sarek.codegen
+  sarek.execute
+  sarek.interp
+  spoc_core
+  spoc_framework
+  sarek_ir
+  alcotest))

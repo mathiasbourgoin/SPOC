@@ -127,7 +127,12 @@ let rec gen_expr_impl ~loc:_ ~ctx (te : texpr) : expression =
         else arg_e
       in
       let args_e = List.map gen_arg args in
-      gen_intrinsic_fun ~loc ~gen_mode:ctx.gen_mode ref args_e
+      gen_intrinsic_fun
+        ~loc
+        ~gen_mode:ctx.gen_mode
+        ?result_ty:(Some te.ty)
+        ref
+        args_e
   (* Parallel constructs *)
   | TELetShared _ | TESuperstep _ | TELetRec _ ->
       gen_parallel_construct

@@ -33,6 +33,10 @@ type purity =
   | Pure  (** No side effects, can CSE/DCE *)
   | Impure  (** Has side effects *)
   | Atomic  (** Atomic memory operation *)
+  | Convergent
+      (** No side effect, but the result depends on other threads of the warp:
+          never hoisted, sunk, duplicated, merged or moved across control flow
+          (warp shuffles). *)
 
 (** A core primitive definition with compile-time semantics *)
 type primitive = {
@@ -54,6 +58,13 @@ val find_exn : string -> primitive
 
 (** Predicates *)
 val is_core_primitive : string -> bool
+
+(** The four warp shuffles, overloaded on int32 / float32 / float64 by the
+    typer. *)
+val is_warp_shuffle : string -> bool
+
+(** Core primitives that also resolve as [Gpu.x] and [Std.x]. *)
+val qualified_aliases : string list
 
 val is_thread_varying : string -> bool
 

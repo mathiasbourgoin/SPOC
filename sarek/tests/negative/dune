@@ -15,17 +15,21 @@
 ;   (a superstep under a thread-varying if; specs/convergence-semantics.md SS-1)
 ; - test_superstep_divergent_diverged: "Barrier called in diverged control flow"
 ;   (the same with [@divergent], which no longer skips the check: C-7, SS-4)
-; - test_warp_diverged: "'warp_shuffle' is not lowered by any backend yet" (the
-;   refusal of unlowered intrinsics fires at the call, before the convergence
-;   check; "Warp collective ... diverged" is now covered by unit tests on
-;   hand-built typed ASTs, sarek/tests/unit/test_convergence.ml)
-; - test_warp_shuffle_refused: "'warp_shuffle' is not lowered by any backend yet"
-;   (a warp collective in fully converged code)
-; - test_warp_size_refused: "'warp_size' is not lowered by any backend yet"
+; - test_warp_diverged: "Warp collective 'warp_shuffle' called in diverged
+;   control flow" (a shuffle under a thread-varying if)
+; - test_warp_diverged_while: the same message (a shuffle in a loop whose bound
+;   varies per thread)
+; - test_warp_diverged_helper: the same message (a shuffle in a helper called
+;   from thread-varying control flow)
+; - test_barrier_helper_diverged: "Barrier called in diverged control flow" (a
+;   barrier in a helper called from thread-varying control flow; rule H-2)
+; - test_warp_arity: "Wrong number of arguments: expected 2, got 1"
+; - test_warp_lane_type: "Cannot unify types" (a float32 lane operand)
+; - test_warp_value_type: "shuffles int32, float32 or float64 values" (a bool)
 ; - test_return_unit_refused: "'return_unit' (early return) is not supported"
 ; - test_warp_qualified_refused: "'warp_ballot' is not lowered by any backend yet"
 ;   (the module-qualified spelling Gpu.warp_ballot)
-; - test_warp_open_std_refused: "'warp_shuffle_xor' is not lowered by any backend
+; - test_warp_open_std_refused: "'warp_ballot' is not lowered by any backend
 ;   yet" (under let open Std)
 ; - test_create_array_global: "create_array with the Global memory space"
 ; - test_create_array_runtime_size: "create_array size must be a positive compile-time constant"
@@ -993,28 +997,6 @@
   (= %{profile} "negative")))
 
 (library
- (name neg_test_warp_shuffle_refused)
- (modules test_warp_shuffle_refused)
- (libraries sarek sarek.stdlib sarek.ppx.lib)
- (preprocess
-  (pps sarek_ppx))
- (flags
-  (:standard -w -33))
- (enabled_if
-  (= %{profile} "negative")))
-
-(library
- (name neg_test_warp_size_refused)
- (modules test_warp_size_refused)
- (libraries sarek sarek.stdlib sarek.ppx.lib)
- (preprocess
-  (pps sarek_ppx))
- (flags
-  (:standard -w -33))
- (enabled_if
-  (= %{profile} "negative")))
-
-(library
  (name neg_test_return_unit_refused)
  (modules test_return_unit_refused)
  (libraries sarek sarek.stdlib sarek.ppx.lib)
@@ -1138,6 +1120,72 @@
 (library
  (name neg_test_max_threads_nearmiss)
  (modules test_max_threads_nearmiss)
+ (libraries sarek sarek.stdlib sarek.ppx.lib)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33))
+ (enabled_if
+  (= %{profile} "negative")))
+
+(library
+ (name neg_test_warp_diverged_while)
+ (modules test_warp_diverged_while)
+ (libraries sarek sarek.stdlib sarek.ppx.lib)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33))
+ (enabled_if
+  (= %{profile} "negative")))
+
+(library
+ (name neg_test_warp_diverged_helper)
+ (modules test_warp_diverged_helper)
+ (libraries sarek sarek.stdlib sarek.ppx.lib)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33))
+ (enabled_if
+  (= %{profile} "negative")))
+
+(library
+ (name neg_test_warp_arity)
+ (modules test_warp_arity)
+ (libraries sarek sarek.stdlib sarek.ppx.lib)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33))
+ (enabled_if
+  (= %{profile} "negative")))
+
+(library
+ (name neg_test_warp_lane_type)
+ (modules test_warp_lane_type)
+ (libraries sarek sarek.stdlib sarek.ppx.lib)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33))
+ (enabled_if
+  (= %{profile} "negative")))
+
+(library
+ (name neg_test_warp_value_type)
+ (modules test_warp_value_type)
+ (libraries sarek sarek.stdlib sarek.ppx.lib)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33))
+ (enabled_if
+  (= %{profile} "negative")))
+
+(library
+ (name neg_test_barrier_helper_diverged)
+ (modules test_barrier_helper_diverged)
  (libraries sarek sarek.stdlib sarek.ppx.lib)
  (preprocess
   (pps sarek_ppx))

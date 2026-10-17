@@ -293,6 +293,45 @@ let test_pure () =
     (is_pure "memory_fence_block") ;
   check bool "atomic_add_int32 is not pure" false (is_pure "atomic_add_int32")
 
+(* === Warp shuffle purity (the Pure risk of the shuffle plan, R2) === *)
+
+let test_shuffle_is_convergent_not_pure () =
+  List.iter
+    (fun name ->
+      check bool (name ^ " is not pure") false (is_pure name) ;
+      check
+        bool
+        (name ^ " is Convergent")
+        true
+        ((find_exn name).purity = Convergent) ;
+      check bool (name ^ " is overloaded") true (is_warp_shuffle name) ;
+      check bool (name ^ " is thread varying") true (is_thread_varying name) ;
+      check
+        bool
+        (name ^ " requires warp convergence")
+        true
+        (is_warp_convergence_point name))
+    ["warp_shuffle"; "warp_shuffle_down"; "warp_shuffle_up"; "warp_shuffle_xor"]
+
+let test_warp_introspection () =
+  check bool "lane_id is pure" true (is_pure "lane_id") ;
+  check bool "lane_id varies per thread" true (is_thread_varying "lane_id") ;
+  check
+    bool
+    "lane_id is not a collective"
+    false
+    (requires_convergence "lane_id") ;
+  check bool "warp_size is uniform" false (is_thread_varying "warp_size") ;
+  check bool "the votes are not shuffles" false (is_warp_shuffle "warp_ballot") ;
+  List.iter
+    (fun name ->
+      check
+        bool
+        (name ^ " has a qualified spelling")
+        true
+        (List.mem name qualified_aliases))
+    ["warp_shuffle"; "warp_shuffle_xor"; "warp_size"; "lane_id"]
+
 (* === Atomic tests === *)
 
 let test_atomic () =
@@ -371,7 +410,12 @@ let convergence_tests =
   ]
 
 let purity_tests =
-  [("pure", `Quick, test_pure); ("atomic", `Quick, test_atomic)]
+  [
+    ("pure", `Quick, test_pure);
+    ("atomic", `Quick, test_atomic);
+    ("shuffles are convergent", `Quick, test_shuffle_is_convergent_not_pure);
+    ("warp introspection", `Quick, test_warp_introspection);
+  ]
 
 let category_tests = [("category", `Quick, test_category)]
 

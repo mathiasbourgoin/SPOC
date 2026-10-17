@@ -23,6 +23,7 @@
   Sarek_fusion
   Sarek_cpu_runtime_types
   Sarek_float64_native
+  Sarek_cpu_runtime_warp
   Sarek_cpu_runtime_exec
   Sarek_cpu_runtime_pools
   Sarek_cpu_runtime

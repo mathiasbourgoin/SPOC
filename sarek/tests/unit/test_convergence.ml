@@ -210,6 +210,138 @@ let test_check_expr_warp_collective_diverged () =
     true
     (List.length errors > 0)
 
+(* A warp shuffle as the typer builds it: intrinsic call with the
+   WarpConvergence class. *)
+let shuffle_call arg =
+  mk_texpr
+    (TEIntrinsicFun
+       ( Sarek_env.CorePrimitiveRef "warp_shuffle_xor",
+         Some Sarek_core_primitives.WarpConvergence,
+         [arg; mk_texpr (TEInt 1) typ_int32] ))
+    typ_int32
+
+let varying_cond =
+  let tid_x = mk_texpr (TEVar ("thread_idx_x", 0)) typ_int32 in
+  mk_texpr
+    (TEBinop (Sarek_ast.Gt, tid_x, mk_texpr (TEInt 16) typ_int32))
+    typ_bool
+
+let check_shuffle_refused msg e =
+  match Sarek_convergence.check_expr Sarek_convergence.init_ctx e with
+  | [Sarek_error.Warp_collective_in_diverged_flow ("warp_shuffle_xor", _)] -> ()
+  | errors ->
+      Alcotest.failf
+        "%s: expected one Warp_collective_in_diverged_flow, got [%s]"
+        msg
+        (String.concat "; " (List.map Sarek_error.error_to_string errors))
+
+let test_shuffle_after_uniform_if () =
+  (* if block_idx_x > 0 then shuffle: a block-uniform condition keeps the flow
+     converged *)
+  let block_x = mk_texpr (TEVar ("block_idx_x", 0)) typ_int32 in
+  let cond =
+    mk_texpr
+      (TEBinop (Sarek_ast.Gt, block_x, mk_texpr (TEInt 0) typ_int32))
+      typ_bool
+  in
+  let e =
+    mk_texpr
+      (TEIf (cond, shuffle_call (mk_texpr (TEInt 7) typ_int32), None))
+      typ_int32
+  in
+  Alcotest.(check int)
+    "accepted"
+    0
+    (List.length (Sarek_convergence.check_expr Sarek_convergence.init_ctx e))
+
+let test_shuffle_in_varying_if () =
+  check_shuffle_refused
+    "varying if"
+    (mk_texpr
+       (TEIf (varying_cond, shuffle_call (mk_texpr (TEInt 7) typ_int32), None))
+       typ_int32)
+
+let test_shuffle_in_varying_loop () =
+  (* for i = thread_idx_x to 100 do shuffle: the trip count differs per lane *)
+  let tid_x = mk_texpr (TEVar ("thread_idx_x", 0)) typ_int32 in
+  let n = mk_texpr (TEInt 100) typ_int32 in
+  check_shuffle_refused
+    "varying for bound"
+    (mk_texpr
+       (TEFor
+          ( "i",
+            0,
+            tid_x,
+            n,
+            Sarek_ast.Upto,
+            shuffle_call (mk_texpr (TEInt 7) typ_int32) ))
+       typ_int32) ;
+  check_shuffle_refused
+    "varying while"
+    (mk_texpr
+       (TEWhile (varying_cond, shuffle_call (mk_texpr (TEInt 7) typ_int32)))
+       typ_int32)
+
+let test_shuffle_after_varying_return () =
+  (* F-04: a varying early return makes the rest of the sequence diverged *)
+  let early_return =
+    mk_texpr
+      (TEIf
+         ( varying_cond,
+           mk_texpr (TEReturn (mk_texpr TEUnit typ_unit)) typ_unit,
+           None ))
+      typ_unit
+  in
+  check_shuffle_refused
+    "after a varying return"
+    (mk_texpr
+       (TESeq [early_return; shuffle_call (mk_texpr (TEInt 7) typ_int32)])
+       typ_int32)
+
+let test_shuffle_in_helper_called_from_diverged () =
+  (* let rec h x = shuffle x in if varying then h 7: rule H-2 *)
+  let x = mk_texpr (TEVar ("x", 1)) typ_int32 in
+  let helper_ty = Sarek_types.TFun ([typ_int32], typ_int32) in
+  let call =
+    mk_texpr
+      (TEApp
+         (mk_texpr (TEVar ("h", 2)) helper_ty, [mk_texpr (TEInt 7) typ_int32]))
+      typ_int32
+  in
+  let param =
+    {
+      tparam_name = "x";
+      tparam_type = typ_int32;
+      tparam_index = 0;
+      tparam_is_vec = false;
+      tparam_id = 1;
+    }
+  in
+  let body_in_varying = mk_texpr (TEIf (varying_cond, call, None)) typ_int32 in
+  let e =
+    mk_texpr
+      (TELetRec ("h", 2, [param], shuffle_call x, body_in_varying))
+      typ_int32
+  in
+  check_shuffle_refused "helper called from diverged flow" e ;
+  (* The same helper called from converged flow is accepted. *)
+  let ok =
+    mk_texpr (TELetRec ("h", 2, [param], shuffle_call x, call)) typ_int32
+  in
+  Alcotest.(check int)
+    "helper called from converged flow"
+    0
+    (List.length (Sarek_convergence.check_expr Sarek_convergence.init_ctx ok))
+
+let test_shuffle_makes_barrier_kernel () =
+  (* A shuffle kernel is a barrier kernel for the CPU runtimes: the Native
+     simulation exchanges through shared memory between two barriers. *)
+  Alcotest.(check bool)
+    "expr_uses_barriers sees the warp collective"
+    true
+    (Sarek_convergence.expr_uses_barriers
+       (shuffle_call (mk_texpr (TEInt 7) typ_int32)))
+
 (** {1 Barrier Detection Tests} *)
 
 let test_expr_uses_barriers_simple () =
@@ -836,6 +968,24 @@ let () =
             "warp collective diverged"
             `Quick
             test_check_expr_warp_collective_diverged;
+        ] );
+      ( "warp_shuffle",
+        [
+          test_case "after a uniform if" `Quick test_shuffle_after_uniform_if;
+          test_case "in a varying if" `Quick test_shuffle_in_varying_if;
+          test_case "in a varying loop" `Quick test_shuffle_in_varying_loop;
+          test_case
+            "after a varying return"
+            `Quick
+            test_shuffle_after_varying_return;
+          test_case
+            "in a helper called from diverged flow"
+            `Quick
+            test_shuffle_in_helper_called_from_diverged;
+          test_case
+            "a shuffle kernel is a barrier kernel"
+            `Quick
+            test_shuffle_makes_barrier_kernel;
         ] );
       ( "barrier_detection",
         [

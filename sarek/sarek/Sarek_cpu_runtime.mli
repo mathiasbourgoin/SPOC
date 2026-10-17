@@ -77,6 +77,30 @@ type shared_mem
 (** Create a new empty shared memory container. *)
 val create_shared : unit -> shared_mem
 
+(** {1 Warp shuffles}
+
+    The slow sequential simulation of warp shuffles used by generated native
+    kernels (see {!Sarek_cpu_runtime_warp}). *)
+module Warp : sig
+  type op = Sarek_warp.op = Idx | Down | Up | Xor
+
+  (** The simulated warp width (Sarek_warp.simulated_width). *)
+  val width : unit -> int
+
+  val warp_size : unit -> int32
+
+  val lane_id : thread_state -> int32
+
+  val shuffle_i32 :
+    thread_state -> shared_mem -> Sarek_warp.op -> int32 -> int32 -> int32
+
+  val shuffle_f32 :
+    thread_state -> shared_mem -> Sarek_warp.op -> float -> int32 -> float
+
+  val shuffle_f64 :
+    thread_state -> shared_mem -> Sarek_warp.op -> float -> int32 -> float
+end
+
 (** {2 Typed Allocators} *)
 
 val alloc_shared_int : shared_mem -> string -> int -> int -> int array

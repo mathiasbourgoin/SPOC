@@ -144,6 +144,26 @@ let device_lacks_feature (f : Sarek_ir_analysis.feature) =
           Some
             "Use an ordinary multiply-accumulate kernel, or select a device \
              that advertises the cooperative-matrix configuration you need." )
+    | Sarek_ir_analysis.Warp_shuffle ->
+        (* The text is device-neutral on purpose: the feature is reported by
+           each backend (CUDA, HIP, Metal: by construction; OpenCL:
+           cl_khr_subgroup_shuffle plus a probe kernel that measures the lane
+           mapping; Vulkan: BASIC and SHUFFLE subgroup operations for compute,
+           and an explicit opt-in; WebGPU: the "subgroups" feature). *)
+        ( "the device does not report subgroup shuffle support (Vulkan: \
+           VkPhysicalDeviceSubgroupProperties.supportedOperations with BASIC \
+           and SHUFFLE for the compute stage; OpenCL: cl_khr_subgroups and \
+           cl_khr_subgroup_shuffle; WebGPU: the subgroups feature)",
+          Quoted
+            "Khronos Vulkan specification, VkSubgroupFeatureFlagBits; OpenCL \
+             extension specification cl_khr_subgroup_shuffle; the optional \
+             features are not guaranteed by any device",
+          Some
+            "Select a device that reports subgroup shuffle (CUDA, HIP, Metal, \
+             the Native and Interpreter backends, or a Vulkan/OpenCL device \
+             with the extension), or reduce through shared memory and \
+             block_barrier. Shared-memory emulation of the shuffle on such \
+             devices is planned, not available." )
   in
   {
     cap_name = Sarek_ir_analysis.feature_name f;

@@ -244,7 +244,9 @@ end = struct
            refuses; an empty list would be a positive claim nobody measured. *)
         coopmat = None;
         supports_atomics = true;
-        warp_size = (if d.parallel then 32 else 1);
+        (* The simulated warp width, whether or not the interpreter runs
+           blocks in parallel: it was 32 only when parallel, 1 otherwise. *)
+        warp_size = Sarek_warp.simulated_width ();
         max_registers_per_block = 0;
         clock_rate_khz = 0;
         multiprocessor_count = d.num_cores;

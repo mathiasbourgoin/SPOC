@@ -36,15 +36,26 @@ type exec_mode =
   | Converged  (** All threads in workgroup execute this code *)
   | Diverged  (** Threads may have taken different branches *)
 
+(** The synchronisation point a helper function contains: what a call to it
+    reaches. *)
+type sync_kind =
+  | Barrier_sync  (** a block barrier or a superstep *)
+  | Warp_sync of string  (** a warp collective, by name *)
+
 (** Analysis context *)
 type ctx = {
   mode : exec_mode;
   varying_vars : StringSet.t;
       (** Variables known to carry thread-varying values at this point *)
+  sync_helpers : (string * sync_kind) list;
+      (** Helper functions in scope that contain a synchronisation point,
+          transitively (specs/convergence-semantics.md, rule H-2): a call to one
+          in diverged flow is an error at the call site. *)
 }
 
 (** Initial context - start converged *)
-let init_ctx = {mode = Converged; varying_vars = StringSet.empty}
+let init_ctx =
+  {mode = Converged; varying_vars = StringSet.empty; sync_helpers = []}
 
 (** Enter diverged mode, preserving known-varying variable set *)
 let diverge ctx = {ctx with mode = Diverged}
@@ -199,6 +210,58 @@ let rec has_varying_return (varying_env : StringSet.t) (e : texpr) : bool =
       || has_varying_return varying_env b
   | _ -> false
 
+(** The direct sub-expressions of [te], in evaluation order. *)
+let sub_exprs (te : texpr) : texpr list =
+  match te.te with
+  | TEUnit | TEBool _ | TEInt _ | TEInt32 _ | TEInt64 _ | TEFloat _ | TEDouble _
+  | TEVar _ | TEGlobalRef _ | TENative _ | TEIntrinsicConst _ ->
+      []
+  | TEVecGet (a, b) | TEArrGet (a, b) | TEBinop (_, a, b) | TEWhile (a, b) ->
+      [a; b]
+  | TEVecSet (a, b, c) | TEArrSet (a, b, c) -> [a; b; c]
+  | TEFieldGet (e, _, _)
+  | TEUnop (_, e)
+  | TEAssign (_, _, e)
+  | TEReturn e
+  | TEPragma (_, e)
+  | TEOpen (_, e)
+  | TECreateArray (e, _, _) ->
+      [e]
+  | TEFieldSet (e, _, _, x) -> [e; x]
+  | TEApp (f, args) -> f :: args
+  | TELet (_, _, v, b) | TELetMut (_, _, v, b) -> [v; b]
+  | TELetRec (_, _, _, fn_body, cont) -> [fn_body; cont]
+  | TEIf (c, t, e) -> c :: t :: Option.to_list e
+  | TEFor (_, _, lo, hi, _, b) -> [lo; hi; b]
+  | TESeq es | TETuple es -> es
+  | TEMatch (s, cases) -> s :: List.map snd cases
+  | TERecord (_, fields) -> List.map snd fields
+  | TEConstr (_, _, arg) -> Option.to_list arg
+  | TELetShared (_, _, _, size, body) -> Option.to_list size @ [body]
+  | TESuperstep (_, _, body, cont) -> [body; cont]
+  | TEIntrinsicFun (_, _, args) -> args
+
+(** The first synchronisation point [te] contains: a barrier, a superstep, a
+    warp collective, or a call to a helper of [helpers] (which contains one). *)
+let rec first_sync ~(helpers : (string * sync_kind) list) (te : texpr) :
+    sync_kind option =
+  match te.te with
+  | TESuperstep _ -> Some Barrier_sync
+  | TEIntrinsicFun (_, Some Sarek_core_primitives.ConvergencePoint, _) ->
+      Some Barrier_sync
+  | TEIntrinsicFun (ref, Some Sarek_core_primitives.WarpConvergence, _) ->
+      Some (Warp_sync (Sarek_env.intrinsic_ref_display_name ref))
+  | TEApp ({te = TEVar (name, _) | TEGlobalRef (name, _); _}, _)
+    when List.mem_assoc name helpers ->
+      List.assoc_opt name helpers
+  | _ -> List.find_map (first_sync ~helpers) (sub_exprs te)
+
+(** The error a call reaching [kind] gives in diverged flow. *)
+let sync_error (kind : sync_kind) loc : Sarek_error.error =
+  match kind with
+  | Barrier_sync -> Sarek_error.Barrier_in_diverged_flow loc
+  | Warp_sync name -> Sarek_error.Warp_collective_in_diverged_flow (name, loc)
+
 (** Collect errors from convergence analysis *)
 let rec check_expr ctx (te : texpr) : Sarek_error.error list =
   match te.te with
@@ -272,7 +335,19 @@ let rec check_expr ctx (te : texpr) : Sarek_error.error list =
   | TEFieldSet (e, _, _, x) -> check_expr ctx e @ check_expr ctx x
   | TEBinop (_, a, b) -> check_expr ctx a @ check_expr ctx b
   | TEUnop (_, e) -> check_expr ctx e
-  | TEApp (f, args) -> check_expr ctx f @ List.concat_map (check_expr ctx) args
+  | TEApp (f, args) ->
+      (* H-2: a call reached in diverged flow to a helper that contains a
+         synchronisation point (transitively) is rejected at the call. *)
+      let call_errors =
+        match f.te with
+        | (TEVar (name, _) | TEGlobalRef (name, _)) when ctx.mode = Diverged
+          -> (
+            match List.assoc_opt name ctx.sync_helpers with
+            | Some kind -> [sync_error kind te.te_loc]
+            | None -> [])
+        | _ -> []
+      in
+      call_errors @ check_expr ctx f @ List.concat_map (check_expr ctx) args
   | TEAssign (_, _, e) -> check_expr ctx e
   | TELet (name, _, value, body) | TELetMut (name, _, value, body) ->
       let value_errors = check_expr ctx value in
@@ -329,8 +404,16 @@ let rec check_expr ctx (te : texpr) : Sarek_error.error list =
       in
       entry_errors @ check_expr ctx step_body @ check_expr ctx cont
   | TEOpen (_, body) -> check_expr ctx body
-  | TELetRec (_, _, _, fn_body, cont) ->
-      check_expr ctx fn_body @ check_expr ctx cont
+  | TELetRec (name, _, _, fn_body, cont) ->
+      let ctx' =
+        match first_sync ~helpers:ctx.sync_helpers fn_body with
+        | Some kind ->
+            {ctx with sync_helpers = (name, kind) :: ctx.sync_helpers}
+        | None ->
+            (* a later helper of the same name shadows an earlier one *)
+            {ctx with sync_helpers = List.remove_assoc name ctx.sync_helpers}
+      in
+      check_expr ctx fn_body @ check_expr ctx' cont
 
 (** Check a module item *)
 let check_module_item ctx (item : tmodule_item) : Sarek_error.error list =
@@ -340,7 +423,21 @@ let check_module_item ctx (item : tmodule_item) : Sarek_error.error list =
 
 (** Check a kernel for convergence safety *)
 let check_kernel (kernel : tkernel) : (unit, Sarek_error.error list) result =
-  let ctx = init_ctx in
+  (* Module functions that contain a synchronisation point, in definition order
+     so a later one sees an earlier one. *)
+  let sync_helpers =
+    List.fold_left
+      (fun helpers (item : tmodule_item) ->
+        match item with
+        | TMFun (name, _, _, body) -> (
+            match first_sync ~helpers body with
+            | Some kind -> (name, kind) :: helpers
+            | None -> helpers)
+        | TMConst _ -> helpers)
+      []
+      kernel.tkern_module_items
+  in
+  let ctx = {init_ctx with sync_helpers} in
   (* Check module items first *)
   let item_errors =
     List.concat_map (check_module_item ctx) kernel.tkern_module_items
@@ -358,6 +455,11 @@ let rec expr_uses_barriers (te : texpr) : bool =
   | TESuperstep _ -> true
   (* Intrinsic function - check if it's a convergence point *)
   | TEIntrinsicFun (_, Some Sarek_core_primitives.ConvergencePoint, _) -> true
+  (* A warp collective is simulated on the CPU by exchanging through the block's
+     shared memory between two barriers (Sarek_cpu_runtime.Warp), so a
+     kernel that calls one is a barrier kernel: it needs the full thread state
+     and the BSP runner, not the simple loops. *)
+  | TEIntrinsicFun (_, Some Sarek_core_primitives.WarpConvergence, _) -> true
   | TEIntrinsicFun (_, _, args) -> List.exists expr_uses_barriers args
   (* Recursively check subexpressions *)
   | TEIf (cond, then_e, else_opt) ->
@@ -482,6 +584,17 @@ let dim_usage_of_name name =
   | "block_idx_x" -> {empty_dim_usage with uses_x = true; uses_block_idx = true}
   | "block_idx_y" -> {empty_dim_usage with uses_y = true; uses_block_idx = true}
   | "block_idx_z" -> {empty_dim_usage with uses_z = true; uses_block_idx = true}
+  (* lane_id and warp_size are read from the full thread state (the simulated
+     warp width and the linear thread id), never from the simple loops. *)
+  | "lane_id" | "warp_size" ->
+      {
+        empty_dim_usage with
+        uses_x = true;
+        uses_y = true;
+        uses_z = true;
+        uses_thread_idx = true;
+        uses_block_dim = true;
+      }
   | "block_dim_x" -> {empty_dim_usage with uses_x = true; uses_block_dim = true}
   | "block_dim_y" -> {empty_dim_usage with uses_y = true; uses_block_dim = true}
   | "block_dim_z" -> {empty_dim_usage with uses_z = true; uses_block_dim = true}
