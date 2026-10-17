@@ -19,6 +19,15 @@
 
 ### Changed
 
+- Native: PPX-generated kernels read and write float32/int32 vector parameters through the Bigarray
+  directly (`Sarek.Sarek_native_fast`) instead of the accessor object, and `Vector.ensure_cpu_sync`
+  runs once per vector per launch instead of per element. Bit-identical results (digest test
+  `test_native_typed_access_exact`, recorded with the previous implementation); same bounds error
+  (an out-of-range index still reaches `Vector.get`/`Vector.set` and raises their `Invalid_argument`);
+  a store still marks the device copy stale as `Vector.set` does. Other element types and
+  non-Bigarray storage keep the accessor path. Not changed: superstep handling, arithmetic.
+  `bench_native_matvec` native, median of 15, alternating, tartarus load about 1: row 55.5 ms to
+  29.5 ms, wave 189 ms to 140 ms, copy 4.0 ms to 2.9 ms; checksums identical.
 - `Transfer.create_stream ?non_blocking:bool` (default `false`, unchanged): `~non_blocking:true`
   makes a stream the device's default stream does not wait for (HIP `hipStreamNonBlocking`,
   CUDA `CU_STREAM_NON_BLOCKING`), so a copy stream can overlap kernels on the default stream;

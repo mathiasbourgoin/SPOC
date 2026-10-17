@@ -37,6 +37,7 @@
   Sarek_type_helpers
   Execute
   Execute_error
-  Soa_launch)
+  Soa_launch
+  Sarek_native_fast)
  (instrumentation
   (backend bisect_ppx)))

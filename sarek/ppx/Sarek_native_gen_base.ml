@@ -17,6 +17,16 @@ open Sarek_native_intrinsics
     TEVar can dereference them. *)
 module IntSet = Set.Make (Int)
 
+module IntMap = Map.Make (Int)
+
+(** Element kind of a vector parameter with a direct-access fast path (see
+    [Sarek.Sarek_native_fast]). *)
+type fast_kind = Fast_f32 | Fast_i32
+
+(** Name of the per-work-item binding holding the fast record of the vector
+    parameter with variable id [id]. *)
+let fast_var_name id = Printf.sprintf "__fast_%d" id
+
 (** Set of inline type names for first-class module approach *)
 module StringSet = Set.Make (String)
 
@@ -33,6 +43,9 @@ type gen_context = {
   use_native_arg : bool;
       (** When true, vector params are accessor objects (v#get i, v#set i x)
           instead of Vector.t (Vector.get v i, Vector.kernel_set v i x) *)
+  fast_vecs : fast_kind IntMap.t;
+      (** Vector parameters (by variable id) whose float32/int32 accesses take
+          the direct Bigarray path; only read when [use_native_arg] *)
 }
 
 (** Empty generation context *)
@@ -43,6 +56,7 @@ let empty_ctx =
     current_module = None;
     gen_mode = FullMode;
     use_native_arg = false;
+    fast_vecs = IntMap.empty;
   }
 
 (** Check if a qualified type name is from the current module. For

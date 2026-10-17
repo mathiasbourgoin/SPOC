@@ -2482,3 +2482,18 @@
  (alias e2e-metal)
  (action
   (run %{dep:test_matrix_rewrite_metal.exe})))
+
+; Byte-for-byte non-regression of the Native direct float32/int32 vector
+; access (digests recorded with the accessor-object implementation).
+
+(executable
+ (name test_native_typed_access_exact)
+ (modules test_native_typed_access_exact)
+ (libraries sarek sarek_native sarek_stdlib spoc_core unix)
+ (preprocess
+  (pps sarek_ppx)))
+
+(rule
+ (alias runtest)
+ (action
+  (run %{dep:test_native_typed_access_exact.exe})))

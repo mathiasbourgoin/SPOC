@@ -84,23 +84,46 @@ let generic_vec_of_exec_vector (module V : Typed_value.EXEC_VECTOR) :
 
 module Vector = Spoc_core.Vector
 
-(* [Vector.get] specialised to one bigarray kind: the same bounds check, host
-   sync and read, in the same order, with no allocation but the boxed result.
-   [host] is immutable, so binding the bigarray before the sync reads the same
-   storage [Vector.get] reads after it. Other storages take [Vector.get]. *)
+(* [Vector.get]/[Vector.set] specialised to one bigarray kind, for a vector
+   already synchronised to the host by {!sync_once}: the same bounds check,
+   read or store, and (for a store) the same staleness mark, in the same order,
+   with no allocation but the boxed result. An index out of range, or another
+   storage, takes [Vector.get]/[Vector.set] itself and so raises their error.
+   [host] is immutable, so binding the bigarray first reads the same storage. *)
 let get_float32 (v : (float, Bigarray.float32_elt) Vector.t) i =
   match v.Vector.host with
   | Vector.Bigarray_storage ba when i >= 0 && i < v.Vector.length ->
-      Vector.ensure_cpu_sync v ;
       Bigarray.Array1.get ba i
   | _ -> Vector.get v i
 
 let get_int32 (v : (int32, Bigarray.int32_elt) Vector.t) i =
   match v.Vector.host with
   | Vector.Bigarray_storage ba when i >= 0 && i < v.Vector.length ->
-      Vector.ensure_cpu_sync v ;
       Bigarray.Array1.get ba i
   | _ -> Vector.get v i
+
+let set_float32 (v : (float, Bigarray.float32_elt) Vector.t) i x =
+  match v.Vector.host with
+  | Vector.Bigarray_storage ba when i >= 0 && i < v.Vector.length ->
+      Bigarray.Array1.set ba i x ;
+      Sarek.Sarek_native_fast.mark_written v
+  | _ -> Vector.set v i x
+
+let set_int32 (v : (int32, Bigarray.int32_elt) Vector.t) i x =
+  match v.Vector.host with
+  | Vector.Bigarray_storage ba when i >= 0 && i < v.Vector.length ->
+      Bigarray.Array1.set ba i x ;
+      Sarek.Sarek_native_fast.mark_written v
+  | _ -> Vector.set v i x
+
+(* The device->host read-back [Vector.get]/[Vector.set] do at every access, done
+   once when the launch's arguments are built: a launch owns its vector
+   arguments, so the location cannot change to [Stale_CPU] during it. A vector
+   without host storage is left alone; its accesses raise as before. *)
+let sync_once (type a b) (v : (a, b) Vector.t) =
+  match v.Vector.host with
+  | Vector.Bigarray_storage _ -> Vector.ensure_cpu_sync v
+  | Vector.Custom_storage _ | Vector.Device_only_storage -> ()
 
 (** The accessors a native kernel calls for a vector argument. A float32 or
     int32 vector reads and writes its own element type directly (what the
@@ -125,13 +148,15 @@ let native_vec_of_exec_vector (module V : Typed_value.EXEC_VECTOR) :
       with
       | Some T.Refl, _ ->
           let v : (float, Bigarray.float32_elt) Vector.t = V.underlying in
+          sync_once v ;
           Sarek_ir_types.NA_Vec
             (Sarek_ir_types.NV
-               {ops with get_f32 = get_float32 v; set_f32 = Vector.set v})
+               {ops with get_f32 = get_float32 v; set_f32 = set_float32 v})
       | _, Some T.Refl ->
           let v : (int32, Bigarray.int32_elt) Vector.t = V.underlying in
+          sync_once v ;
           Sarek_ir_types.NA_Vec
             (Sarek_ir_types.NV
-               {ops with get_i32 = get_int32 v; set_i32 = Vector.set v})
+               {ops with get_i32 = get_int32 v; set_i32 = set_int32 v})
       | None, None -> generic)
   | _ -> generic
