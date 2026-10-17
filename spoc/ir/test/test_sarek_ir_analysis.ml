@@ -974,10 +974,10 @@ let test_kernel_requirements () =
     = [Float64; Float16]) ;
   (* Every feature must be reachable from [all_features]; a new constructor that
      is not added there would silently never be required. *)
-  assert (List.length all_features = 4) ;
+  assert (List.length all_features = 5) ;
   assert (
     List.map feature_name all_features
-    = ["float64"; "float16"; "int64"; "cooperative-matrix"]) ;
+    = ["float64"; "float16"; "int64"; "cooperative-matrix"; "warp-shuffle"]) ;
   (* [Int64], added in #141 so the GLSL backend can gate
      `#extension GL_ARB_gpu_shader_int64` on the user's own int64 and not only
      on the software-f64 helpers that bit-cast a double. *)
