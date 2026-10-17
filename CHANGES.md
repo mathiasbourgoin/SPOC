@@ -68,7 +68,7 @@
   `test_warp_diverged_param`, `_result`, `_mut`, `_if_value` and `test_convergence` "strict").
   **Known limits:** reads of memory at a uniform index count as
   uniform (specs/convergence-semantics.md section 3, race freedom). Still accepted for a warp
-  shuffle or a barrier (found by the independent review of e42648dc, follow-up work): a helper selected through a
+  shuffle or a barrier (found by the independent review of 24fd1b40, follow-up work): a helper selected through a
   function-valued `if` (the check runs before defunctionalisation), a recursive helper whose
   recursive call makes a parameter varying, variance stored through a local array or record, a `mut`
   assigned inside a local helper, and a call chain of more than 8 helpers; the strict analysis is
