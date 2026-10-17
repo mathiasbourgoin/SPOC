@@ -1263,3 +1263,25 @@
   (:standard -w -33))
  (enabled_if
   (= %{profile} "negative")))
+
+(library
+ (name neg_test_warp_diverged_alias_call)
+ (modules test_warp_diverged_alias_call)
+ (libraries sarek sarek.stdlib sarek.ppx.lib)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33))
+ (enabled_if
+  (= %{profile} "negative")))
+
+(library
+ (name neg_test_warp_diverged_while_cond)
+ (modules test_warp_diverged_while_cond)
+ (libraries sarek sarek.stdlib sarek.ppx.lib)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33))
+ (enabled_if
+  (= %{profile} "negative")))
