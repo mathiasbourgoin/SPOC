@@ -54,7 +54,7 @@
   recursive call makes a parameter varying, variance stored through a local array or record, a `mut`
   assigned inside a local helper, and a call chain of more than 8 helpers; the strict analysis is
   exponential in the nesting depth of `let mut` and skipped for kernels without a warp collective;
-  it rejects a tuple `let` whose scrutinee is varying even if the shuffle does not use it; a `let s = ... s ...` that rebinds
+  it rejects a tuple `let` whose scrutinee is varying even if the shuffle does not use it, and a shuffle in a `while` condition whose value counts as thread-varying (the shuffle result itself is varying, so even a loop on a uniform value is refused); a shuffling helper passed as an argument to a higher-order helper is still accepted (same root cause as the function-valued `if`); a `let s = ... s ...` that rebinds
   a name in the same scope (including a kernel parameter's name) still emits a C redefinition on the
   CUDA, HIP and OpenCL source backends (pre-existing, not specific to warps); Vulkan claims the feature only with `SPOC_VULKAN_SUBGROUP_SHUFFLE=1` (no lane-mapping
   probe, full subgroups not required); the OpenCL probe runs at device enumeration and measures the
