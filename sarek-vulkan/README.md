@@ -567,6 +567,29 @@ GLSL provides standard math functions:
 | **Common** | `abs`, `sign`, `floor`, `ceil`, `fract`, `mod`, `min`, `max`, `clamp` |
 | **Geometric** | `length`, `distance`, `dot`, `cross`, `normalize` |
 
+## Warp shuffles (subgroups)
+
+`warp_shuffle`, `warp_shuffle_down`, `warp_shuffle_up`, `warp_shuffle_xor`
+(`int32`, `float32`; `float64` through its two 32-bit halves), `warp_size` and
+`lane_id` map to `subgroupShuffle`, `gl_SubgroupSize` and
+`gl_SubgroupInvocationID`. The source lane is computed in the shader and read
+with the index shuffle, so only `GL_KHR_shader_subgroup_basic` and
+`GL_KHR_shader_subgroup_shuffle` are declared (no `_shuffle_relative`). A shader
+that uses subgroup operations is compiled for the Vulkan 1.1 environment
+(SPIR-V 1.3) with glslang or shaderc; other shaders keep the default one.
+
+The device gets the `warp-shuffle` feature only with the explicit opt-in `SPOC_VULKAN_SUBGROUP_SHUFFLE=1` (Vulkan promises neither full subgroups nor lane = linear id modulo the size, and this backend has no probe for either) and when
+`VkPhysicalDeviceSubgroupProperties.supportedOperations` has `BASIC` and
+`SHUFFLE` and `supportedStages` has `COMPUTE`. `warp_size` is the reported
+`subgroupSize` (64 on RADV for the RX 7900 XTX); the real size of a subgroup can
+be smaller or larger on some drivers, so a shuffle kernel needs a block that is
+a multiple of the reported size. Not run on a device in CI or on the shared
+workstation (Vulkan stays off there since the 2026-10-12 incident): the shader is
+checked with `glslangValidator --target-env vulkan1.1` and `spirv-val`, and
+`test_vulkan_warp_capability` checks the capability bits and the extension lines.
+The lane mapping (hardware lane equals linear local id modulo the size) is not
+probed on this backend.
+
 ## Testing
 
 The Vulkan backend includes unit tests:

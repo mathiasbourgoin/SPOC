@@ -242,6 +242,23 @@ Implements `Framework_sig.ASYNC` (spec `specs/metal-ranged-copies.md`) for
 Tests: `dune build @sarek-metal/test/e2e-metal` (needs a Mac; not run by CI)
 and `@sarek-metal/test/e2e-metal-bench` (bandwidth, information only).
 
+## Warp shuffles (SIMD-groups)
+
+`warp_shuffle`, `warp_shuffle_down`, `warp_shuffle_up`, `warp_shuffle_xor`
+(`int32`, `float32`; Metal has no `float64`, which stays refused), `warp_size`
+and `lane_id` map to `simd_shuffle` with `[[thread_index_in_simdgroup]]` and
+`[[threads_per_simdgroup]]`, added to the kernel parameters only when a warp
+operation is used. The source lane is computed in a small helper and read with
+the index shuffle, so the out-of-range cases of `simd_shuffle_down` and
+`simd_shuffle_up`, which Metal leaves undefined, never occur. The two attributes
+cannot be read from a helper function, so a warp operation inside a
+`[@sarek.module]` or kernel-local helper is refused with a located message on this
+backend: call the shuffle from the kernel body and pass the result.
+
+The source is generated and checked as text (`warp_shuffle_metal.expected`); it
+has not been compiled or run on a Mac (decision D7 of the shuffle plan: no run on
+`ladon` outside a window announced by the owner).
+
 ## Installation
 
 ### Requirements

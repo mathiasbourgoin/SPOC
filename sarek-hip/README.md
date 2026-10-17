@@ -78,6 +78,19 @@ On gfx11 (RDNA3) devices with a 32-wide wavefront, cooperative-matrix statements
 
 Every other device is probed as having no configuration and a kernel using cooperative matrices is refused with a message naming the rule: that includes gfx10 and the gfx1036 integrated GPU, gfx12 and CDNA, because their matrix instructions are not lowered (`Hip_coopmat.ml:55-80`). Validation on hardware is recorded for gfx1100 (RX 7900 XTX) in `specs/coopmat-hip-wmma.md`.
 
+## Warp shuffles
+
+`warp_shuffle`, `warp_shuffle_down`, `warp_shuffle_up`, `warp_shuffle_xor`
+(`int32`, `float32`, `float64`), `warp_size` and `lane_id` are lowered to
+`__shfl`, `__shfl_down`, `__shfl_up` and `__shfl_xor` with `width = warpSize`
+(the generator is shared with CUDA C and selects its dialect with
+`__HIP_PLATFORM_AMD__`). The width is the device's own (32 on RDNA, 64 on
+GCN and CDNA); a delta or mask outside `[0, warpSize)` is clamped to 0, which
+returns the lane's own value, as the contract of `sarek/sarek/BSP.md` says. A
+kernel that shuffles must be launched with a block that is a multiple of the
+width. Validated on gfx1100 (wave32): `test_warp_shuffle_parity`,
+`test_warp_shuffle_reduce`. Not run on a 64-wide device.
+
 ## Tests
 
 ```bash

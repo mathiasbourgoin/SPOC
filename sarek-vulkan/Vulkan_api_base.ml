@@ -207,6 +207,19 @@ let destroy_tracked_fence (ctx : string) device fence =
 
 (** {1 SPIR-V Compilation} *)
 
+(** A shader that uses subgroup operations ([GL_KHR_shader_subgroup_*], emitted
+    by the warp shuffles) needs SPIR-V 1.3, i.e. the Vulkan 1.1 target
+    environment. It is requested for those shaders ONLY: Vulkan 1.1 changes the
+    storage class of buffer blocks, which the note below keeps away from every
+    other shader. The device side is already at 1.2 (Vulkan_api_device). *)
+let needs_vulkan_1_1 (glsl_source : string) : bool =
+  let needle = "GL_KHR_shader_subgroup" in
+  let n = String.length needle and m = String.length glsl_source in
+  let rec at i =
+    i + n <= m && (String.sub glsl_source i n = needle || at (i + 1))
+  in
+  at 0
+
 (** Compile GLSL to SPIR-V using glslangValidator. Requires glslangValidator in
     PATH. *)
 let compile_glsl_to_spirv_cli ~(entry_point : string) (glsl_source : string) :
@@ -223,7 +236,8 @@ let compile_glsl_to_spirv_cli ~(entry_point : string) (glsl_source : string) :
      Uniform to StorageBuffer which may cause issues with some drivers *)
   let cmd =
     Printf.sprintf
-      "glslangValidator -V -S comp -e %s -o %s %s 2>&1"
+      "glslangValidator -V %s-S comp -e %s -o %s %s 2>&1"
+      (if needs_vulkan_1_1 glsl_source then "--target-env vulkan1.1 " else "")
       entry_point
       spirv_file
       glsl_file
@@ -299,7 +313,11 @@ let compile_glsl_to_spirv ~(entry_point : string) (glsl_source : string) :
     Spoc_core.Log.debug
       Spoc_core.Log.Device
       "[Vulkan] Compiling with libshaderc" ;
-    try Shaderc.compile_glsl_to_spirv ~entry_point glsl_source
+    try
+      Shaderc.compile_glsl_to_spirv
+        ~vulkan_1_1:(needs_vulkan_1_1 glsl_source)
+        ~entry_point
+        glsl_source
     with e ->
       Spoc_core.Log.errorf
         Spoc_core.Log.Device

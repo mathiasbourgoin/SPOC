@@ -89,8 +89,28 @@ module Opencl : Framework_sig.PLUGIN_BASE = struct
 
     let name (d : t) = d.Opencl_api.Device.name
 
+    (* The sub-group probe (Opencl_warp_probe), once per device. Only a device
+       that lists the sub-group shuffle extensions is probed; a probe failure is
+       cached as [None]. *)
+    let warp_probes : (int, Opencl_warp_probe.t option) Hashtbl.t =
+      Hashtbl.create 4
+
+    let warp_probes_lock = Mutex.create ()
+
+    let warp_probe (d : t) : Opencl_warp_probe.t option =
+      if not d.Opencl_api.Device.supports_subgroup_shuffle then None
+      else
+        Mutex.protect warp_probes_lock @@ fun () ->
+        match Hashtbl.find_opt warp_probes d.Opencl_api.Device.id with
+        | Some r -> r
+        | None ->
+            let r = Opencl_warp_probe.probe d in
+            Hashtbl.add warp_probes d.Opencl_api.Device.id r ;
+            r
+
     let capabilities (d : t) : Framework_sig.capabilities =
       let open Opencl_api.Device in
+      let warp = warp_probe d in
       let max_dims = d.max_work_item_dims in
       let max_sizes = d.max_work_item_sizes in
       {
@@ -116,16 +136,23 @@ module Opencl : Framework_sig.PLUGIN_BASE = struct
            for a device probe. Neither arm asserts anything the device did not
            report. *)
         device_features =
-          ((if d.supports_fp64 then [Sarek_ir_analysis.Float64] else [])
-          @ if d.supports_int64 then [Sarek_ir_analysis.Int64] else []);
+          (if d.supports_fp64 then [Sarek_ir_analysis.Float64] else [])
+          @ (if d.supports_int64 then [Sarek_ir_analysis.Int64] else [])
+          (* Warp_shuffle: only when the sub-group probe measured
+             lane = linear id mod W in the 1-D and 2-D shapes. The extension
+             strings alone are a hint, not an authorisation. *)
+          @ Opencl_warp_probe.features_of_probe warp;
         (* backlog-62: no cooperative-matrix probe on this backend. [None] is
            "not probed", which Sarek_coopmat.verdict maps to Unknown and therefore
            refuses; an empty list would be a positive claim nobody measured. *)
         coopmat = None;
         supports_atomics = true;
         (* Most OpenCL devices support atomics *)
-        warp_size = 32;
-        (* Typical, could query CL_DEVICE_PREFERRED_WORK_GROUP_SIZE_MULTIPLE *)
+        (* The sub-group size MEASURED by Opencl_warp_probe
+           (get_sub_group_size()). It was the constant 32 here, which no
+           shuffle guard may rely on (sub-groups are 8 to 64 wide). A device
+           without sub-group support has no warp structure to report: 1. *)
+        warp_size = Opencl_warp_probe.warp_size_of_probe warp;
         max_registers_per_block = 0;
         (* Not exposed in OpenCL *)
         clock_rate_khz = d.max_clock_freq * 1000;
@@ -347,7 +374,15 @@ module Opencl : Framework_sig.PLUGIN_BASE = struct
       let program =
         Opencl_api.Program.create_from_source state.context source
       in
-      Opencl_api.Program.build program () ;
+      (* A kernel that uses sub-group built-ins (the warp shuffles) is built at
+         the OpenCL C level the device implements; see
+         {!Opencl_api.Device.subgroup_build_options}. *)
+      let options =
+        if Opencl_api.String.is_substring ~sub:"sub_group_" source then
+          Opencl_api.Device.subgroup_build_options device
+        else ""
+      in
+      Opencl_api.Program.build program ~options () ;
       let kernel = Opencl_api.Kernel.create program name in
       {kernel; program; device_id = device.id}
 
