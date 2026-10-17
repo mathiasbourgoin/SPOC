@@ -1,5 +1,15 @@
 ## 2026-10
 
+### Fixed
+
+- Launch cost regression since the warp-shuffle PR: `Execute.check_launch_warp` and
+  `Matrix_specialise.decide` folded the whole IR (`kernel_uses_shuffle`, `kernel_uses_warp_ops`) at
+  every launch, which cut Katra's decode throughput by 42 to 53 %. Both verdicts are now recorded once
+  per IR (a slot of its `Ir_memo` record, and a field of the matrix-specialise entry). Same refusals
+  and messages. Test: `sarek/execute/test/test_launch_check_cost.ml` (1000 launches must cost under
+  50 whole-IR folds; the old code cost 878). Rule: anything computed from the IR at launch is
+  memoised per kernel.
+
 ### Changed
 
 - Convergence: the strict variance analysis introduced for warp shuffles now also covers block

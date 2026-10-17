@@ -132,9 +132,12 @@ let entry k =
       | Some e when e.generation = !generation -> e
       | Some _ | None ->
           let e =
-            {generation = !generation; plan = guarded_plan k;
+            {
+              generation = !generation;
+              plan = guarded_plan k;
               uses_warp_ops = Sarek_ir_analysis.kernel_uses_warp_ops k;
-              kernels = [] }
+              kernels = [];
+            }
           in
           Ir_memo.set facts memo_key e ;
           e)
