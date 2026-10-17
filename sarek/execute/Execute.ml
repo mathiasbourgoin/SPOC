@@ -669,6 +669,24 @@ let warp_width_of_device (device : Device.t) : int =
   | "Native" | "Interpreter" -> Sarek_warp.simulated_width ()
   | _ -> device.Device.capabilities.Framework_sig.warp_size
 
+(* [Sarek_ir_analysis.kernel_uses_shuffle] folds the whole IR, helpers included:
+   cost proportional to the kernel, paid on every launch (a Katra decode token
+   launches 281 to 497 kernels). The verdict is a pure function of the IR, and
+   an IR is immutable, so it is recorded once in the IR's {!Ir_memo} record
+   (physical identity: a different IR value, even a structurally derived one,
+   is analysed afresh). Nothing here refers to the IR, so the entry dies with
+   it, and the launch-cache generation is irrelevant (no registry is read). *)
+let shuffle_key : bool Ir_memo.key = Ir_memo.new_key ()
+
+let kernel_uses_shuffle_memo (ir : Sarek_ir_types.kernel) : bool =
+  let facts = Ir_memo.facts ir in
+  match Ir_memo.find facts shuffle_key with
+  | Some verdict -> verdict
+  | None ->
+      let verdict = Sarek_ir_analysis.kernel_uses_shuffle ir in
+      Ir_memo.set facts shuffle_key verdict ;
+      verdict
+
 (** Refuse a launch whose kernel shuffles and whose block is not a whole number
     of warps (docs/plans/warp-shuffle-intake-2026-10-17.md, decision D3). The
     lanes of a partial warp would read sources that do not exist, which is
@@ -679,7 +697,7 @@ let warp_width_of_device (device : Device.t) : int =
     for the sibling [sarek.max_threads] rule. *)
 let check_launch_warp_width ~(kernel : string) ~(width : int)
     (ir : Sarek_ir_types.kernel) ~(block : Framework_sig.dims) : unit =
-  if Sarek_ir_analysis.kernel_uses_shuffle ir then begin
+  if kernel_uses_shuffle_memo ir then begin
     let threads = block.Framework_sig.x * block.y * block.z in
     if width <= 0 || threads mod width <> 0 then
       Execute_error.raise_error
