@@ -13,6 +13,13 @@
   examples, benchmarks) nor Katra's `src/kernels` (compiled with the new analysis); a kernel that
   relies on one of the four routes to hide a barrier under a varying test must make the test
   uniform (hoist the barrier out of the branch).
+  Limits of the stricter analysis for barriers: the variance of a `mut` is flow-insensitive, so a
+  `mut` used as a uniform loop counter for a barrier loop and later assigned a thread-varying value
+  is refused (use a separate `mut`); a barrier after a tuple `let` that destructures a thread-varying
+  component is refused (already so before this change); the strict pass is exponential in the nesting
+  depth of `let mut` and of helper call chains (20 nested `let mut` take about 3 s to compile, 22
+  about 11 s, against 0.2 s before); helpers resolve names lexically in the strict pass (a helper
+  redefined after use no longer hides a barrier).
 
 ### Added
 
