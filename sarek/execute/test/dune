@@ -14,6 +14,15 @@
   alcotest
   unix))
 
+; Cost of the per-launch checks: the warp launch rule and the matrix-rewrite
+; decision are recorded once per IR, not recomputed from the whole IR at every
+; launch. No device.
+
+(test
+ (name test_launch_check_cost)
+ (modules test_launch_check_cost)
+ (libraries sarek_execute sarek_ir spoc_core spoc_framework alcotest unix))
+
 ; Launch window (specs/launch-window.md, CHECK-1). Own executable: it
 ; registers a process-global probe backend.
 

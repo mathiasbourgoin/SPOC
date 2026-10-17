@@ -58,6 +58,9 @@ type plan = {gemm : P.gemm; mapping : Map.mapping; case : Adv.element_case}
 type entry = {
   generation : int;  (** the {!generation} it belongs to *)
   plan : (plan, string) result;
+  uses_warp_ops : bool;
+      (** [Sarek_ir_analysis.kernel_uses_warp_ops]: a whole-IR scan, so made
+          once per IR here and not on every launch *)
   mutable kernels :
     ((Rw.lowering * variant * int * int) * (kernel, string) result) list;
       (** keyed by lowering, variant, subgroup width and fragment edge *)
@@ -129,7 +132,9 @@ let entry k =
       | Some e when e.generation = !generation -> e
       | Some _ | None ->
           let e =
-            {generation = !generation; plan = guarded_plan k; kernels = []}
+            {generation = !generation; plan = guarded_plan k;
+              uses_warp_ops = Sarek_ir_analysis.kernel_uses_warp_ops k;
+              kernels = [] }
           in
           Ir_memo.set facts memo_key e ;
           e)
@@ -363,14 +368,14 @@ let decide ?precision ~explicit ~stream ~(device : Device.t) ~ir ~launch () =
     else Ok ()
   in
   let* () = device_possible device ~explicit ~stream in
+  let e = entry ir in
   let* () =
     (* The rewrite chooses its own geometry; a warp shuffle is defined over the
        warp the kernel was written for. *)
-    if Sarek_ir_analysis.kernel_uses_warp_ops ir then
+    if e.uses_warp_ops then
       Error "the kernel uses a warp operation (shuffle, warp_size or lane_id)"
     else Ok ()
   in
-  let e = entry ir in
   let* plan = e.plan in
   let* () =
     if uses_launch_dims plan.gemm then
