@@ -38,6 +38,7 @@ let verdict_to_string = function
   | Inconclusive why -> "inconclusive: " ^ why
 
 let cacheable = function
+  | Refused Device_kind_unknown -> false
   | Usable | Not_needed _ | Refused _ -> true
   | Too_slow _ | Inconclusive _ -> false
 
@@ -132,19 +133,25 @@ let alloc ops held n =
 
 (* Best effort, after the verdict. What is held is taken out of [held] before
    it is released, so that nothing is released twice; everything is tried and
-   the first fatal exception is raised at the end. *)
+   the first fatal exception is raised at the end. Returns the first non-fatal
+   failure, which makes the verdict [Inconclusive]: pages may still be
+   registered. *)
 let release ops held =
-  let fatal = ref None in
+  let fatal = ref None and failure = ref None in
   let each release_one x =
     try release_one x
-    with e -> if is_fatal e && Option.is_none !fatal then fatal := Some e
+    with e ->
+      if is_fatal e then (if Option.is_none !fatal then fatal := Some e)
+      else if Option.is_none !failure then
+        failure := Some (Printexc.to_string e)
   in
   let windows = held.windows and buffers = held.buffers in
   held.windows <- [] ;
   held.buffers <- [] ;
   List.iter (each ops.unregister) windows ;
   List.iter (each ops.free_host) buffers ;
-  Option.iter raise !fatal
+  Option.iter raise !fatal ;
+  !failure
 
 let ( let* ) = Result.bind
 
@@ -201,14 +208,25 @@ let timing_line ~min_relative_speed ~t_registered ~t_staged =
     (t_staged /. t_registered)
     min_relative_speed
 
+(* A reference that differs from the mapping is the caller's fault (the file
+   changed between the mapping and the read, a wrong region): no verdict on
+   the device, and nothing registered yet. *)
+let check_inputs ~window ~ref_window =
+  if
+    equal_bytes (window 0) (ref_window 0)
+    && equal_bytes (window 1) (ref_window 1)
+  then Ok ()
+  else Error (Inconclusive "reference differs from the mapping (file changed?)")
+
 let run ops held ~log ~min_relative_speed ~window ~ref_window ~half =
+  let* () = check_inputs ~window ~ref_window in
   let into = alloc ops held half in
   let* () = register_all ops held [window 0; window 1] in
   let* () = check_bytes ops ~into (window 0, ref_window 0) in
   let* () = check_bytes ops ~into (window 1, ref_window 1) in
   let staging = alloc ops held half in
   let staged () =
-    Bigarray.Array1.blit (ref_window 0) staging ;
+    Bigarray.Array1.blit (window 0) staging ;
     ops.round_trip staging ~into
   in
   let t_registered =
@@ -264,8 +282,12 @@ let probe_with ?(log = ignore)
                | Ok v | Error v -> v))
       with e -> Error e
     in
-    release ops held ;
-    match outcome with Ok v -> v | Error e -> raise e
+    let release_failure = release ops held in
+    match (outcome, release_failure) with
+    | Error e, _ -> raise e
+    | Ok (Inconclusive _ as v), _ -> v
+    | Ok _, Some why -> Inconclusive ("release after the probe failed: " ^ why)
+    | Ok v, None -> v
   end
 
 (* ---- operations over a real device ---- *)

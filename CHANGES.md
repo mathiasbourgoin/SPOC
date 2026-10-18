@@ -32,8 +32,8 @@
   (a read-only shared mapping of a file registered with `Transfer.register_host`), asked of the
   library instead of deduced by each consumer. `static_verdict dev` decides from the backend without
   touching the driver: Vulkan is `Refused (Kernel_hazard _)` whatever `SPOC_VULKAN_HOST_IMPORT*` say
-  (registration is never attempted there, Sarek #503/#504); Metal and the CPU backends are
-  `Not_needed` (copy from the mapping); OpenCL and unknown backends are `Refused (Not_measured _)`;
+  (registration is never attempted there, Sarek #503/#504); Metal and the CPU devices (Native,
+  Interpreter, CPU OpenCL) are `Not_needed` (copy from the mapping); GPU OpenCL and unknown backends are `Refused (Not_measured _)`;
   HIP and CUDA are `Refused Integrated_gpu` / `Device_kind_unknown` or ask for the self-test.
   `probe dev ~map ~reference` runs that self-test: two disjoint windows are registered, copied to the
   device and back, compared with an independent read of the file (`hipHostRegister` returns success
