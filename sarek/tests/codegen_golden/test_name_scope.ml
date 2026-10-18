@@ -145,6 +145,46 @@ let test_array_reference_ignores_scalar () =
         (contains src "a_1[0]"))
     c_family
 
+(* A local array that shares its name with a vector parameter, in a sibling
+   before the store: the store is to the parameter. *)
+let test_local_array_does_not_capture_later_store () =
+  let local = var "a" 1 (TArray (TFloat32, Local)) in
+  let k =
+    {
+      default_kernel with
+      kern_name = "array_vs_array";
+      kern_params = [vec_param "a" 0];
+      kern_body =
+        SSeq
+          [
+            SSeq
+              [
+                SLet
+                  ( local,
+                    EArrayCreate (TFloat32, EConst (CInt32 4l), Local),
+                    SEmpty );
+              ];
+            out_zero (f 1.0);
+          ];
+    }
+  in
+  List.iter
+    (fun (name, gen) ->
+      let src = gen k in
+      Alcotest.(check bool)
+        (name ^ ": the local array is renamed")
+        true
+        (contains src "a_1[") ;
+      Alcotest.(check bool)
+        (name ^ ": the store reaches the parameter")
+        true
+        (contains src "a[0] = ") ;
+      Alcotest.(check bool)
+        (name ^ ": the store does not reach the local array")
+        false
+        (contains src "a_1[0] ="))
+    c_family
+
 (* A helper that rebinds its own parameter: a redeclaration on every target. *)
 let helper_rebinds_parameter =
   let x_param = var "x" 30 TFloat32 and x_local = var "x" 31 TFloat32 in
@@ -216,6 +256,10 @@ let () =
             "an array reference ignores a scalar of its name"
             `Quick
             test_array_reference_ignores_scalar;
+          Alcotest.test_case
+            "a local array does not capture a later store"
+            `Quick
+            test_local_array_does_not_capture_later_store;
           Alcotest.test_case
             "helper parameter rebound, every backend"
             `Quick

@@ -16,8 +16,7 @@
   A `let` in a helper that rebinds a helper parameter is renamed on every target. GLSL and WGSL keep their own
   escapers for reserved words and for a local shadowing a scalar parameter. Not covered: `SNative`
   kernels (opaque source), built-in function names on GLSL and WGSL, cooperative-matrix fragment
-  names, the names of record and variant types, a local array that shares its name with an array in
-  scope (array references carry no identity). Tests: `sarek/tests/codegen_golden/test_name_legalization.ml` and `test_name_scope.ml` (every backend; compiled with
+  names, the names of record and variant types. Tests: `sarek/tests/codegen_golden/test_name_legalization.ml` and `test_name_scope.ml` (every backend; compiled with
   `clang -x cl` and the Metal runtime compiler when present, which reject the pre-fix spelling).
 - Launch cost regression since the warp-shuffle PR: `Execute.check_launch_warp` and
   `Matrix_specialise.decide` folded the whole IR (`kernel_uses_shuffle`, `kernel_uses_warp_ops`) at

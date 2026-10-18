@@ -212,6 +212,21 @@ let coopmat ctx env = function
         }
   | CM_muladd _ as op -> op
 
+(* What a [let] leaves behind for the later siblings of its target block: the
+   names it declared stay unavailable ([visible]) and a scalar stays reachable
+   by its [var_id], but an ARRAY binder is out of the IR scope that ends with
+   its body: an array reference carries no identity, and means the innermost
+   array of that name in the IR, which is not this one. *)
+let leave_binder before inner (v : var) =
+  if not (is_array_type v.var_type) then inner
+  else
+    let names =
+      match SM.find_opt v.var_name before.names with
+      | Some binders -> SM.add v.var_name binders inner.names
+      | None -> SM.remove v.var_name inner.names
+    in
+    {inner with names}
+
 (* A statement list is one target block: [SLet] and [SLetMut] are emitted as a
    declaration followed by their body, with no braces, and [SPragma] adds none,
    so the declarations of an earlier sibling are in scope for the later ones
@@ -232,14 +247,14 @@ let rec stmt_in_block ctx env s =
       (SSeq ss, env)
   | SLet (v, x, b) ->
       let x = expr ctx env x in
-      let v, env = bind_var ctx env v in
-      let b, env = stmt_in_block ctx env b in
-      (SLet (v, x, b), env)
+      let v', inner = bind_var ctx env v in
+      let b, inner = stmt_in_block ctx inner b in
+      (SLet (v', x, b), leave_binder env inner v)
   | SLetMut (v, x, b) ->
       let x = expr ctx env x in
-      let v, env = bind_var ctx env v in
-      let b, env = stmt_in_block ctx env b in
-      (SLetMut (v, x, b), env)
+      let v', inner = bind_var ctx env v in
+      let b, inner = stmt_in_block ctx inner b in
+      (SLetMut (v', x, b), leave_binder env inner v)
   | SPragma (p, b) ->
       let b, env = stmt_in_block ctx env b in
       (SPragma (p, b), env)
@@ -274,7 +289,10 @@ let bind_helper_params ctx env params =
     (fun env v ->
       (* A vector parameter of a helper is a global buffer on a shader: it
          keeps its name there, like a kernel parameter. *)
-      let is_param = (not ctx.rename_params) && is_array_type v.var_type in
+      let is_param =
+        (not ctx.rename_params)
+        && match v.var_type with TVec _ -> true | _ -> false
+      in
       let v, env = bind_var ~is_param ctx env v in
       (env, v))
     env
