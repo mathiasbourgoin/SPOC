@@ -47,12 +47,15 @@
 (** [legalize ~reserved ~rename_params k].
 
     [reserved name] says [name] cannot be declared in the target language.
-    [rename_params] says whether kernel and helper parameters may be renamed
-    (C-family targets: yes, an argument is bound by position). When [false],
-    parameters keep their names and are not counted among the binders a local
-    must avoid, because the target exposes them by name (GLSL push-constant
-    macros, WGSL uniform fields) and has its own pass for a local that shadows
-    one ([Sarek_ir_codegen.rename_shadowing_locals]). *)
+    [rename_params] says whether kernel parameters may be renamed (C-family
+    targets: yes, an argument is bound by position). Helper parameters are real
+    function parameters on every target: they are always renamable and always
+    counted among the binders a local must avoid (a shader helper's vector
+    parameter, a buffer of its name, is the exception: never renamed). When
+    [false], kernel parameters keep their names and are not counted among the
+    binders a local must avoid, because the target exposes them by name (GLSL
+    push-constant macros, WGSL uniform fields) and has its own pass for a local
+    that shadows one ([Sarek_ir_codegen.rename_shadowing_locals]). *)
 val legalize :
   reserved:(string -> bool) ->
   rename_params:bool ->

@@ -242,6 +242,44 @@ let test_compilers_accept () =
         | Error e -> Alcotest.failf "%s rejected by Metal:\n%s" k.kern_name e)
       kernels
 
+(* A reference with no identity (a helper call) is not captured by a scalar
+   of the same name whose [let] has ended. *)
+let test_helper_call_not_captured () =
+  let helper =
+    {
+      hf_name = "bump";
+      hf_params = [var "x" 30 TFloat32];
+      hf_ret_type = TFloat32;
+      hf_body = SReturn (EVar (var "x" 30 TFloat32));
+    }
+  in
+  let k =
+    {
+      default_kernel with
+      kern_name = "helper_call";
+      kern_params = [vec_param "a" 0];
+      kern_funcs = [helper];
+      kern_body =
+        SSeq
+          [
+            SSeq [SLet (var "bump" 1 TFloat32, f 2.0, SEmpty)];
+            out_zero (EApp (EVar (var "bump" 0 TFloat32), [f 1.0]));
+          ];
+    }
+  in
+  List.iter
+    (fun (name, gen) ->
+      let src = gen k in
+      Alcotest.(check bool)
+        (name ^ ": the call reaches the helper")
+        true
+        (contains src "bump(") ;
+      Alcotest.(check bool)
+        (name ^ ": the call does not reach the local")
+        false
+        (contains src "bump_1("))
+    c_family
+
 let () =
   Alcotest.run
     "name scope"
@@ -264,6 +302,10 @@ let () =
             "a local array does not capture a later store"
             `Quick
             test_local_array_does_not_capture_later_store;
+          Alcotest.test_case
+            "a helper call is not captured by a finished let"
+            `Quick
+            test_helper_call_not_captured;
           Alcotest.test_case
             "helper parameter rebound, every backend"
             `Quick
