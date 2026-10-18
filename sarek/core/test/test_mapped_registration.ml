@@ -70,7 +70,8 @@ let pattern n : M.host =
     Bigarray.Array1.set
       a
       i
-      (Char.chr (((i * 7) + ((i lsr 8) * 13) + (i lsr 12)) land 0xff))
+      (Char.chr
+         (((i * 7) + ((i lsr 8) * 13) + (i lsr 12) + ((i lsr 20) * 5)) land 0xff))
   done ;
   a
 
