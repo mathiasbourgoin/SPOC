@@ -370,7 +370,11 @@ let with_device_ops (dev : Device.t) ~bytes f =
   | Decided _ | Self_test_required -> ()) ;
   let device_buffer = Transfer.create_device_only dev Vector.char bytes in
   Fun.protect
-    ~finally:(fun () -> Transfer.free_all_buffers device_buffer)
+    ~finally:(fun () ->
+      (* A device buffer that cannot be freed must not replace the verdict
+         (Still_registered above all) by [Finally_raised]. *)
+      try Transfer.free_all_buffers device_buffer
+      with e when not (is_fatal e) -> ())
     (fun () ->
       f
         {
