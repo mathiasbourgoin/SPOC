@@ -39,7 +39,7 @@
   device and back, compared with an independent read of the file (`hipHostRegister` returns success
   on `PROT_NONE`, tmpfs and overlapping ranges, so the return code decides nothing), timed against
   the staged copy, and released; the verdict is `Usable | Not_needed | Refused | Too_slow |
-  Inconclusive | Still_registered` (a window the probe could not release; never unmap that range), and `cacheable` is true only for what the self-test established (`Usable`, `Refused Wrong_bytes`). Additive: a new module, and
+  Inconclusive | Still_registered` (a window the probe could not release: keep the whole `map` mapped, and neither probe nor register it again in this process), and `cacheable` is true only for what the self-test established (`Usable`, `Refused Wrong_bytes`). Additive: a new module, and
   `Spoc_framework.Shared_memory_query`, a hook through which HIP and CUDA say whether a device
   shares host memory (no field added to any existing record or signature). SPOC keeps no cache and
   no mapping code; the consumer owns both. Tests: `sarek/core/test/test_mapped_registration.ml`
