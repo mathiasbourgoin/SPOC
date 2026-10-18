@@ -137,6 +137,33 @@ let test_parameter_rebound () =
         (contains src "float s_1 = (s + 1.0f)"))
     c_family
 
+(* Siblings of a statement list share one target block: [SLet] has no braces, so
+   the first [t] below is still in scope when the second is declared. *)
+let test_siblings_share_a_block () =
+  let tid = var "tid" 1 TInt32 in
+  let assign t = SAssign (LArrayElem ("a", EVar tid), EVar t) in
+  let t1 = var "t" 11 TFloat32 and t2 = var "t" 12 TFloat32 in
+  let k =
+    {
+      default_kernel with
+      kern_name = "siblings_in_block";
+      kern_params = [vec_param "a" 0; n_param];
+      kern_body =
+        SLet
+          ( tid,
+            EIntrinsic ([], "global_thread_id", []),
+            SSeq [SLet (t1, f 1.0, assign t1); SLet (t2, f 2.0, assign t2)] );
+    }
+  in
+  List.iter
+    (fun (name, gen) ->
+      let src = gen k in
+      Alcotest.(check bool)
+        (name ^ " renames the second t")
+        true
+        (contains src "t_1"))
+    backends
+
 (* Disjoint scopes are not a shadowing: nothing is renamed. *)
 let test_sibling_scopes_keep_names () =
   let tid_of = var "tid" 1 TInt32 in
@@ -514,6 +541,10 @@ let () =
             "parameter rebound, C family"
             `Quick
             test_parameter_rebound;
+          Alcotest.test_case
+            "siblings of a statement list share a block"
+            `Quick
+            test_siblings_share_a_block;
           Alcotest.test_case
             "sibling scopes keep their names"
             `Quick

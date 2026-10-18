@@ -157,11 +157,45 @@ let coopmat ctx env = function
         }
   | CM_muladd _ as op -> op
 
-let rec stmt ctx env s =
+(* A statement list is one target block: [SLet] and [SLetMut] are emitted as a
+   declaration followed by their body, with no braces, and [SPragma] adds none,
+   so the declarations of an earlier sibling are in scope for the later ones
+   even though the IR nests only the [SLet] body. [stmt_in_block] returns the
+   environment those declarations leave behind; constructs that open a block of
+   their own ([SIf], [SWhile], [SFor], [SMatch], [SBlock]) leak nothing. *)
+let rec stmt_in_block ctx env s =
+  match s with
+  | SSeq ss ->
+      let env, ss =
+        List.fold_left_map
+          (fun env s ->
+            let s, env = stmt_in_block ctx env s in
+            (env, s))
+          env
+          ss
+      in
+      (SSeq ss, env)
+  | SLet (v, x, b) ->
+      let x = expr ctx env x in
+      let v, env = bind_var ctx env v in
+      let b, env = stmt_in_block ctx env b in
+      (SLet (v, x, b), env)
+  | SLetMut (v, x, b) ->
+      let x = expr ctx env x in
+      let v, env = bind_var ctx env v in
+      let b, env = stmt_in_block ctx env b in
+      (SLetMut (v, x, b), env)
+  | SPragma (p, b) ->
+      let b, env = stmt_in_block ctx env b in
+      (SPragma (p, b), env)
+  | _ -> (stmt ctx env s, env)
+
+(* A statement in a scope of its own: nothing it declares outlives it. *)
+and stmt ctx env s =
   let e = expr ctx env and st = stmt ctx env in
   match s with
   | SAssign (lv, x) -> SAssign (lvalue ctx env lv, e x)
-  | SSeq ss -> SSeq (List.map st ss)
+  | SSeq _ | SLet _ | SLetMut _ | SPragma _ -> fst (stmt_in_block ctx env s)
   | SIf (c, t, f) -> SIf (e c, st t, Option.map st f)
   | SWhile (c, b) -> SWhile (e c, st b)
   | SFor (v, lo, hi, dir, b) ->
@@ -171,15 +205,6 @@ let rec stmt ctx env s =
   | SMatch (x, cases) -> SMatch (e x, List.map (case_with ctx env stmt) cases)
   | SReturn x -> SReturn (e x)
   | SExpr x -> SExpr (e x)
-  | SLet (v, x, b) ->
-      let x = e x in
-      let v, env = bind_var ctx env v in
-      SLet (v, x, stmt ctx env b)
-  | SLetMut (v, x, b) ->
-      let x = e x in
-      let v, env = bind_var ctx env v in
-      SLetMut (v, x, stmt ctx env b)
-  | SPragma (p, b) -> SPragma (p, st b)
   | SBlock b -> SBlock (st b)
   | SCoopmat op -> SCoopmat (coopmat ctx env op)
   | SBarrier | SWarpBarrier | SMemFence | SEmpty | SNative _ -> s
