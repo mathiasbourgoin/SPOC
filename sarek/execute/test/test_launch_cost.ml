@@ -10,8 +10,10 @@
  * took 42 to 53 percent off a Katra decode (359 to 168 tok/s, 281 to 497
  * launches per token). The roster gate, review and CI all passed; only the
  * consumer noticed. test_launch_check_cost.ml pins the two checks that regressed
- * then; this test pins the whole launch path, so the next such regression is
- * caught whatever check it hides in.
+ * then; this test pins the launch path of Execute.run_vectors on the two probe
+ * backends below, so the next such regression is caught whatever check it
+ * hides in, as long as it is on the paths those probes reach (the list of what
+ * is not covered is in docs/launch-cost-gate.md).
  *
  * What is measured: [Execute.run_vectors] through a JIT probe backend that does
  * nothing at the device (no GPU, no clock-dependent driver), N launches of one
@@ -112,6 +114,8 @@ end) : BACKEND = struct
 
     let name () = "Launch cost probe"
 
+    (* Not read by the launch path: launches use the [Device.t] record built
+       below ([caps]), which is what the launch rules and the window consult. *)
     let capabilities () =
       {
         max_threads_per_block = 256;
