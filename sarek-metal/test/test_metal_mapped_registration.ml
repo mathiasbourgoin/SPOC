@@ -1,0 +1,100 @@
+(******************************************************************************)
+(* SPDX-License-Identifier: CECILL-B                                          *)
+(* SPDX-FileCopyrightText: 2026 Mathias Bourgoin <mathias.bourgoin@gmail.com> *)
+(******************************************************************************)
+
+(******************************************************************************
+ * Mapped_registration on Metal hardware: the capability is Not_needed (unified
+ * memory), and the self-test engine, driven over the real Transfer operations,
+ * still copies a shared file mapping through the device and back byte for byte
+ * (so a caller that skips registration on Metal copies from the mapping with
+ * the same result). Self-skips without a Metal device. 8 MiB: the GPU is
+ * shared.
+ ******************************************************************************)
+
+module Device = Spoc_core.Device
+module Transfer = Spoc_core.Transfer
+module M = Spoc_core.Mapped_registration
+
+let () = Sarek_metal.Metal_plugin.init ()
+
+let failures = ref 0
+
+let check name cond =
+  if cond then Printf.printf "    ok   %s\n%!" name
+  else begin
+    incr failures ;
+    Printf.printf "    FAIL %s\n%!" name
+  end
+
+let len = 8 * 1024 * 1024
+
+let pattern n : M.host =
+  let a = Bigarray.Array1.create Bigarray.char Bigarray.c_layout n in
+  for i = 0 to n - 1 do
+    Bigarray.Array1.set a i (Char.chr (i * 7 land 0xff))
+  done ;
+  a
+
+let with_mapped_file f =
+  let path = Filename.temp_file "metal_mapped_registration" ".bin" in
+  Fun.protect
+    ~finally:(fun () -> try Sys.remove path with Sys_error _ -> ())
+    (fun () ->
+      let reference = pattern len in
+      let oc = open_out_bin path in
+      for i = 0 to len - 1 do
+        output_char oc (Bigarray.Array1.get reference i)
+      done ;
+      close_out oc ;
+      let fd = Unix.openfile path [Unix.O_RDWR] 0o600 in
+      let map =
+        Bigarray.array1_of_genarray
+          (Unix.map_file fd Bigarray.char Bigarray.c_layout true [|len|])
+      in
+      Unix.close fd ;
+      f ~map ~reference)
+
+let run_on (dev : Device.t) =
+  Printf.printf "  %s\n%!" dev.Device.name ;
+  check
+    "static verdict is Not_needed"
+    (match M.static_verdict dev with
+    | M.Decided (M.Not_needed _) -> true
+    | _ -> false) ;
+  with_mapped_file (fun ~map ~reference ->
+      check
+        "probe is Not_needed and does not read the arrays"
+        (match M.probe dev ~map ~reference:(pattern 4096) with
+        | M.Not_needed _ -> true
+        | _ -> false) ;
+      let logged = ref [] in
+      let verdict =
+        M.with_device_ops dev ~bytes:(len / 2) (fun ops ->
+            M.probe_with
+              ~log:(fun l -> logged := l :: !logged)
+              ~min_relative_speed:0.
+              ops
+              ~map
+              ~reference)
+      in
+      List.iter (Printf.printf "    info %s\n%!") !logged ;
+      check
+        "shared file mapping round trip is byte-identical"
+        (verdict = M.Usable) ;
+      check
+        "nothing stays registered"
+        (not (Transfer.is_pinned (Bigarray.Array1.sub map 0 (len / 2)))))
+
+let () =
+  let metal =
+    Array.to_list (Device.init ~frameworks:["Metal"] ())
+    |> List.filter (fun d -> d.Device.framework = "Metal")
+  in
+  match metal with
+  | [] ->
+      print_endline "test_metal_mapped_registration: [SKIP] no Metal device" ;
+      exit 0
+  | devs ->
+      List.iter run_on devs ;
+      exit (if !failures = 0 then 0 else 1)

@@ -148,6 +148,7 @@ let registered_backend =
        Spoc_core.Log.debug
          Spoc_core.Log.Device
          "Cuda_c_plugin: CUDA available, registering CUDA/C backend" ;
+       Cuda_shared.install_shared_memory_query ~framework:"CUDA/C" ;
        Framework_registry.register_backend
          ~priority:90
          (module Backend : Framework_sig.BACKEND)
