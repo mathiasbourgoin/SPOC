@@ -31,8 +31,14 @@
  *    legitimately does). A launch may cost at most [allowed_reference_units]
  *    of them. This catches a constant added to every launch, which (1) cannot.
  *
- * The measured figures are printed so a CI log shows the trend, not only the
- * verdict. Calibration of the thresholds: docs/launch-cost-gate.md.
+ * Both assertions run on two probe backends: one on the immediate launch path
+ * and one named like a GPU backend, which takes the deferred (launch window)
+ * path and is tried by the matrix-unit rewrite, the two places a fold hid in
+ * #522 and could hide again.
+ *
+ * The measured figures are printed (the runner is verbose: alcotest otherwise
+ * keeps the output of a passing test in a file) so a CI log shows the trend,
+ * not only the verdict. Calibration of the thresholds: docs/launch-cost-gate.md.
  ******************************************************************************)
 
 open Spoc_framework
@@ -41,7 +47,15 @@ open Spoc_framework_registry
 module Execute = Sarek_execute.Execute
 module Device = Spoc_core.Device
 
-let backend_name = "LaunchCostProbe"
+(* Two probe backends, same code. "LaunchCostProbe" takes the immediate launch
+   path. "HIP" is a name the real backend never shares with this executable
+   (sarek-hip is not linked) and is what makes the launch take the path of a
+   GPU: deferred by the launch window ({!Window_gate.default_backends}) and
+   tried by the matrix-unit rewrite ({!Matrix_specialise.device_possible}). A
+   gate that only measures the first misses a fold added to either of those. *)
+let immediate_name = "LaunchCostProbe"
+
+let windowed_name = "HIP"
 
 let codegen_calls = Atomic.make 0
 
@@ -49,8 +63,10 @@ let codegen_calls = Atomic.make 0
    allocates nothing that grows with the number of launches. *)
 let reached_backend = Atomic.make 0
 
-module Probe : BACKEND = struct
-  let name = backend_name
+module Make_probe (Name : sig
+  val name : string
+end) : BACKEND = struct
+  let name = Name.name
 
   let version = (1, 0, 0)
 
@@ -230,7 +246,17 @@ module Probe : BACKEND = struct
   let disable_profiling () = ()
 end
 
-let () = Framework_registry.register_backend ~priority:1 (module Probe)
+let () =
+  Framework_registry.register_backend
+    ~priority:1
+    (module Make_probe (struct
+      let name = immediate_name
+    end)) ;
+  Framework_registry.register_backend
+    ~priority:1
+    (module Make_probe (struct
+      let name = windowed_name
+    end))
 
 let caps : capabilities =
   {
@@ -250,14 +276,12 @@ let caps : capabilities =
     is_cpu = false;
   }
 
-let device : Device.t =
-  {
-    id = 0;
-    backend_id = 0;
-    name = "probe";
-    framework = backend_name;
-    capabilities = caps;
-  }
+let device_of framework : Device.t =
+  {id = 0; backend_id = 0; name = "probe"; framework; capabilities = caps}
+
+let immediate_device = device_of immediate_name
+
+let windowed_device = device_of windowed_name
 
 open Sarek_ir_types
 
@@ -284,7 +308,7 @@ let kernel ~statements ~with_shuffle : kernel =
   }
 
 (* A warp-multiple block: legal for the shuffle kernels. *)
-let launch ir =
+let launch ?(device = immediate_device) ir =
   Execute.run_vectors
     ~device
     ~ir
@@ -299,23 +323,22 @@ let launches_per_round = 2000
 
 let rounds = 7
 
-(* Seconds per launch: minimum over [rounds] rounds of [launches_per_round]
-   launches, after one warming launch (the first one pays codegen). *)
-let per_launch ir =
-  launch ir ;
-  let best = ref infinity in
-  for _ = 1 to rounds do
-    let t0 = now () in
-    for _ = 1 to launches_per_round do
-      launch ir
+(* One round of [launches_per_round] launches over the IRs (warmed first: the
+   first launch of each pays codegen). The flush is in the timed region: a
+   windowed device issues its launches there. *)
+let launch_round device irs =
+  let irs = Array.of_list irs in
+  Array.iter (launch ~device) irs ;
+  Execute.Window.flush () ;
+  fun () ->
+    for i = 1 to launches_per_round do
+      launch ~device irs.(i mod Array.length irs)
     done ;
-    best := Float.min !best ((now () -. t0) /. float_of_int launches_per_round)
-  done ;
-  !best
+    Execute.Window.flush ()
 
 (* Reference unit: what an ordinary launch is made of, a few hash-table lookups
-   and a formatted string. Same minimum-over-rounds discipline. *)
-let reference_unit () =
+   and a formatted string. *)
+let reference_round () =
   let table = Hashtbl.create 64 in
   for i = 0 to 63 do
     Hashtbl.replace table (string_of_int i) i
@@ -328,16 +351,31 @@ let reference_unit () =
     sink := !sink + String.length (Printf.sprintf "// k block=%d\n" !sink)
   in
   one_unit () ;
-  let best = ref infinity in
-  for _ = 1 to rounds do
-    let t0 = now () in
+  fun () ->
     for _ = 1 to launches_per_round do
       one_unit ()
     done ;
-    best := Float.min !best ((now () -. t0) /. float_of_int launches_per_round)
+    ignore (Sys.opaque_identity !sink)
+
+(* Seconds per iteration of each round function: the minimum over [rounds]
+   rounds. The functions are timed in turn inside every round, not one after
+   the other, so a stretch of load on a shared runner reaches all of them and
+   the ratios between them stay meaningful; the minimum then drops the
+   stretches that reached only some. *)
+let interleaved_minimum round_functions =
+  let best = Array.make (List.length round_functions) infinity in
+  for _ = 1 to rounds do
+    List.iteri
+      (fun slot round_function ->
+        let t0 = now () in
+        round_function () ;
+        best.(slot) <-
+          Float.min
+            best.(slot)
+            ((now () -. t0) /. float_of_int launches_per_round))
+      round_functions
   done ;
-  ignore !sink ;
-  !best
+  best
 
 (* A launch of the 20000-statement kernel may cost this many launches of the
    one-statement kernel. A cache lookup costs 1; a whole-IR fold costs
@@ -345,10 +383,18 @@ let reference_unit () =
 let allowed_size_factor = 25.
 
 (* A launch may cost this many reference units. Calibrated in
-   docs/launch-cost-gate.md: the observed value is 0.6, 50 times under this. *)
-let allowed_reference_units = 30.
+   docs/launch-cost-gate.md: the observed value is 0.6 to 1.1 idle, so 8 to 13
+   times under this (2.1 at worst with 24 busy loops on 10 cores); the Katra loss of #522
+   (359 to 168 tok/s at 497 launches per token, about 6.4 us per launch) is
+   about 12 units, over this limit. A limit of 30 let that fixed cost through. *)
+let allowed_reference_units = 8.
 
 let big_statements = 20000
+
+(* Launches rotate over this many distinct IRs of the same size: a loop on one
+   IR only ever hits the per-domain last-lookup cache of [Ir_memo], never the
+   table lookup a decode (many kernels per token) pays. *)
+let distinct_kernels = 4
 
 let report label ~small ~big ~unit_ =
   Printf.printf
@@ -362,11 +408,20 @@ let report label ~small ~big ~unit_ =
     (unit_ *. 1e6)
     (small /. unit_)
 
-let check_gate label ~with_shuffle () =
+let check_gate label device ~with_shuffle () =
   Execute.clear_launch_cache () ;
-  let small = per_launch (kernel ~statements:1 ~with_shuffle) in
-  let big = per_launch (kernel ~statements:big_statements ~with_shuffle) in
-  let unit_ = reference_unit () in
+  let family statements =
+    List.init distinct_kernels (fun _ -> kernel ~statements ~with_shuffle)
+  in
+  let timings =
+    interleaved_minimum
+      [
+        launch_round device (family 1);
+        launch_round device (family big_statements);
+        reference_round ();
+      ]
+  in
+  let small = timings.(0) and big = timings.(1) and unit_ = timings.(2) in
   report label ~small ~big ~unit_ ;
   if big /. small > allowed_size_factor then
     Alcotest.failf
@@ -417,22 +472,37 @@ let test_gate_sees_a_whole_ir_fold () =
       (big /. small)
       allowed_size_factor
 
-let test_launches_reach_the_backend () =
+let test_launches_reach_the_backend device () =
   Execute.clear_launch_cache () ;
   Atomic.set reached_backend 0 ;
   Atomic.set codegen_calls 0 ;
   let ir = kernel ~statements:1 ~with_shuffle:true in
   for _ = 1 to 10 do
-    launch ir
+    launch ~device ir
   done ;
+  Execute.Window.flush () ;
   Alcotest.(check int)
     "launches reached run_source"
     10
     (Atomic.get reached_backend) ;
   Alcotest.(check int) "one codegen" 1 (Atomic.get codegen_calls)
 
+(* The windowed probe must really take the deferred path (that is its point):
+   if the launch window stopped deferring "HIP", the second column of the gate
+   would silently measure the immediate path again. *)
+let test_windowed_probe_defers () =
+  Alcotest.(check bool)
+    "the immediate probe is not deferred"
+    false
+    (Execute.Window.defers_device immediate_device) ;
+  Alcotest.(check bool)
+    "the windowed probe is deferred"
+    true
+    (Execute.Window.defers_device windowed_device)
+
 let () =
   Alcotest.run
+    ~verbose:true
     "launch cost"
     [
       ( "sanity",
@@ -440,7 +510,15 @@ let () =
           Alcotest.test_case
             "launches reach the backend"
             `Quick
-            test_launches_reach_the_backend;
+            (test_launches_reach_the_backend immediate_device);
+          Alcotest.test_case
+            "windowed launches reach the backend"
+            `Quick
+            (test_launches_reach_the_backend windowed_device);
+          Alcotest.test_case
+            "the windowed probe defers"
+            `Quick
+            test_windowed_probe_defers;
           Alcotest.test_case
             "a per-launch IR fold is visible"
             `Quick
@@ -451,10 +529,18 @@ let () =
           Alcotest.test_case
             "plain kernel"
             `Quick
-            (check_gate "plain" ~with_shuffle:false);
+            (check_gate "plain" immediate_device ~with_shuffle:false);
           Alcotest.test_case
             "warp-shuffle kernel"
             `Quick
-            (check_gate "shuffle" ~with_shuffle:true);
+            (check_gate "shuffle" immediate_device ~with_shuffle:true);
+          Alcotest.test_case
+            "plain kernel, windowed"
+            `Quick
+            (check_gate "plain-win" windowed_device ~with_shuffle:false);
+          Alcotest.test_case
+            "warp-shuffle kernel, windowed"
+            `Quick
+            (check_gate "shuf-win" windowed_device ~with_shuffle:true);
         ] );
     ]
