@@ -330,3 +330,11 @@
  (name test_name_legalization)
  (modules test_name_legalization)
  (libraries sarek_ir sarek_codegen opencl_gate metal_gate alcotest unix))
+
+; Which binder a reference reaches after Sarek_ir_names renamed (module
+; constant sharing a parameter's name, helper parameter rebound).
+
+(test
+ (name test_name_scope)
+ (modules test_name_scope)
+ (libraries sarek_ir sarek_codegen opencl_gate metal_gate alcotest))

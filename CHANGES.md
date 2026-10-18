@@ -8,11 +8,15 @@
   type, qualifier or built-in of the target (`half`, `local`, `kernel`, `uint`, `float4`, `max`) or
   not an identifier (`x'`) broke the device compiler or hid a built-in. `Sarek_ir_names.legalize` now
   renames such binders to `<name>_<k>` (`v_<name>_<k>` where a prefix family reserves `<name>_<k>`)
-  at the entry of each generator, references following; a kernel without a clash is returned
-  unchanged and its source is byte-identical (every golden unchanged). GLSL and WGSL keep their own
+  at the entry of each generator, references following by identity (`var_id`) first and by name second, so a later
+  statement that reaches an outer binder of the same name is not redirected to the renamed inner one;
+  a kernel without a clash and without a name of the reserved lists is returned unchanged and its
+  source is byte-identical (every golden unchanged); the lists also hold names that compiled before
+  (`length`, `step`, `dot`, the `get_`, `half_` and `quad_` families), whose kernels get a new source.
+  A `let` in a helper that rebinds a helper parameter is renamed on every target. GLSL and WGSL keep their own
   escapers for reserved words and for a local shadowing a scalar parameter. Not covered: `SNative`
   kernels (opaque source), built-in function names on GLSL and WGSL, cooperative-matrix fragment
-  names. Tests: `sarek/tests/codegen_golden/test_name_legalization.ml` (every backend; compiled with
+  names, the names of record and variant types. Tests: `sarek/tests/codegen_golden/test_name_legalization.ml` and `test_name_scope.ml` (every backend; compiled with
   `clang -x cl` and the Metal runtime compiler when present, which reject the pre-fix spelling).
 - Launch cost regression since the warp-shuffle PR: `Execute.check_launch_warp` and
   `Matrix_specialise.decide` folded the whole IR (`kernel_uses_shuffle`, `kernel_uses_warp_ops`) at
