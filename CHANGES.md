@@ -10,6 +10,15 @@
   50 whole-IR folds; the old code cost 878). Rule: anything computed from the IR at launch is
   memoised per kernel.
 
+### Added
+
+- Launch cost gate in CI: `sarek/execute/test/test_launch_cost.ml` times 2000 launches through
+  `Execute.run_vectors` on a probe backend and fails if a launch of a 20000-statement kernel costs
+  more than 25 times a launch of a 1-statement kernel (a per-launch IR walk), or if a launch costs
+  more than 30 units of an in-process reference loop (a fixed cost added to every launch). Idle, the
+  figures are 1.0 times and 0.6 units; the #522 shape gives 1234 to 1965 times. See
+  `docs/launch-cost-gate.md`.
+
 ### Changed
 
 - Convergence: the strict variance analysis introduced for warp shuffles now also covers block
