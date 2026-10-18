@@ -1,0 +1,282 @@
+(******************************************************************************)
+(* SPDX-License-Identifier: CECILL-B                                          *)
+(* SPDX-FileCopyrightText: 2026 Mathias Bourgoin <mathias.bourgoin@gmail.com> *)
+(******************************************************************************)
+
+open Sarek_ir_types
+module SM = Map.Make (String)
+module SS = Set.Make (String)
+
+(* [map]: source name -> emitted name, for every binder in scope. [visible]: the
+   emitted names a new binder must not take. They differ for a parameter of a
+   shader target, which is looked up but left out of [visible] (see
+   [rename_params] in the interface). *)
+type env = {map : string SM.t; visible : SS.t}
+
+type ctx = {
+  reserved : string -> bool;
+  rename_params : bool;
+  dry : bool;  (** First pass: record every name, rename nothing. *)
+  taken : (string, unit) Hashtbl.t;
+      (** Every name of the kernel, and minted. *)
+  mutable changed : bool;
+}
+
+let empty_env = {map = SM.empty; visible = SS.empty}
+
+let note ctx name = Hashtbl.replace ctx.taken name ()
+
+let look ctx env name =
+  note ctx name ;
+  match SM.find_opt name env.map with Some emitted -> emitted | None -> name
+
+(* The C spelling of a name that is not an identifier: [x'] becomes [xp], any
+   other stray character an underscore. *)
+let sanitize name =
+  let spell c =
+    if Sarek_reserved_words.is_identifier_char c then String.make 1 c
+    else if c = '\'' then "p"
+    else "_"
+  in
+  let body =
+    String.concat "" (List.map spell (List.of_seq (String.to_seq name)))
+  in
+  if body = "" || (body.[0] >= '0' && body.[0] <= '9') then "v_" ^ body
+  else body
+
+(* [<name>_<k>] for the smallest [k >= 1] that no name of the kernel, no
+   reserved word and no binder in scope uses. *)
+let fresh ctx env name =
+  let base = sanitize name in
+  (* A prefix family ([half_], [get_], [simd_]) reserves every [<base>_<k>]:
+     lead with [v_] then, which no target reserves. *)
+  let base = if ctx.reserved (base ^ "_1") then "v_" ^ base else base in
+  let rec go k =
+    let candidate = Printf.sprintf "%s_%d" base k in
+    if
+      Hashtbl.mem ctx.taken candidate
+      || ctx.reserved candidate
+      || SS.mem candidate env.visible
+    then go (k + 1)
+    else begin
+      note ctx candidate ;
+      candidate
+    end
+  in
+  go 1
+
+(* Bind [name]: renamed when reserved or when a binder of the same name is in
+   scope (in C a declaration is in scope in its own initialiser, and a second
+   declaration in one block is an error). *)
+let bind ?(is_param = false) ctx env name =
+  note ctx name ;
+  let renamable = (not is_param) || ctx.rename_params in
+  let emitted =
+    if ctx.dry || not renamable then name
+    else if ctx.reserved name || SS.mem name env.visible then fresh ctx env name
+    else name
+  in
+  if emitted <> name then ctx.changed <- true ;
+  let visible =
+    if is_param && not ctx.rename_params then env.visible
+    else SS.add emitted env.visible
+  in
+  (emitted, {map = SM.add name emitted env.map; visible})
+
+let bind_var ?is_param ctx env (v : var) =
+  let name, env = bind ?is_param ctx env v.var_name in
+  ({v with var_name = name}, env)
+
+let bind_pattern ctx env = function
+  | PWild -> (PWild, env)
+  | PConstr (constr, names) ->
+      let env, names =
+        List.fold_left_map
+          (fun env n ->
+            let n, env = bind ctx env n in
+            (env, n))
+          env
+          names
+      in
+      (PConstr (constr, names), env)
+
+let rec expr ctx env e =
+  let go = expr ctx env in
+  match e with
+  | EConst _ -> e
+  | EVar v -> EVar {v with var_name = look ctx env v.var_name}
+  | EBinop (op, a, b) -> EBinop (op, go a, go b)
+  | EUnop (op, a) -> EUnop (op, go a)
+  | EArrayRead (a, i) -> EArrayRead (look ctx env a, go i)
+  | EArrayReadExpr (a, i) -> EArrayReadExpr (go a, go i)
+  | ERecordField (a, f) -> ERecordField (go a, f)
+  | EIntrinsic (path, name, args) -> EIntrinsic (path, name, List.map go args)
+  | ECast (t, a) -> ECast (t, go a)
+  | ETuple es -> ETuple (List.map go es)
+  | EApp (f, args) -> EApp (go f, List.map go args)
+  | ERecord (t, fields) -> ERecord (t, List.map (fun (f, x) -> (f, go x)) fields)
+  | EVariant (t, c, args) -> EVariant (t, c, List.map go args)
+  | EArrayLen a -> EArrayLen (look ctx env a)
+  | EArrayCreate (t, size, space) -> EArrayCreate (t, go size, space)
+  | EIf (c, a, b) -> EIf (go c, go a, go b)
+  | EMatch (scrutinee, cases) ->
+      EMatch (go scrutinee, List.map (case_with ctx env expr) cases)
+
+and case_with :
+    'a. ctx -> env -> (ctx -> env -> 'a -> 'a) -> pattern * 'a -> pattern * 'a =
+ fun ctx env body (pattern, arm) ->
+  let pattern, env = bind_pattern ctx env pattern in
+  (pattern, body ctx env arm)
+
+let rec lvalue ctx env = function
+  | LVar v -> LVar {v with var_name = look ctx env v.var_name}
+  | LArrayElem (a, i) -> LArrayElem (look ctx env a, expr ctx env i)
+  | LArrayElemExpr (a, i) -> LArrayElemExpr (expr ctx env a, expr ctx env i)
+  | LRecordField (lv, f) -> LRecordField (lvalue ctx env lv, f)
+
+(* Fragment names are a namespace of their own (see [coopmat_op]); only the
+   buffers they move to and from, and the index expressions, are names of the
+   kernel. *)
+let coopmat ctx env = function
+  | CM_decl _ as op -> op
+  | CM_load r ->
+      CM_load
+        {
+          r with
+          src = look ctx env r.src;
+          index = expr ctx env r.index;
+          stride = expr ctx env r.stride;
+        }
+  | CM_store r ->
+      CM_store
+        {
+          r with
+          dst = look ctx env r.dst;
+          index = expr ctx env r.index;
+          stride = expr ctx env r.stride;
+        }
+  | CM_muladd _ as op -> op
+
+let rec stmt ctx env s =
+  let e = expr ctx env and st = stmt ctx env in
+  match s with
+  | SAssign (lv, x) -> SAssign (lvalue ctx env lv, e x)
+  | SSeq ss -> SSeq (List.map st ss)
+  | SIf (c, t, f) -> SIf (e c, st t, Option.map st f)
+  | SWhile (c, b) -> SWhile (e c, st b)
+  | SFor (v, lo, hi, dir, b) ->
+      let lo = e lo and hi = e hi in
+      let v, env = bind_var ctx env v in
+      SFor (v, lo, hi, dir, stmt ctx env b)
+  | SMatch (x, cases) -> SMatch (e x, List.map (case_with ctx env stmt) cases)
+  | SReturn x -> SReturn (e x)
+  | SExpr x -> SExpr (e x)
+  | SLet (v, x, b) ->
+      let x = e x in
+      let v, env = bind_var ctx env v in
+      SLet (v, x, stmt ctx env b)
+  | SLetMut (v, x, b) ->
+      let x = e x in
+      let v, env = bind_var ctx env v in
+      SLetMut (v, x, stmt ctx env b)
+  | SPragma (p, b) -> SPragma (p, st b)
+  | SBlock b -> SBlock (st b)
+  | SCoopmat op -> SCoopmat (coopmat ctx env op)
+  | SBarrier | SWarpBarrier | SMemFence | SEmpty | SNative _ -> s
+
+(* {2 Kernel level} *)
+
+let bind_params ctx env params =
+  List.fold_left_map
+    (fun env v ->
+      let v, env = bind_var ~is_param:true ctx env v in
+      (env, v))
+    env
+    params
+
+let bind_decl ctx env = function
+  | DParam (v, info) ->
+      let v, env = bind_var ~is_param:true ctx env v in
+      (env, DParam (v, info))
+  | DLocal (v, init) ->
+      let init = Option.map (expr ctx env) init in
+      let v, env = bind_var ctx env v in
+      (env, DLocal (v, init))
+  | DShared (name, t, size) ->
+      let size = Option.map (expr ctx env) size in
+      let name, env = bind ctx env name in
+      (env, DShared (name, t, size))
+
+let helper ctx global (hf : helper_func) =
+  let env, params = bind_params ctx global hf.hf_params in
+  {
+    hf with
+    hf_name = look ctx global hf.hf_name;
+    hf_params = params;
+    hf_body = stmt ctx env hf.hf_body;
+  }
+
+(* Helper functions are module-level names: in scope in every function, so a
+   local may not take one. *)
+let bind_helpers ctx funcs =
+  List.fold_left
+    (fun env hf ->
+      let _, env = bind ctx env hf.hf_name in
+      env)
+    empty_env
+    funcs
+
+let kernel ctx (k : kernel) =
+  note ctx k.kern_name ;
+  let global = bind_helpers ctx k.kern_funcs in
+  let funcs = List.map (helper ctx global) k.kern_funcs in
+  let env, params = List.fold_left_map (bind_decl ctx) global k.kern_params in
+  let env, locals = List.fold_left_map (bind_decl ctx) env k.kern_locals in
+  {
+    k with
+    kern_params = params;
+    kern_locals = locals;
+    kern_funcs = funcs;
+    kern_body = stmt ctx env k.kern_body;
+  }
+
+(* {2 Entry point} *)
+
+(* [SNative] carries source text built by a closure, whose identifiers this pass
+   cannot see: a rename around it could not be sound. *)
+let rec has_native = function
+  | SNative _ -> true
+  | SSeq ss -> List.exists has_native ss
+  | SIf (_, t, f) -> has_native t || Option.fold ~none:false ~some:has_native f
+  | SWhile (_, b) | SFor (_, _, _, _, b) | SPragma (_, b) | SBlock b ->
+      has_native b
+  | SMatch (_, cases) -> List.exists (fun (_, b) -> has_native b) cases
+  | SLet (_, _, b) | SLetMut (_, _, b) -> has_native b
+  | _ -> false
+
+let kernel_has_native (k : kernel) =
+  has_native k.kern_body
+  || List.exists (fun hf -> has_native hf.hf_body) k.kern_funcs
+
+let legalize ~reserved ~rename_params (k : kernel) : kernel =
+  if kernel_has_native k then k
+  else
+    let ctx =
+      {
+        reserved;
+        rename_params;
+        dry = true;
+        taken = Hashtbl.create 64;
+        changed = false;
+      }
+    in
+    ignore (kernel ctx k) ;
+    let ctx = {ctx with dry = false} in
+    let renamed = kernel ctx k in
+    if ctx.changed then renamed else k
+
+let legalize_shader (k : kernel) : kernel =
+  legalize
+    ~reserved:Sarek_reserved_words.invalid_identifier
+    ~rename_params:false
+    k

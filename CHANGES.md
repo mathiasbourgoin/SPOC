@@ -2,6 +2,18 @@
 
 ### Fixed
 
+- Code generation of valid OCaml kernels (found by Katra, review of 2026-10-17): a name rebound in the
+  same scope (`let s = s +. 1.0 in`, two `let t` in one block) was emitted as a C redeclaration on
+  CUDA/HIP, OpenCL and Metal (and, for two `let t`, on GLSL and WGSL); a variable named like a keyword,
+  type, qualifier or built-in of the target (`half`, `local`, `kernel`, `uint`, `float4`, `max`) or
+  not an identifier (`x'`) broke the device compiler or hid a built-in. `Sarek_ir_names.legalize` now
+  renames such binders to `<name>_<k>` (`v_<name>_<k>` where a prefix family reserves `<name>_<k>`)
+  at the entry of each generator, references following; a kernel without a clash is returned
+  unchanged and its source is byte-identical (every golden unchanged). GLSL and WGSL keep their own
+  escapers for reserved words and for a local shadowing a scalar parameter. Not covered: `SNative`
+  kernels (opaque source), built-in function names on GLSL and WGSL, cooperative-matrix fragment
+  names. Tests: `sarek/tests/codegen_golden/test_name_legalization.ml` (every backend; compiled with
+  `clang -x cl` and the Metal runtime compiler when present, which reject the pre-fix spelling).
 - Launch cost regression since the warp-shuffle PR: `Execute.check_launch_warp` and
   `Matrix_specialise.decide` folded the whole IR (`kernel_uses_shuffle`, `kernel_uses_warp_ops`) at
   every launch, which cut Katra's decode throughput by 42 to 53 %. Both verdicts are now recorded once

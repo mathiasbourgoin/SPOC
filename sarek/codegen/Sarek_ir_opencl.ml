@@ -1173,6 +1173,15 @@ let generate_with_types ?block
     ~(types : (string * (string * elttype) list) list) (k : kernel) : string =
   reject_float16_kernel k ;
   reject_coopmat_kernel k ;
+  (* Names the target cannot take as written (a shadowing [let], a reserved
+     word); see Sarek_ir_names. Before every other pass, so they see final
+     names. *)
+  let k =
+    Sarek_ir_names.legalize
+      ~reserved:Sarek_reserved_words.opencl
+      ~rename_params:true
+      k
+  in
   let k = resolve_recursive_helpers k in
   (* A [for] bound is evaluated once (Sarek_ir_for_bound), then unroll hints
      for small constant-trip loops (Sarek_ir_unroll). *)
