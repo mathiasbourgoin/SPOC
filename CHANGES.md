@@ -30,8 +30,8 @@
 
 - `Spoc_core.Mapped_registration`: the capability to copy straight from registered file-backed pages
   (a read-only shared mapping of a file registered with `Transfer.register_host`), asked of the
-  library instead of deduced by each consumer. `static_verdict dev` decides from the backend without
-  touching the driver: Vulkan is `Refused (Kernel_hazard _)` whatever `SPOC_VULKAN_HOST_IMPORT*` say
+  library instead of deduced by each consumer. `static_verdict dev` decides from the backend (it registers and
+  copies nothing; HIP and CUDA read one device attribute): Vulkan is `Refused (Kernel_hazard _)` whatever `SPOC_VULKAN_HOST_IMPORT*` say
   (registration is never attempted there, Sarek #503/#504); Metal and the CPU devices (Native,
   Interpreter, CPU OpenCL) are `Not_needed` (copy from the mapping); GPU OpenCL and unknown backends are `Refused (Not_measured _)`;
   HIP and CUDA are `Refused Integrated_gpu` / `Device_kind_unknown` or ask for the self-test.
@@ -39,7 +39,7 @@
   device and back, compared with an independent read of the file (`hipHostRegister` returns success
   on `PROT_NONE`, tmpfs and overlapping ranges, so the return code decides nothing), timed against
   the staged copy, and released; the verdict is `Usable | Not_needed | Refused | Too_slow |
-  Inconclusive`, and `cacheable` says which verdicts may be stored. Additive: a new module, and
+  Inconclusive`, and `cacheable` is true only for what the self-test established (`Usable`, `Refused Wrong_bytes`). Additive: a new module, and
   `Spoc_framework.Shared_memory_query`, a hook through which HIP and CUDA say whether a device
   shares host memory (no field added to any existing record or signature). SPOC keeps no cache and
   no mapping code; the consumer owns both. Tests: `sarek/core/test/test_mapped_registration.ml`
