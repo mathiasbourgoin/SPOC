@@ -9,7 +9,9 @@
  * driver is never reachable from them, so a verdict instead of
  * [Inconclusive] proves it was not called), the self-test against doubles that
  * fail the way hipHostRegister does (a success that copies nothing, a release
- * that fails), and the real Transfer plumbing on the Native device.
+ * that fails), and the real Transfer plumbing on the Native device (where
+ * registration is a no-op and the mapping is read-write, Unix.map_file: it
+ * checks the plumbing, not file-backed registration, which no test here runs).
  ******************************************************************************)
 
 open Spoc_core
@@ -163,6 +165,7 @@ let test_static_registering () =
    the arrays: a fake device has no backend, so a driver call would raise and
    the verdict would be Inconclusive. *)
 let test_probe_static_never_touches () =
+  Q.set ~framework:"HIP" (function 1 -> true | _ -> false) ;
   let map = pattern (4 * page) and reference = pattern (4 * page) in
   let v = M.probe (fake "Vulkan") ~map ~reference in
   check
@@ -179,6 +182,13 @@ let test_probe_static_never_touches () =
     (match M.probe (fake "Vulkan") ~map ~reference with
     | M.Refused (M.Kernel_hazard _) -> true
     | _ -> false) ;
+  Unix.putenv "SPOC_VULKAN_HOST_IMPORT" "0" ;
+  Unix.putenv "SPOC_VULKAN_HOST_IMPORT_AMDGPU_I_ACCEPT_KERNEL_OOPS" "0" ;
+  check
+    "with_device_ops refuses a Vulkan device before any registration"
+    (match M.with_device_ops (fake "Vulkan") ~bytes:page (fun _ -> ()) with
+    | () -> false
+    | exception Invalid_argument _ -> true) ;
   check
     "probe on an integrated HIP device is Refused before any driver call"
     (match M.probe (fake ~backend_id:1 "HIP") ~map ~reference with
@@ -192,8 +202,12 @@ let test_probe_static_never_touches () =
 
 let test_cacheable () =
   check "Usable is cacheable" (M.cacheable M.Usable) ;
-  check "Not_needed is cacheable" (M.cacheable (M.Not_needed "x")) ;
-  check "Refused is cacheable" (M.cacheable (M.Refused M.Wrong_bytes)) ;
+  check
+    "static verdicts are not cacheable"
+    ((not (M.cacheable (M.Not_needed "x")))
+    && (not (M.cacheable (M.Refused M.Integrated_gpu)))
+    && not (M.cacheable (M.Refused M.Device_kind_unknown))) ;
+  check "Wrong_bytes is cacheable" (M.cacheable (M.Refused M.Wrong_bytes)) ;
   check
     "Refused Device_kind_unknown is not cacheable"
     (not (M.cacheable (M.Refused M.Device_kind_unknown))) ;
@@ -218,11 +232,7 @@ let double ?(register = fun _ -> ()) ?(round_trip = None)
   let registered = ref 0 and unregistered = ref 0 and freed = ref 0 in
   let allocated = ref [] in
   let d = ref None in
-  let faithful src ~into =
-    let is_staging = List.memq src !allocated in
-    if not is_staging then Unix.sleepf registered_delay ;
-    Bigarray.Array1.blit src into
-  in
+  let faithful src ~into = Bigarray.Array1.blit src into in
   let ops =
     {
       M.register =
@@ -241,6 +251,9 @@ let double ?(register = fun _ -> ()) ?(round_trip = None)
           b);
       free_host = (fun _ -> incr freed);
       round_trip = (match round_trip with Some f -> f | None -> faithful);
+      upload =
+        (fun src ->
+          if not (List.memq src !allocated) then Unix.sleepf registered_delay);
     }
   in
   let x =

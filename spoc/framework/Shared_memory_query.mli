@@ -11,7 +11,9 @@
 
 (** [set ~framework f] installs [f], which maps a backend-local device index to
     "this device shares host memory". A second call for the same framework
-    replaces the first. [f] must be safe to call from any domain. *)
+    replaces the first. [f] runs in the calling domain: it is as thread-safe as
+    the backend's own device lookup, which the HIP and CUDA queries use (and
+    which may create the device on a first call). *)
 val set : framework:string -> (int -> bool) -> unit
 
 (** [Some true] shared, [Some false] discrete, [None] when no query is installed

@@ -86,18 +86,19 @@ val refusal_to_string : refusal -> string
 
 val verdict_to_string : verdict -> string
 
-(** [true] for the verdicts that are properties of the machine and may be cached
-    ([Usable], [Not_needed], [Refused]); [false] for [Too_slow] and
-    [Inconclusive], which depend on load or on a transient failure, and
-    [Refused Device_kind_unknown] (a plugin that has not installed its query
-    yet, or a query that raised), and must be probed again. Match [verdict] with
-    a wildcard: variants may be added. *)
+(** [true] only for what the self-test established about the machine: [Usable]
+    and [Refused Wrong_bytes]. Everything else is [false]: the static verdicts
+    cost nothing to recompute and some rest on a query that can fail for a
+    moment ([Device_kind_unknown], [Integrated_gpu] when HIP could not read the
+    attribute), and [Too_slow] and [Inconclusive] depend on load or on a
+    transient failure. Match [verdict] with a wildcard: variants may be added.
+*)
 val cacheable : verdict -> bool
 
 (** Decided from the device and its backend alone. Never registers or copies
     anything; Vulkan is answered before any query is made. Framework names that
-    are neither listed in the source nor family variants of a listed one are
-    [Refused (Not_measured _)]. *)
+    are neither listed in the source nor family variants of a listed one, and
+    GPU OpenCL, are [Refused (Not_measured _)]; a CPU device is [Not_needed]. *)
 val static_verdict : Device.t -> static
 
 (** The ways to talk to the device that the self-test needs. {!probe} builds
@@ -110,10 +111,15 @@ type ops = {
   free_host : host -> unit;
   round_trip : host -> into:host -> unit;
       (** copy a host range to the device, then back into [into] *)
+  upload : host -> unit;
+      (** the host-to-device half alone: what the speed test times *)
 }
 
 (** [with_device_ops dev ~bytes f] runs [f] on operations backed by {!Transfer}
-    (a device buffer of [bytes] bytes, released when [f] returns or raises). *)
+    (a device buffer of [bytes] bytes, at least half the mapping; released when
+    [f] returns or raises). Raises [Invalid_argument] for a device whose static
+    verdict is [Refused _] (Vulkan above all): registration is never reachable
+    through this module on a refused device. *)
 val with_device_ops : Device.t -> bytes:int -> (ops -> 'a) -> 'a
 
 (** The self-test, without the static check: two disjoint halves of [map] are
@@ -141,8 +147,12 @@ val probe_with :
 
 (** The capability: {!static_verdict}, then, if it asks for it, the self-test on
     [dev] ({!probe_with} over {!with_device_ops}). A device decided statically
-    is answered without reading [map] or [reference] and without any driver
-    call. *)
+    is answered without reading [map] or [reference] and without registering or
+    copying anything. [map] must not overlap a registration that is live in the
+    process (the driver cannot tell, and HIP reports a false success). The
+    release of the windows can fail (HIP: [hipErrorUnknown 713]); the verdict is
+    then [Inconclusive], the release error is passed to [log], and the failed
+    window stays registered (and its mapping rooted) until the process ends. *)
 val probe :
   ?log:(string -> unit) ->
   ?min_relative_speed:float ->

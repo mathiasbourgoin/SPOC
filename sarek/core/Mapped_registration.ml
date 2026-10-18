@@ -37,10 +37,11 @@ let verdict_to_string = function
   | Too_slow why -> "too slow: " ^ why
   | Inconclusive why -> "inconclusive: " ^ why
 
+(* Only what the self-test established. The static verdicts are recomputed at
+   no cost, and some rest on a query that can fail for a moment. *)
 let cacheable = function
-  | Refused Device_kind_unknown -> false
-  | Usable | Not_needed _ | Refused _ -> true
-  | Too_slow _ | Inconclusive _ -> false
+  | Usable | Refused Wrong_bytes -> true
+  | Not_needed _ | Refused _ | Too_slow _ | Inconclusive _ -> false
 
 (* ---- the decision that needs no driver ---- *)
 
@@ -86,6 +87,7 @@ type ops = {
   alloc_host : int -> host;
   free_host : host -> unit;
   round_trip : host -> into:host -> unit;
+  upload : host -> unit;
 }
 
 (* The unit of a window: the largest page size in use (64 KiB on aarch64 Linux;
@@ -100,7 +102,9 @@ let default_min_relative_speed = 0.8
 let seconds f =
   let t0 = Unix.gettimeofday () in
   f () ;
-  Unix.gettimeofday () -. t0
+  (* The clock is not monotonic: a step must not give a null or negative
+     duration, which would pass the speed test. *)
+  Float.max 1e-9 (Unix.gettimeofday () -. t0)
 
 let best_of n f = List.fold_left min infinity (List.init n (fun _ -> seconds f))
 
@@ -230,11 +234,9 @@ let run ops held ~log ~min_relative_speed ~window ~ref_window ~half =
   let staging = alloc ops held half in
   let staged () =
     Bigarray.Array1.blit (window 0) staging ;
-    ops.round_trip staging ~into
+    ops.upload staging
   in
-  let t_registered =
-    best_of timing_trials (fun () -> ops.round_trip (window 0) ~into)
-  in
+  let t_registered = best_of timing_trials (fun () -> ops.upload (window 0)) in
   let t_staged = best_of timing_trials staged in
   log (timing_line ~min_relative_speed ~t_registered ~t_staged) ;
   let* () = unregister_checked ops held in
@@ -286,6 +288,7 @@ let probe_with ?(log = ignore)
       with e -> Error e
     in
     let release_failure = release ops held in
+    Option.iter (fun why -> log ("release failed: " ^ why)) release_failure ;
     match (outcome, release_failure) with
     | Error e, _ -> raise e
     | Ok (Inconclusive _ as v), _ -> v
@@ -296,6 +299,10 @@ let probe_with ?(log = ignore)
 (* ---- operations over a real device ---- *)
 
 let with_device_ops (dev : Device.t) ~bytes f =
+  (match static_verdict dev with
+  | Decided (Refused r) ->
+      invalid_arg ("Mapped_registration.with_device_ops: " ^ refusal_to_string r)
+  | Decided _ | Self_test_required -> ()) ;
   let device_buffer = Transfer.create_device_only dev Vector.char bytes in
   Fun.protect
     ~finally:(fun () -> Transfer.free_all_buffers device_buffer)
@@ -306,6 +313,12 @@ let with_device_ops (dev : Device.t) ~bytes f =
           unregister = (fun w -> Transfer.unregister_host w);
           alloc_host = (fun n -> Transfer.alloc_pinned dev Bigarray.char n);
           free_host = Transfer.free_pinned;
+          upload =
+            (fun src ->
+              Transfer.copy_bytes_to_device
+                src
+                ~dst:device_buffer
+                ~dst_byte_offset:0);
           round_trip =
             (fun src ~into ->
               Transfer.copy_bytes_to_device
