@@ -120,7 +120,9 @@ let bind ?(is_param = false) ?(ident = 0) ?(array = false) ctx env name =
   in
   if emitted <> name then ctx.changed <- true ;
   let visible =
-    if is_param && not ctx.rename_params then env.visible
+    (* A shader scalar parameter is exposed by name and left out; a vector
+       parameter is a buffer of that name, which a local must still avoid. *)
+    if is_param && (not ctx.rename_params) && not array then env.visible
     else SS.add emitted env.visible
   in
   let binders = Option.value ~default:[] (SM.find_opt name env.names) in

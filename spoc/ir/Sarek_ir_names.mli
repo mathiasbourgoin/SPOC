@@ -18,9 +18,12 @@
     own: a variable whose [var_id] and the binder's are both set and differ does
     not reach it (a later binder of the same name in the same target block,
     renamed, does not capture a reference to an earlier one); array references,
-    which carry a name only, reach arrays and never scalars. A local array that
-    shares its name with an array in scope cannot be told apart and is not
-    covered.
+    which carry a name only, reach arrays and never scalars, and the innermost
+    array of that name in the IR scope: an array bound by a [let] is out of
+    scope after the [let]'s own body, although its declaration stays in the
+    target block (so its name is renamed away from a parameter's). A shader
+    vector parameter is a buffer of its name: a local must avoid it, the
+    parameter itself is never renamed.
 
     The renaming:
 
