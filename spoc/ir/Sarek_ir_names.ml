@@ -272,7 +272,10 @@ and stmt ctx env s =
 let bind_helper_params ctx env params =
   List.fold_left_map
     (fun env v ->
-      let v, env = bind_var ctx env v in
+      (* A vector parameter of a helper is a global buffer on a shader: it
+         keeps its name there, like a kernel parameter. *)
+      let is_param = (not ctx.rename_params) && is_array_type v.var_type in
+      let v, env = bind_var ~is_param ctx env v in
       (env, v))
     env
     params
