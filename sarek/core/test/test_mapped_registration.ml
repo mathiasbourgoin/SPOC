@@ -55,7 +55,7 @@ let fake ?(is_cpu = false) ?(backend_id = 0) framework : Device.t =
     capabilities = caps ~is_cpu;
   }
 
-let page = 4096
+let page = 65536
 
 let host n : M.host = Bigarray.Array1.create Bigarray.char Bigarray.c_layout n
 

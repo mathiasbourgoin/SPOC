@@ -88,7 +88,10 @@ type ops = {
   round_trip : host -> into:host -> unit;
 }
 
-let page = 4096
+(* The unit of a window: the largest page size in use (64 KiB on aarch64 Linux;
+   x86-64 uses 4 KiB, Apple silicon 16 KiB), so that two windows never share a
+   page whatever the host. *)
+let page = 65536
 
 let timing_trials = 7
 

@@ -38,8 +38,8 @@
   `probe dev ~map ~reference` runs that self-test: two disjoint windows are registered, copied to the
   device and back, compared with an independent read of the file (`hipHostRegister` returns success
   on `PROT_NONE`, tmpfs and overlapping ranges, so the return code decides nothing), timed against
-  the staged copy, and released; the verdict (`Usable | Not_needed | Refused | Too_slow |
-  Inconclusive`) says which verdicts `cacheable` may be stored. Additive: a new module, and
+  the staged copy, and released; the verdict is `Usable | Not_needed | Refused | Too_slow |
+  Inconclusive`, and `cacheable` says which verdicts may be stored. Additive: a new module, and
   `Spoc_framework.Shared_memory_query`, a hook through which HIP and CUDA say whether a device
   shares host memory (no field added to any existing record or signature). SPOC keeps no cache and
   no mapping code; the consumer owns both. Tests: `sarek/core/test/test_mapped_registration.ml`
