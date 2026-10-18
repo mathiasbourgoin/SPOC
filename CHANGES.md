@@ -28,6 +28,22 @@
 
 ### Added
 
+- `Spoc_core.Mapped_registration`: the capability to copy straight from registered file-backed pages
+  (a read-only shared mapping of a file registered with `Transfer.register_host`), asked of the
+  library instead of deduced by each consumer. `static_verdict dev` decides from the backend without
+  touching the driver: Vulkan is `Refused (Kernel_hazard _)` whatever `SPOC_VULKAN_HOST_IMPORT*` say
+  (registration is never attempted there, Sarek #503/#504); Metal and the CPU backends are
+  `Not_needed` (copy from the mapping); OpenCL and unknown backends are `Refused (Not_measured _)`;
+  HIP and CUDA are `Refused Integrated_gpu` / `Device_kind_unknown` or ask for the self-test.
+  `probe dev ~map ~reference` runs that self-test: two disjoint windows are registered, copied to the
+  device and back, compared with an independent read of the file (`hipHostRegister` returns success
+  on `PROT_NONE`, tmpfs and overlapping ranges, so the return code decides nothing), timed against
+  the staged copy, and released; the verdict (`Usable | Not_needed | Refused | Too_slow |
+  Inconclusive`) says which verdicts `cacheable` may be stored. Additive: a new module, and
+  `Spoc_framework.Shared_memory_query`, a hook through which HIP and CUDA say whether a device
+  shares host memory (no field added to any existing record or signature). SPOC keeps no cache and
+  no mapping code; the consumer owns both. Tests: `sarek/core/test/test_mapped_registration.ml`
+  (no GPU), `sarek-metal/test/test_metal_mapped_registration.ml` (`@e2e-metal`).
 - Launch cost gate in CI: `sarek/execute/test/test_launch_cost.ml` times 2000 launches through
   `Execute.run_vectors` on two probe backends (the immediate launch path, and one named "HIP" that
   takes the deferred launch-window path and is tried by the matrix-unit rewrite) and fails if a

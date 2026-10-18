@@ -9,6 +9,7 @@ Use it to create vectors, choose devices and control transfers. To launch a Sare
 | `Device` | Enumerate devices of the registered backends; filters and predicates |
 | `Vector` | Typed vectors with host storage and location tracking; bulk operations |
 | `Transfer` | Host/device movement, streams, events, pinned memory, device-only vectors |
+| `Mapped_registration` | Capability: can a device copy from registered file-backed pages? Static verdict per backend (Vulkan never attempts it) and a self-test with a byte compare; no cache, no mapping code |
 | `Host_ptr_buffer` | Explicit opt-in: a CPU OpenCL buffer over a vector's host memory (`CL_MEM_USE_HOST_PTR`) |
 | `Memory` | Raw device buffers |
 | `Kernel`, `Kernel_arg`, `Runtime` | Compile source text and launch it with explicit arguments |

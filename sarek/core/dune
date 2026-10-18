@@ -29,6 +29,7 @@
   Host_async
   Staging_ring
   Transfer
+  Mapped_registration
   Host_ptr_buffer
   Profiling
   Error

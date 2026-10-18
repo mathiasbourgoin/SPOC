@@ -1,0 +1,141 @@
+(******************************************************************************)
+(* SPDX-License-Identifier: CECILL-B                                          *)
+(* SPDX-FileCopyrightText: 2026 Mathias Bourgoin <mathias.bourgoin@gmail.com> *)
+(******************************************************************************)
+
+(** Capability: can a device copy straight from a file-backed host mapping that
+    has been registered with the driver?
+
+    {!Transfer.register_host} takes any Bigarray and may succeed where the
+    registration cannot serve a copy (measured on HIP, RX 7900 XTX, ROCm 7.2.4:
+    [hipHostRegister] returns success for a [PROT_NONE] mapping, a tmpfs file, a
+    range registered twice and overlapping ranges, and [hipHostUnregister] then
+    fails with [hipErrorUnknown (713)]). So the answer to "is it usable here" is
+    a verdict reached in two steps, and neither is the return code of the
+    driver:
+
+    + {!static_verdict}: decided from the device and the backend alone, without
+      touching the driver. Vulkan is [Refused] here, whatever the opt-in
+      environment says, so registration is never attempted on it (kernel oops,
+      Sarek #503/#504).
+    + {!probe}: a self-test on a region of a real file that copies the
+      registered pages to the device and back and compares the bytes with an
+      independent read of the file, then times the registered copy against the
+      staged one it would replace.
+
+    Conditions under which a [Usable] verdict holds, and that the caller must
+    keep:
+
+    - the mapping is read-only and shared ([PROT_READ], [MAP_SHARED]) of a
+      regular file on a filesystem that supports it (the probe is run on the
+      file the pages will come from);
+    - registered windows are disjoint, whole pages, and each is released with
+      {!Transfer.unregister_host} before the mapping is unmapped;
+    - the verdict is a property of the device, driver, kernel, filesystem and
+      locked-memory limit at the time of the probe. The caller keys any cache on
+      those; {!cacheable} says which verdicts may be cached at all.
+
+    This module has no cache and no mapping code: the caller maps the file (SPOC
+    has no read-only shared mapping helper) and owns the cache, because both
+    depend on facts SPOC does not hold (the model file, the process-lifetime
+    policy). *)
+
+(** The bytes of a mapping or a buffer. *)
+type host =
+  (char, Bigarray.int8_unsigned_elt, Bigarray.c_layout) Bigarray.Array1.t
+
+(** Why a device is refused. *)
+type refusal =
+  | Integrated_gpu
+      (** The device shares system memory: registration gains nothing and the
+          probe would load the memory fabric of the machine. *)
+  | Device_kind_unknown
+      (** The backend registers host memory but did not say whether the device
+          is integrated ({!Shared_memory_query}): refused rather than guessed.
+      *)
+  | Kernel_hazard of string
+      (** Registering is known to harm the machine on this backend (Vulkan on
+          AMD: kernel oops, Sarek #503/#504). Never attempted. *)
+  | Not_measured of string
+      (** No measurement shows the capability on this backend. *)
+  | Wrong_bytes
+      (** The driver accepted the registration and the copy returned bytes that
+          differ from the file: a false success. *)
+
+type verdict =
+  | Usable
+  | Not_needed of string
+      (** The device reads host memory directly (Metal unified memory, CPU
+          backends): copy from the mapping, register nothing. *)
+  | Refused of refusal
+  | Too_slow of string
+      (** Bytes right, but the registered copy was slower than the staged one by
+          more than the margin: a property of the load at that moment. *)
+  | Inconclusive of string
+      (** An operation raised, or the region was too small: no verdict. *)
+
+(** Result of {!static_verdict}. *)
+type static = Decided of verdict | Self_test_required
+
+val refusal_to_string : refusal -> string
+
+val verdict_to_string : verdict -> string
+
+(** [true] for the verdicts that are properties of the machine and may be cached
+    ([Usable], [Not_needed], [Refused]); [false] for [Too_slow] and
+    [Inconclusive], which depend on load or on a transient failure and must be
+    probed again. *)
+val cacheable : verdict -> bool
+
+(** Decided from the device and its backend alone. Never calls the driver, never
+    registers anything. Framework names that are neither listed in the source
+    nor family variants of a listed one are [Refused (Not_measured _)]. *)
+val static_verdict : Device.t -> static
+
+(** The ways to talk to the device that the self-test needs. {!probe} builds
+    them from a device ({!with_device_ops}); the record is public so that a
+    backend or a test can drive {!probe_with} against a double. *)
+type ops = {
+  register : host -> unit;  (** may raise on a refusal *)
+  unregister : host -> unit;
+  alloc_host : int -> host;  (** page-locked when the backend can *)
+  free_host : host -> unit;
+  round_trip : host -> into:host -> unit;
+      (** copy a host range to the device, then back into [into] *)
+}
+
+(** [with_device_ops dev ~bytes f] runs [f] on operations backed by {!Transfer}
+    (a device buffer of [bytes] bytes, released when [f] returns or raises). *)
+val with_device_ops : Device.t -> bytes:int -> (ops -> 'a) -> 'a
+
+(** The self-test, without the static check: two disjoint halves of [map] are
+    registered, copied to the device and back, compared with the same halves of
+    [reference] (the bytes of the same file region read independently, by
+    [pread]), timed against a staged copy (memcpy into page-locked memory, then
+    the same copy), and released. [map] and [reference] have the same length,
+    whole pages, at least two pages. Everything registered or allocated is
+    released whatever happens; [Out_of_memory], [Stack_overflow] and [Sys.Break]
+    are re-raised, every other exception is [Inconclusive].
+
+    [min_relative_speed] (default 0.8) is the fraction of the staged copy's
+    speed that the registered copy must reach, best of 7 against best of 7. It
+    is a margin for noise, not a measurement. *)
+val probe_with :
+  ?log:(string -> unit) ->
+  ?min_relative_speed:float ->
+  ops ->
+  map:host ->
+  reference:host ->
+  verdict
+
+(** The capability: {!static_verdict}, then, if it asks for it, the self-test on
+    [dev] ({!probe_with} over {!with_device_ops}). A device decided statically
+    is answered without reading [map] or [reference] and without any driver
+    call. *)
+val probe :
+  ?log:(string -> unit) ->
+  ?min_relative_speed:float ->
+  Device.t ->
+  map:host ->
+  reference:host ->
+  verdict

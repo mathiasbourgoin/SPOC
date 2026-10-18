@@ -51,3 +51,10 @@
    SAREK_DEBUG
    kernel
    (run %{dep:test_log_error.exe}))))
+
+; Capability to copy from registered file-backed pages (no GPU).
+
+(test
+ (name test_mapped_registration)
+ (modules test_mapped_registration)
+ (libraries spoc_core ctypes unix sarek_native))

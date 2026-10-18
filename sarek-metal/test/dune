@@ -186,3 +186,16 @@
  (alias e2e-metal-bench)
  (action
   (run %{dep:bench_metal_compile.exe})))
+
+; Mapped_registration on Metal hardware: Not_needed, and the byte-identical
+; round trip of a shared file mapping. Self-skips without a device.
+
+(executable
+ (name test_metal_mapped_registration)
+ (modules test_metal_mapped_registration)
+ (libraries spoc_core sarek_metal unix))
+
+(rule
+ (alias e2e-metal)
+ (action
+  (run %{dep:test_metal_mapped_registration.exe})))

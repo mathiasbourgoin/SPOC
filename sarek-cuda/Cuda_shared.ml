@@ -147,3 +147,17 @@ let bind_args wrapped_kargs kargs (args : Framework_sig.run_source_arg list) =
       | Framework_sig.RSA_Float64 f ->
           Cuda_plugin_base.Cuda.Kernel.set_arg_float64 kargs i f)
     args
+
+(** Tell {!Spoc_framework.Shared_memory_query} which CUDA devices share host
+    memory (Tegra, Jetson). A failed query counts as shared: the capability to
+    register file pages then stays refused. *)
+let install_shared_memory_query ~framework =
+  Shared_memory_query.set ~framework (fun backend_id ->
+      let dev = Cuda_api.Device.get backend_id in
+      match
+        Cuda_api.Device.get_attribute
+          dev.Cuda_api.Device.handle
+          Cuda_types.CU_DEVICE_ATTRIBUTE_INTEGRATED
+      with
+      | v -> v <> 0
+      | exception _ -> true)

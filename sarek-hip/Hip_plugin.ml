@@ -125,6 +125,10 @@ let registered_backend =
        Spoc_core.Log.debug
          Spoc_core.Log.Device
          "Hip_plugin: HIP available, registering HIP backend" ;
+       (* A failed query counts as integrated in Hip_api (#427): the
+          capability to register file pages stays refused for it. *)
+       Shared_memory_query.set ~framework:"HIP" (fun backend_id ->
+           (Hip_api.Device.get backend_id).Hip_api.Device.integrated) ;
        Framework_registry.register_backend
          ~priority:80
          (module Backend : Framework_sig.BACKEND)
