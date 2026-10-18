@@ -162,7 +162,7 @@ let test_local_array_does_not_capture_later_store () =
                 SLet
                   ( local,
                     EArrayCreate (TFloat32, EConst (CInt32 4l), Local),
-                    SEmpty );
+                    SAssign (LArrayElem ("a", EConst (CInt32 1l)), f 3.0) );
               ];
             out_zero (f 1.0);
           ];
@@ -174,16 +174,20 @@ let test_local_array_does_not_capture_later_store () =
       Alcotest.(check bool)
         (name ^ ": the local array is renamed")
         true
-        (contains src "a_1[") ;
+        (contains src "a_1") ;
       Alcotest.(check bool)
         (name ^ ": the store reaches the parameter")
         true
-        (contains src "a[0] = ") ;
+        (contains src "a[0") ;
+      Alcotest.(check bool)
+        (name ^ ": a store in the let body reaches the local array")
+        true
+        (contains src "a_1[1") ;
       Alcotest.(check bool)
         (name ^ ": the store does not reach the local array")
         false
-        (contains src "a_1[0] ="))
-    c_family
+        (contains src "a_1[0"))
+    all_backends
 
 (* A helper that rebinds its own parameter: a redeclaration on every target. *)
 let helper_rebinds_parameter =
