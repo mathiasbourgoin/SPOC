@@ -19,6 +19,7 @@ type verdict =
   | Refused of refusal
   | Too_slow of string
   | Inconclusive of string
+  | Still_registered of string
 
 type static = Decided of verdict | Self_test_required
 
@@ -36,12 +37,15 @@ let verdict_to_string = function
   | Refused r -> "refused: " ^ refusal_to_string r
   | Too_slow why -> "too slow: " ^ why
   | Inconclusive why -> "inconclusive: " ^ why
+  | Still_registered why -> "still registered: " ^ why
 
 (* Only what the self-test established. The static verdicts are recomputed at
    no cost, and some rest on a query that can fail for a moment. *)
 let cacheable = function
   | Usable | Refused Wrong_bytes -> true
-  | Not_needed _ | Refused _ | Too_slow _ | Inconclusive _ -> false
+  | Not_needed _ | Refused _ | Too_slow _ | Inconclusive _ | Still_registered _
+    ->
+      false
 
 (* ---- the decision that needs no driver ---- *)
 
@@ -198,10 +202,11 @@ let check_bytes ops ~into (window, expected) =
       if equal_bytes into expected then Ok () else Error (Refused Wrong_bytes)
 
 (* Every registration is released and the first failure is the verdict. A
-   release that fails is [Inconclusive]: it can be transient, and a cached
-   refusal would switch the capability off for good. The window that could not
-   be released stays in [held] so that [release] tries it once more; a window
-   is out of [held] while it is being released, so an interrupt during the call
+   release that fails is [Still_registered] unless the second try in [release]
+   succeeds (then [Inconclusive]): it can be transient, and a cached refusal
+   would switch the capability off for good. The window that could not be
+   released stays in [held] so that [release] tries it once more; a window is
+   out of [held] while it is being released, so an interrupt during the call
    leaves none that would be unregistered twice. *)
 let unregister_checked ops held =
   let first_error = ref None in
@@ -216,7 +221,7 @@ let unregister_checked ops held =
             go (w :: failed) pending)
   in
   go [] held.windows ;
-  match !first_error with None -> Ok () | Some e -> Error (Inconclusive e)
+  match !first_error with None -> Ok () | Some e -> Error (Still_registered e)
 
 let timing_line ~min_relative_speed ~t_registered ~t_staged =
   Printf.sprintf
@@ -322,12 +327,19 @@ let probe_with ?(log = ignore)
                | Ok v | Error v -> v))
       with e -> Error e
     in
+    (match outcome with
+    | Ok (Still_registered first) -> log ("release failed: " ^ first)
+    | Ok _ | Error _ -> ()) ;
     let release_failure = release ops held in
     Option.iter (fun why -> log ("release failed: " ^ why)) release_failure ;
     match (outcome, release_failure) with
     | Error e, _ -> raise e
-    | Ok (Inconclusive _ as v), _ -> v
-    | Ok _, Some why -> Inconclusive ("release after the probe failed: " ^ why)
+    | Ok (Still_registered first), None ->
+        (* The second try released it: transient, nothing stays registered. *)
+        Inconclusive ("a release failed once, then succeeded: " ^ first)
+    | Ok (Still_registered _ as v), Some _ -> v
+    | Ok _, Some why ->
+        Still_registered ("release after the probe failed: " ^ why)
     | Ok v, None -> v
   end
 

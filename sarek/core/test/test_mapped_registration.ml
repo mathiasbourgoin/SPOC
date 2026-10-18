@@ -59,10 +59,19 @@ let fake ?(is_cpu = false) ?(backend_id = 0) framework : Device.t =
 
 let page = 65536
 
-let host n : M.host = Bigarray.Array1.create Bigarray.char Bigarray.c_layout n
+(* Page-aligned, as [probe_with] refuses a [map] that does not start on a page
+   boundary: [Bigarray.Array1.create] is a plain malloc, which on glibc returns
+   a large block 16 bytes past a page boundary (a mapping, which is what the
+   probe is given, always starts on one). *)
+let host n : M.host =
+  let raw = Bigarray.Array1.create Bigarray.char Bigarray.c_layout (n + page) in
+  let misalignment =
+    Nativeint.to_int
+      (Nativeint.rem (Transfer.bigarray_addr raw) (Nativeint.of_int page))
+  in
+  Bigarray.Array1.sub raw ((page - misalignment) mod page) n
 
-let host_of_len n : M.host =
-  Bigarray.Array1.create Bigarray.char Bigarray.c_layout n
+let host_of_len = host
 
 let pattern n : M.host =
   let a = host n in
@@ -224,6 +233,7 @@ type double = {
   allocated : M.host list ref;
   freed : int ref;
   mutable failing_unregister : bool;
+  mutable unregister_failures : int;
 }
 
 (* A device that copies faithfully; the registered path is [registered_delay]
@@ -244,6 +254,9 @@ let double ?(register = fun _ -> ()) ?(round_trip = None)
         (fun _ ->
           match !d with
           | Some x when x.failing_unregister -> failwith "unregister: 713"
+          | Some x when x.unregister_failures > 0 ->
+              x.unregister_failures <- x.unregister_failures - 1 ;
+              failwith "unregister: 713"
           | _ -> incr unregistered);
       alloc_host =
         (fun n ->
@@ -254,7 +267,11 @@ let double ?(register = fun _ -> ()) ?(round_trip = None)
       round_trip = (match round_trip with Some f -> f | None -> faithful);
       upload =
         (fun src ->
-          if not (List.memq src !allocated) then Unix.sleepf registered_delay);
+          (* A copy takes measurable time: a zero duration reads as a clock
+             step. *)
+          Unix.sleepf
+            (if List.memq src !allocated then 0.00002
+             else 0.00002 +. registered_delay));
     }
   in
   let x =
@@ -265,6 +282,7 @@ let double ?(register = fun _ -> ()) ?(round_trip = None)
       allocated;
       freed;
       failing_unregister = false;
+      unregister_failures = 0;
     }
   in
   d := Some x ;
@@ -276,7 +294,14 @@ let nothing_left d = balanced d && !(d.freed) = List.length !(d.allocated)
 
 let any_speed = 0.
 
-let is_inconclusive = function M.Inconclusive _ -> true | _ -> false
+(* The reason must not be the early return of a misaligned or tiny test buffer:
+   such a check would pass without reaching the engine. *)
+let is_inconclusive = function
+  | M.Inconclusive why ->
+      not (String.starts_with ~prefix:"the mapping does not start" why)
+  | _ -> false
+
+let is_still_registered = function M.Still_registered _ -> true | _ -> false
 
 let halves_differ (a : M.host) =
   let half = Bigarray.Array1.dim a / 2 in
@@ -290,6 +315,9 @@ let halves_differ (a : M.host) =
 
 let test_engine () =
   let map = pattern (8 * page) and reference = pattern (8 * page) in
+  check
+    "test buffers start on a page boundary"
+    (Nativeint.rem (Transfer.bigarray_addr map) 4096n = 0n) ;
   let d = double () in
   check
     "faithful device is Usable"
@@ -366,8 +394,8 @@ let test_engine () =
   let leaky = double ~round_trip:(Some (fun _ ~into:_ -> ())) () in
   leaky.failing_unregister <- true ;
   check
-    "Wrong_bytes with a failing release is Inconclusive"
-    (is_inconclusive
+    "Wrong_bytes with a failing release is Still_registered, not a refusal"
+    (is_still_registered
        (M.probe_with ~min_relative_speed:any_speed leaky.ops ~map ~reference))
 
 let test_failures () =
@@ -388,14 +416,29 @@ let test_failures () =
   let d = double () in
   d.failing_unregister <- true ;
   check
-    "a release that fails (713) is Inconclusive, not a cached refusal"
-    (is_inconclusive
+    "a release that fails (713) is Still_registered, not a cached refusal"
+    (is_still_registered
        (M.probe_with ~min_relative_speed:any_speed d.ops ~map ~reference)) ;
   check
-    "Inconclusive is never cacheable"
-    (not
-       (M.cacheable
-          (M.probe_with ~min_relative_speed:any_speed d.ops ~map ~reference))) ;
+    "Still_registered is never cacheable"
+    (not (M.cacheable (M.Still_registered "x"))) ;
+  let once = double () in
+  once.unregister_failures <- 1 ;
+  let logged = ref [] in
+  check
+    "a release that fails once and succeeds on the retry is Inconclusive, and \
+     the first failure is logged"
+    (is_inconclusive
+       (M.probe_with
+          ~log:(fun l -> logged := l :: !logged)
+          ~min_relative_speed:any_speed
+          once.ops
+          ~map
+          ~reference)
+    && List.exists
+         (fun l -> String.starts_with ~prefix:"release failed" l)
+         !logged
+    && nothing_left once) ;
   let d =
     double ~round_trip:(Some (fun _ ~into:_ -> failwith "copy failed")) ()
   in
