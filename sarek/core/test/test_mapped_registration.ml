@@ -663,16 +663,19 @@ let test_native_plumbing () =
          = still
         && !released = 1) ;
       check
-        "nor the exception of the body"
-        (match
-           M.with_device_ops
-             ~release:(fun _ -> failwith "free: driver lost")
-             dev
-             ~bytes:(len / 2)
-             (fun _ -> failwith "body")
-         with
-        | _ -> false
-        | exception Failure m -> m = "body") ;
+        "nor the exception of the body, and the buffer is freed"
+        ((match
+            M.with_device_ops
+              ~release:(fun _ ->
+                incr released ;
+                failwith "free: driver lost")
+              dev
+              ~bytes:(len / 2)
+              (fun _ -> failwith "body")
+          with
+           | _ -> false
+           | exception Failure m -> m = "body")
+        && !released = 2) ;
       check
         "a fatal exception of the device-buffer release reaches the caller"
         (match
