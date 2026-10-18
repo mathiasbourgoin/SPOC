@@ -403,8 +403,9 @@ let with_device_ops ?(release = Transfer.free_all_buffers) (dev : Device.t)
       free () ;
       v
   | exception e ->
+      let backtrace = Printexc.get_raw_backtrace () in
       free () ;
-      raise e
+      Printexc.raise_with_backtrace e backtrace
 
 let probe ?log ?min_relative_speed (dev : Device.t) ~(map : host)
     ~(reference : host) =

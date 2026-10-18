@@ -134,12 +134,12 @@ type ops = {
 
 (** [with_device_ops dev ~bytes f] runs [f] on operations backed by {!Transfer}
     (a device buffer of [bytes] bytes, at least half the mapping; released when
-    [f] returns or raises; a release that raises is ignored, so that it replaces
-    neither the result of [f] nor its exception). [release] is how the device
-    buffer is freed ({!Transfer.free_all_buffers} by default); it exists for
-    tests. Raises [Invalid_argument] for a device whose static verdict is
-    [Refused _] (Vulkan above all): registration is never reachable through this
-    module on a refused device. *)
+    [f] returns or raises; a non-fatal failure of the release is ignored, so
+    that it replaces neither the result of [f] nor its exception). [release] is
+    how the device buffer is freed ({!Transfer.free_all_buffers} by default); it
+    exists for tests. Raises [Invalid_argument] for a device whose static
+    verdict is [Refused _] (Vulkan above all): registration is never reachable
+    through this module on a refused device. *)
 val with_device_ops :
   ?release:((char, Bigarray.int8_unsigned_elt) Vector.t -> unit) ->
   Device.t ->
