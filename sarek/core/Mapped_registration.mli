@@ -122,8 +122,9 @@ val with_device_ops : Device.t -> bytes:int -> (ops -> 'a) -> 'a
     [pread]), checked equal to [map] first (a reference that differs is the
     caller's fault: [Inconclusive], nothing registered), timed against a staged
     copy (memcpy into page-locked memory, then the same copy), and released.
-    [map] and [reference] have the same length, whole pages, at least two pages.
-    Everything registered or allocated is released whatever happens;
+    [map] and [reference] have the same length, multiples of 64 KiB (the largest
+    page size in use, so that windows never share a page), at least two such
+    units. Everything registered or allocated is released whatever happens;
     [Out_of_memory], [Stack_overflow] and [Sys.Break] are re-raised, every other
     exception is [Inconclusive].
 
