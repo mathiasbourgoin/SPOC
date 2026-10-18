@@ -14,10 +14,15 @@
     resolves to the variable.
 
     {!legalize} is a renaming that runs once at the entry of a generator, before
-    any other pass. A reference resolves to its binder by [var_id] first (a
-    binder of the same name that comes later in the same target block, and is
-    renamed, does not capture it), then by name for what carries no identity
-    (arrays, helpers, pattern variables):
+    any other pass. A reference resolves to the innermost binder that can be its
+    own: a variable whose [var_id] and the binder's are both set and differ does
+    not reach it (a later binder of the same name in the same target block,
+    renamed, does not capture a reference to an earlier one); array references,
+    which carry a name only, reach arrays and never scalars. A local array that
+    shares its name with an array in scope cannot be told apart and is not
+    covered.
+
+    The renaming:
 
     - a binder whose name is reserved for the target (per [reserved]) or already
       names a binder in scope becomes [<name>_<k>] (the smallest [k] that no
