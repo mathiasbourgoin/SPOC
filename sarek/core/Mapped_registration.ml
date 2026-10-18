@@ -102,11 +102,18 @@ let default_min_relative_speed = 0.8
 let seconds f =
   let t0 = Unix.gettimeofday () in
   f () ;
-  (* The clock is not monotonic: a step must not give a null or negative
-     duration, which would pass the speed test. *)
-  Float.max 1e-9 (Unix.gettimeofday () -. t0)
+  (* The clock is not monotonic: a null or negative duration is a clock step,
+     not a measurement, and must not pass the speed test ([run] reports it). *)
+  let d = Unix.gettimeofday () -. t0 in
+  if d > 0. then d else nan
 
-let best_of n f = List.fold_left min infinity (List.init n (fun _ -> seconds f))
+(* Best of [n]; [nan] when no trial gave a valid duration. *)
+let best_of n f =
+  List.fold_left
+    (fun best d -> if Float.is_nan d then best else Float.min best d)
+    infinity
+    (List.init n (fun _ -> seconds f))
+  |> fun b -> if b = infinity then nan else b
 
 let equal_bytes (a : host) (b : host) =
   Bigarray.Array1.dim a = Bigarray.Array1.dim b
@@ -174,11 +181,17 @@ let register_all ops held windows =
     (Ok ())
     windows
 
-let sentinel = '\xA5'
-
 (* Copy [window] to the device and back, and compare with the file's bytes. *)
 let check_bytes ops ~into (window, expected) =
-  Bigarray.Array1.fill into sentinel ;
+  (* Every byte starts as the complement of the expected one, so that a copy
+     that writes nothing can match no content whatever (an earlier fixed
+     sentinel passed on a file holding that byte). *)
+  for i = 0 to Bigarray.Array1.dim into - 1 do
+    Bigarray.Array1.unsafe_set
+      into
+      i
+      (Char.unsafe_chr (255 - Char.code (Bigarray.Array1.get expected i)))
+  done ;
   match attempt "copy" (fun () -> ops.round_trip window ~into) with
   | Error e -> Error (Inconclusive e)
   | Ok () ->
@@ -229,8 +242,17 @@ let run ops held ~log ~min_relative_speed ~window ~ref_window ~half =
   let* () = check_inputs ~window ~ref_window in
   let into = alloc ops held half in
   let* () = register_all ops held [window 0; window 1] in
-  let* () = check_bytes ops ~into (window 0, ref_window 0) in
-  let* () = check_bytes ops ~into (window 1, ref_window 1) in
+  (* A mismatch is the device's only if the file still holds what the caller
+     read: another process may have written it meanwhile. *)
+  let check_window k =
+    match check_bytes ops ~into (window k, ref_window k) with
+    | Error (Refused Wrong_bytes) ->
+        let* () = check_inputs ~window ~ref_window in
+        Error (Refused Wrong_bytes)
+    | r -> r
+  in
+  let* () = check_window 0 in
+  let* () = check_window 1 in
   let staging = alloc ops held half in
   let staged () =
     Bigarray.Array1.blit (window 0) staging ;
@@ -240,7 +262,9 @@ let run ops held ~log ~min_relative_speed ~window ~ref_window ~half =
   let t_staged = best_of timing_trials staged in
   log (timing_line ~min_relative_speed ~t_registered ~t_staged) ;
   let* () = unregister_checked ops held in
-  if t_registered *. min_relative_speed <= t_staged then Ok Usable
+  if Float.is_nan t_registered || Float.is_nan t_staged then
+    Ok (Inconclusive "the clock gave no valid duration (stepped?)")
+  else if t_registered *. min_relative_speed <= t_staged then Ok Usable
   else
     Ok
       (Too_slow
@@ -267,6 +291,8 @@ let probe_with ?(log = ignore)
   let half = half_of len in
   if half < page || Bigarray.Array1.dim reference <> len then
     Inconclusive "probe region too small"
+  else if Nativeint.rem (Transfer.bigarray_addr map) 4096n <> 0n then
+    Inconclusive "the mapping does not start on a page boundary"
   else begin
     let sub a b = Bigarray.Array1.sub a (if b = 0 then 0 else half) half in
     let held = {windows = []; buffers = []} in
