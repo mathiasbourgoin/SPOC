@@ -10,9 +10,8 @@
     registration cannot serve a copy (measured on HIP, RX 7900 XTX, ROCm 7.2.4:
     [hipHostRegister] returns success for a [PROT_NONE] mapping, a tmpfs file, a
     range registered twice and overlapping ranges, and [hipHostUnregister] then
-    fails with [hipErrorUnknown (713)]). So the answer to "is it usable here" is
-    a verdict reached in two steps, and neither is the return code of the
-    driver:
+    fails with error 713). So the answer to "is it usable here" is a verdict
+    reached in two steps, and neither is the return code of the driver:
 
     + {!static_verdict}: decided from the device and the backend alone. It
       registers and copies nothing; for HIP and CUDA it reads one device
@@ -78,6 +77,13 @@ type verdict =
           more than the margin: a property of the load at that moment. *)
   | Inconclusive of string
       (** An operation raised, or the region was too small: no verdict. *)
+  | Still_registered of string
+      (** The probe could not release a window it registered (the driver's
+          unregister failed twice). The window stays in {!Transfer}'s table (so
+          [Transfer.is_pinned] stays true and the mapping stays rooted) and may
+          still be registered with the driver: that range must not be unmapped,
+          registered again or probed again in this process. Probe a scratch
+          mapping, not the one the weights are read from. Not cacheable. *)
 
 (** Result of {!static_verdict}. *)
 type static = Decided of verdict | Self_test_required
@@ -90,15 +96,20 @@ val verdict_to_string : verdict -> string
     and [Refused Wrong_bytes]. Everything else is [false]: the static verdicts
     cost nothing to recompute and some rest on a query that can fail for a
     moment ([Device_kind_unknown], [Integrated_gpu] when HIP could not read the
-    attribute), and [Too_slow] and [Inconclusive] depend on load or on a
-    transient failure. Match [verdict] with a wildcard: variants may be added.
-*)
+    attribute), and [Too_slow], [Inconclusive] and [Still_registered] depend on
+    load or on a transient failure. Match [verdict] with a wildcard: variants
+    may be added. *)
 val cacheable : verdict -> bool
 
 (** Decided from the device and its backend alone. Never registers or copies
-    anything; Vulkan is answered before any query is made. Framework names that
-    are neither listed in the source nor family variants of a listed one, and
-    GPU OpenCL, are [Refused (Not_measured _)]; a CPU device is [Not_needed]. *)
+    anything; Vulkan is answered before any query is made. For HIP and CUDA it
+    asks the backend's hook, which reads one device attribute (and may create
+    the backend's device object on a first call). A HIP device whose attribute
+    could not be read is reported as [Refused Integrated_gpu] (the backend
+    counts a failed query as integrated); it is not cacheable. Framework names
+    that are neither listed in the source nor family variants of a listed one,
+    and GPU OpenCL, are [Refused (Not_measured _)]; a CPU device is
+    [Not_needed]. *)
 val static_verdict : Device.t -> static
 
 (** The ways to talk to the device that the self-test needs. {!probe} builds
@@ -152,9 +163,15 @@ val probe_with :
     is answered without reading [map] or [reference] and without registering or
     copying anything. [map] must not overlap a registration that is live in the
     process (the driver cannot tell, and HIP reports a false success). The
-    release of the windows can fail (HIP: [hipErrorUnknown 713]); the verdict is
-    then [Inconclusive], the release error is passed to [log], and the failed
-    window stays registered (and its mapping rooted) until the process ends. *)
+    release of the windows can fail (HIP: error 713); the verdict is then
+    [Still_registered] (or [Inconclusive] if a second try succeeds), the release
+    error is passed to [log], and the failed window stays in {!Transfer}'s table
+    (its mapping rooted) until the process ends: never unmap that range.
+
+    [map] must start on a page boundary of the host (checked at 4 KiB only) and
+    so must every offset at which a caller slices it: a sub-slice that starts
+    inside a page of a larger-page host makes the two windows share a page. A
+    mapping returned by [mmap] satisfies this. *)
 val probe :
   ?log:(string -> unit) ->
   ?min_relative_speed:float ->
