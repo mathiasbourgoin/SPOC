@@ -98,3 +98,20 @@
  (name test_policy_fused)
  (modules test_policy_fused)
  (libraries sarek_execute sarek_codegen sarek_ir alcotest))
+
+; End-to-end launch cost gate (docs/launch-cost-gate.md): N launches through
+; Execute.run_vectors on a probe backend, IR-size independence and a fixed-cost
+; bound relative to a reference loop. No device. Own executable: it registers a
+; process-global probe backend.
+
+(test
+ (name test_launch_cost)
+ (modules test_launch_cost)
+ (libraries
+  sarek_execute
+  sarek_ir
+  spoc_core
+  spoc_framework
+  spoc_framework_registry
+  alcotest
+  unix))
