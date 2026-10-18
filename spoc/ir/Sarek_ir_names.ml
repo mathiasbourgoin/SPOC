@@ -10,9 +10,11 @@ module SS = Set.Make (String)
 (* One binder of a name: the emitted name, the [var_id] it was bound with ([0]
    when it has none: pattern variables, shared arrays, helpers, or an unset
    id) and whether it is an array (a vector parameter, a local or shared
-   array). Arrays and scalars of one name are different binders: an array
+   array). [leaked] marks a scalar whose [let] body has ended: its declaration
+   stays in the target block, but only a reference carrying its own [var_id]
+   still reaches it. Arrays and scalars of one name are different binders: an array
    reference by name never reaches a scalar, nor the reverse. *)
-type entry = {emitted : string; ident : int; array : bool}
+type entry = {emitted : string; ident : int; array : bool; leaked : bool}
 
 (* [names]: source name -> the binders of that name in scope, innermost first.
    A reference picks the innermost binder that can be its own: a variable
@@ -47,7 +49,10 @@ let find_entry env name ~array ~ident =
       List.find_opt
         (fun e ->
           e.array = array
-          && (array || ident = 0 || e.ident = 0 || e.ident = ident))
+          && (array
+             ||
+             if e.leaked then ident <> 0 && e.ident = ident
+             else ident = 0 || e.ident = 0 || e.ident = ident))
         binders
 
 let emitted_or_same name = function Some e -> e.emitted | None -> name
@@ -128,7 +133,11 @@ let bind ?(is_param = false) ?(ident = 0) ?(array = false) ctx env name =
   let binders = Option.value ~default:[] (SM.find_opt name env.names) in
   ( emitted,
     {
-      names = SM.add name ({emitted; ident; array} :: binders) env.names;
+      names =
+        SM.add
+          name
+          ({emitted; ident; array; leaked = false} :: binders)
+          env.names;
       visible;
     } )
 
@@ -220,7 +229,17 @@ let coopmat ctx env = function
    its body: an array reference carries no identity, and means the innermost
    array of that name in the IR, which is not this one. *)
 let leave_binder before inner (v : var) =
-  if not (is_array_type v.var_type) then inner
+  if not (is_array_type v.var_type) then
+    let before_binders =
+      Option.value ~default:[] (SM.find_opt v.var_name before.names)
+    in
+    let mark binders =
+      List.map
+        (fun e ->
+          if List.memq e before_binders then e else {e with leaked = true})
+        binders
+    in
+    {inner with names = SM.update v.var_name (Option.map mark) inner.names}
   else
     let names =
       match SM.find_opt v.var_name before.names with
