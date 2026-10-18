@@ -77,10 +77,13 @@ type verdict =
       (** Bytes right, but the registered copy was slower than the staged one by
           more than the margin: a property of the load at that moment. *)
   | Inconclusive of string
-      (** An operation raised, or the region was too small: no verdict. *)
+      (** No verdict: an operation raised, the region was too small, the
+          reference differs from the mapping or the two windows hold the same
+          bytes, the clock gave no valid duration, a buffer could not be freed,
+          or a release failed once and succeeded on the retry. *)
   | Still_registered of string
       (** The probe could not release a window it registered (the driver's
-          unregister failed after a retry). The window stays in {!Transfer}'s
+          unregister failed three times). The window stays in {!Transfer}'s
           table (so [Transfer.is_pinned] stays true and the mapping stays
           rooted) and may still be registered with the driver: the whole [map]
           given to {!probe} must not be unmapped, registered again or probed
@@ -178,7 +181,7 @@ val probe_with :
     copying anything. [map] must not overlap a registration that is live in the
     process (the driver cannot tell, and HIP reports a false success). The
     release of the windows can fail (HIP: error 713); the verdict is then
-    [Still_registered] (or [Inconclusive] if a second try succeeds), the release
+    [Still_registered] (or [Inconclusive] if a retry succeeds), the release
     error is passed to [log], and the failed window stays in {!Transfer}'s table
     (its mapping rooted) until the process ends: never unmap that range.
 

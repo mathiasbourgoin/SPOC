@@ -508,6 +508,50 @@ let test_failures () =
     | _ -> false
     | exception Out_of_memory -> true) ;
   check "released after Out_of_memory" (nothing_left d) ;
+  List.iter
+    (fun (name, exn) ->
+      let d = double ~round_trip:(Some (fun _ ~into:_ -> raise exn)) () in
+      check
+        (name ^ " in a copy reaches the caller")
+        (match
+           M.probe_with ~min_relative_speed:any_speed d.ops ~map ~reference
+         with
+        | _ -> false
+        | exception e -> e = exn) ;
+      check (name ^ " in a copy: everything released") (nothing_left d) ;
+      let count = ref 0 in
+      let r =
+        double
+          ~register:(fun _ ->
+            incr count ;
+            if !count = 2 then raise exn)
+          ()
+      in
+      check
+        (name ^ " while registering reaches the caller")
+        (match
+           M.probe_with ~min_relative_speed:any_speed r.ops ~map ~reference
+         with
+        | _ -> false
+        | exception e -> e = exn) ;
+      check (name ^ " while registering: first window released") (balanced r))
+    [("Sys.Break", Sys.Break); ("Stack_overflow", Stack_overflow)] ;
+  let leaving = double () in
+  leaving.failing_unregister <- true ;
+  let fatal_ops =
+    {
+      leaving.ops with
+      M.unregister = (fun _ -> raise Sys.Break);
+      free_host = (fun _ -> incr leaving.freed);
+    }
+  in
+  check
+    "a fatal exception in the release reaches the caller, buffers still freed"
+    (match
+       M.probe_with ~min_relative_speed:any_speed fatal_ops ~map ~reference
+     with
+    | _ -> false
+    | exception Sys.Break -> !(leaving.freed) = List.length !(leaving.allocated)) ;
   check
     "region too small is Inconclusive"
     (is_inconclusive
@@ -629,6 +673,17 @@ let test_native_plumbing () =
          with
         | _ -> false
         | exception Failure m -> m = "body") ;
+      check
+        "a fatal exception of the device-buffer release reaches the caller"
+        (match
+           M.with_device_ops
+             ~release:(fun _ -> raise Sys.Break)
+             dev
+             ~bytes:(len / 2)
+             (fun _ -> ())
+         with
+        | () -> false
+        | exception Sys.Break -> true) ;
       check
         "no window stays registered afterwards"
         ((not (Transfer.is_pinned (Bigarray.Array1.sub map 0 (len / 2))))
