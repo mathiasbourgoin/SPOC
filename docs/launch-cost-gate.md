@@ -29,7 +29,9 @@ Two probe backends run the same code, because the path depends on the backend na
   probe on the first name alone passes it (measured, see below).
 
 Not covered: a real driver, vector arguments and transfers (the only argument is one scalar),
-stream launches, SoA arguments, fusion. A regression there needs its own test.
+stream launches, SoA arguments, epilogue fusion. A regression there needs its own test. (The plain
+kernel on the `HIP` probe is horizontally fused by the launch window, up to 8 launches per backend
+issue; the shuffle kernel is never fused.)
 
 ## Two assertions
 

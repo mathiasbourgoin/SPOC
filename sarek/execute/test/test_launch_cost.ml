@@ -383,10 +383,10 @@ let interleaved_minimum round_functions =
 let allowed_size_factor = 25.
 
 (* A launch may cost this many reference units. Calibrated in
-   docs/launch-cost-gate.md: the observed value is 0.6 to 1.1 idle, so 8 to 13
-   times under this (2.1 at worst with 24 busy loops on 10 cores); the Katra loss of #522
-   (359 to 168 tok/s at 497 launches per token, about 6.4 us per launch) is
-   about 12 units, over this limit. A limit of 30 let that fixed cost through. *)
+   docs/launch-cost-gate.md: 0.7 to 1.3 idle and at most 1.4 with 24 busy loops
+   on 10 cores. The Katra loss of #522 (359 to 168 tok/s at 497 launches per
+   token, about 6.4 us per launch) is about 12 units, over this limit (a
+   margin of 1.5); a limit of 30 let that fixed cost through. *)
 let allowed_reference_units = 8.
 
 let big_statements = 20000
