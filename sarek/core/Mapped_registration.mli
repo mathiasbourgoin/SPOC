@@ -156,9 +156,10 @@ val with_device_ops :
     least two units of 64 KiB (the largest page size in use, so that windows
     never share a page). Each window is half the length rounded down to a
     multiple of 64 KiB: bytes beyond the two windows are neither registered nor
-    compared. Everything registered or allocated is released whatever happens;
-    [Out_of_memory], [Stack_overflow] and [Sys.Break] are re-raised, every other
-    exception is [Inconclusive].
+    compared. Everything registered or allocated is released, or its release is
+    tried twice and reported, whatever happens; [Out_of_memory],
+    [Stack_overflow] and [Sys.Break] are re-raised, every other exception is
+    [Inconclusive].
 
     [min_relative_speed] (default 0.8) is the fraction of the staged copy's
     speed that the registered copy must reach, best of 7 against best of 7. It

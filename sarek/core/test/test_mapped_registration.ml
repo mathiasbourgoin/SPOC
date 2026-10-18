@@ -235,6 +235,7 @@ type double = {
   mutable failing_unregister : bool;
   mutable unregister_failures : int;
   mutable failing_free : bool;
+  mutable free_failures : int;
 }
 
 (* A device that copies faithfully; the registered path is [registered_delay]
@@ -268,6 +269,9 @@ let double ?(register = fun _ -> ()) ?(round_trip = None)
         (fun _ ->
           match !d with
           | Some x when x.failing_free -> failwith "free: busy"
+          | Some x when x.free_failures > 0 ->
+              x.free_failures <- x.free_failures - 1 ;
+              failwith "free: busy once"
           | _ -> incr freed);
       round_trip = (match round_trip with Some f -> f | None -> faithful);
       upload =
@@ -289,6 +293,7 @@ let double ?(register = fun _ -> ()) ?(round_trip = None)
       failing_unregister = false;
       unregister_failures = 0;
       failing_free = false;
+      free_failures = 0;
     }
   in
   d := Some x ;
@@ -460,6 +465,13 @@ let test_failures () =
     (is_inconclusive
        (M.probe_with ~min_relative_speed:any_speed busy.ops ~map ~reference)
     && balanced busy) ;
+  let flaky = double () in
+  flaky.free_failures <- 1 ;
+  check
+    "a buffer whose free fails once and succeeds on the retry stays Usable"
+    (M.probe_with ~min_relative_speed:any_speed flaky.ops ~map ~reference
+     = M.Usable
+    && balanced flaky) ;
   let noisy = double () in
   noisy.failing_unregister <- true ;
   check
@@ -593,15 +605,19 @@ let test_native_plumbing () =
                   ops
                   ~map
                   ~reference:changed))) ;
+      let released = ref 0 in
       let still = M.Still_registered "kept" in
       check
         "a device buffer that cannot be freed does not replace the verdict"
         (M.with_device_ops
-           ~release:(fun _ -> failwith "free: driver lost")
+           ~release:(fun _ ->
+             incr released ;
+             failwith "free: driver lost")
            dev
            ~bytes:(len / 2)
            (fun _ -> still)
-        = still) ;
+         = still
+        && !released = 1) ;
       check
         "nor the exception of the body"
         (match
