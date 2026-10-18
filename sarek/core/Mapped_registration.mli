@@ -14,10 +14,12 @@
     a verdict reached in two steps, and neither is the return code of the
     driver:
 
-    + {!static_verdict}: decided from the device and the backend alone, without
-      touching the driver. Vulkan is [Refused] here, whatever the opt-in
-      environment says, so registration is never attempted on it (kernel oops,
-      Sarek #503/#504).
+    + {!static_verdict}: decided from the device and the backend alone. It
+      registers and copies nothing; for HIP and CUDA it reads one device
+      attribute (integrated or not) through
+      {!Spoc_framework.Shared_memory_query}. Vulkan is [Refused] here, whatever
+      the opt-in environment says, so registration is never attempted on it
+      (kernel oops, Sarek #503/#504).
     + {!probe}: a self-test on a region of a real file that copies the
       registered pages to the device and back and compares the bytes with an
       independent read of the file, then times the registered copy against the
@@ -31,9 +33,11 @@
       file the pages will come from);
     - registered windows are disjoint, whole pages, and each is released with
       {!Transfer.unregister_host} before the mapping is unmapped;
-    - the verdict is a property of the device, driver, kernel, filesystem and
-      locked-memory limit at the time of the probe. The caller keys any cache on
-      those; {!cacheable} says which verdicts may be cached at all.
+    - the verdict is a property of the device, driver, kernel, filesystem,
+      locked-memory limit and SPOC revision (the static refusals change with it)
+      at the time of the probe, and [Usable] covers the two sampled windows
+      only. The caller keys any cache on those; {!cacheable} says which verdicts
+      may be cached at all.
 
     This module has no cache and no mapping code: the caller maps the file (SPOC
     has no read-only shared mapping helper) and owns the cache, because both
@@ -60,7 +64,8 @@ type refusal =
       (** No measurement shows the capability on this backend. *)
   | Wrong_bytes
       (** The driver accepted the registration and the copy returned bytes that
-          differ from the file: a false success. *)
+          differ from the file, while the mapping and the reference agree: a
+          false success of the device. *)
 
 type verdict =
   | Usable
@@ -83,13 +88,16 @@ val verdict_to_string : verdict -> string
 
 (** [true] for the verdicts that are properties of the machine and may be cached
     ([Usable], [Not_needed], [Refused]); [false] for [Too_slow] and
-    [Inconclusive], which depend on load or on a transient failure and must be
-    probed again. *)
+    [Inconclusive], which depend on load or on a transient failure, and
+    [Refused Device_kind_unknown] (a plugin that has not installed its query
+    yet, or a query that raised), and must be probed again. Match [verdict] with
+    a wildcard: variants may be added. *)
 val cacheable : verdict -> bool
 
-(** Decided from the device and its backend alone. Never calls the driver, never
-    registers anything. Framework names that are neither listed in the source
-    nor family variants of a listed one are [Refused (Not_measured _)]. *)
+(** Decided from the device and its backend alone. Never registers or copies
+    anything; Vulkan is answered before any query is made. Framework names that
+    are neither listed in the source nor family variants of a listed one are
+    [Refused (Not_measured _)]. *)
 val static_verdict : Device.t -> static
 
 (** The ways to talk to the device that the self-test needs. {!probe} builds
@@ -111,11 +119,13 @@ val with_device_ops : Device.t -> bytes:int -> (ops -> 'a) -> 'a
 (** The self-test, without the static check: two disjoint halves of [map] are
     registered, copied to the device and back, compared with the same halves of
     [reference] (the bytes of the same file region read independently, by
-    [pread]), timed against a staged copy (memcpy into page-locked memory, then
-    the same copy), and released. [map] and [reference] have the same length,
-    whole pages, at least two pages. Everything registered or allocated is
-    released whatever happens; [Out_of_memory], [Stack_overflow] and [Sys.Break]
-    are re-raised, every other exception is [Inconclusive].
+    [pread]), checked equal to [map] first (a reference that differs is the
+    caller's fault: [Inconclusive], nothing registered), timed against a staged
+    copy (memcpy into page-locked memory, then the same copy), and released.
+    [map] and [reference] have the same length, whole pages, at least two pages.
+    Everything registered or allocated is released whatever happens;
+    [Out_of_memory], [Stack_overflow] and [Sys.Break] are re-raised, every other
+    exception is [Inconclusive].
 
     [min_relative_speed] (default 0.8) is the fraction of the staged copy's
     speed that the registered copy must reach, best of 7 against best of 7. It

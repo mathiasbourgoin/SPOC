@@ -30,4 +30,7 @@ let set ~(framework : string) (f : int -> bool) : unit =
 let query ~(framework : string) ~(backend_id : int) : bool option =
   match Mutex.protect lock (fun () -> Hashtbl.find_opt queries framework) with
   | None -> None
-  | Some f -> ( try Some (f backend_id) with _ -> None)
+  | Some f -> (
+      try Some (f backend_id) with
+      | (Out_of_memory | Stack_overflow | Sys.Break) as e -> raise e
+      | _ -> None)
