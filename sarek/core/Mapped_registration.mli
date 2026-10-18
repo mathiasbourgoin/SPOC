@@ -35,8 +35,9 @@
     - the verdict is a property of the device, driver, kernel, filesystem,
       locked-memory limit and SPOC revision (the static refusals change with it)
       at the time of the probe, and [Usable] covers the two sampled windows
-      only. The caller keys any cache on those; {!cacheable} says which verdicts
-      may be cached at all.
+      only, read as they were when probed (pages already in the page cache: a
+      cold first copy is not measured). The caller keys any cache on those;
+      {!cacheable} says which verdicts may be cached at all.
 
     This module has no cache and no mapping code: the caller maps the file (SPOC
     has no read-only shared mapping helper) and owns the cache, because both
@@ -81,10 +82,11 @@ type verdict =
       (** The probe could not release a window it registered (the driver's
           unregister failed after a retry). The window stays in {!Transfer}'s
           table (so [Transfer.is_pinned] stays true and the mapping stays
-          rooted) and may still be registered with the driver: that range must
-          not be unmapped, registered again or probed again in this process.
-          Probe a scratch mapping, not the one the weights are read from. Not
-          cacheable. *)
+          rooted) and may still be registered with the driver: the whole [map]
+          given to {!probe} must not be unmapped, registered again or probed
+          again in this process (either window may be the one left). Probe a
+          scratch mapping, not the one the weights are read from. Not cacheable.
+      *)
 
 (** Result of {!static_verdict}. *)
 type static = Decided of verdict | Self_test_required
@@ -129,10 +131,18 @@ type ops = {
 
 (** [with_device_ops dev ~bytes f] runs [f] on operations backed by {!Transfer}
     (a device buffer of [bytes] bytes, at least half the mapping; released when
-    [f] returns or raises). Raises [Invalid_argument] for a device whose static
-    verdict is [Refused _] (Vulkan above all): registration is never reachable
-    through this module on a refused device. *)
-val with_device_ops : Device.t -> bytes:int -> (ops -> 'a) -> 'a
+    [f] returns or raises; a release that raises is ignored, so that it replaces
+    neither the result of [f] nor its exception). [release] is how the device
+    buffer is freed ({!Transfer.free_all_buffers} by default); it exists for
+    tests. Raises [Invalid_argument] for a device whose static verdict is
+    [Refused _] (Vulkan above all): registration is never reachable through this
+    module on a refused device. *)
+val with_device_ops :
+  ?release:((char, Bigarray.int8_unsigned_elt) Vector.t -> unit) ->
+  Device.t ->
+  bytes:int ->
+  (ops -> 'a) ->
+  'a
 
 (** The self-test, without the static check: two disjoint halves of [map] are
     registered, copied to the device and back, compared with the same halves of
@@ -142,11 +152,13 @@ val with_device_ops : Device.t -> bytes:int -> (ops -> 'a) -> 'a
     [Inconclusive], nothing registered; likewise when the two windows hold the
     same bytes, which could not tell a stale copy from a good one: pick another
     region), timed against a staged copy (memcpy into page-locked memory, then
-    the same copy), and released. [map] and [reference] have the same length,
-    multiples of 64 KiB (the largest page size in use, so that windows never
-    share a page), at least two such units. Everything registered or allocated
-    is released whatever happens; [Out_of_memory], [Stack_overflow] and
-    [Sys.Break] are re-raised, every other exception is [Inconclusive].
+    the same copy), and released. [map] and [reference] have the same length, at
+    least two units of 64 KiB (the largest page size in use, so that windows
+    never share a page). Each window is half the length rounded down to a
+    multiple of 64 KiB: bytes beyond the two windows are neither registered nor
+    compared. Everything registered or allocated is released whatever happens;
+    [Out_of_memory], [Stack_overflow] and [Sys.Break] are re-raised, every other
+    exception is [Inconclusive].
 
     [min_relative_speed] (default 0.8) is the fraction of the staged copy's
     speed that the registered copy must reach, best of 7 against best of 7. It
