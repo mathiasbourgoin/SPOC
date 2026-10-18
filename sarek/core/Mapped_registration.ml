@@ -370,35 +370,41 @@ let with_device_ops ?(release = Transfer.free_all_buffers) (dev : Device.t)
       invalid_arg ("Mapped_registration.with_device_ops: " ^ refusal_to_string r)
   | Decided _ | Self_test_required -> ()) ;
   let device_buffer = Transfer.create_device_only dev Vector.char bytes in
-  Fun.protect
-    ~finally:(fun () ->
-      (* A device buffer that cannot be freed must not replace the verdict
-         (Still_registered above all) by [Finally_raised]. *)
-      try release device_buffer with e when not (is_fatal e) -> ())
-    (fun () ->
-      f
-        {
-          register = (fun w -> Transfer.register_host dev w);
-          unregister = (fun w -> Transfer.unregister_host w);
-          alloc_host = (fun n -> Transfer.alloc_pinned dev Bigarray.char n);
-          free_host = Transfer.free_pinned;
-          upload =
-            (fun src ->
-              Transfer.copy_bytes_to_device
-                src
-                ~dst:device_buffer
-                ~dst_byte_offset:0);
-          round_trip =
-            (fun src ~into ->
-              Transfer.copy_bytes_to_device
-                src
-                ~dst:device_buffer
-                ~dst_byte_offset:0 ;
-              Transfer.copy_bytes_to_host
-                ~src:device_buffer
-                ~src_byte_offset:0
-                into);
-        })
+  (* Not Fun.protect: it wraps what [finally] raises in [Finally_raised], which
+     would hide a fatal exception and replace a verdict. A device buffer that
+     cannot be freed changes neither the result nor the exception of [f]; a
+     fatal exception of the free is raised. *)
+  let free () =
+    try release device_buffer with e when is_fatal e -> raise e | _ -> ()
+  in
+  let ops =
+    {
+      register = (fun w -> Transfer.register_host dev w);
+      unregister = (fun w -> Transfer.unregister_host w);
+      alloc_host = (fun n -> Transfer.alloc_pinned dev Bigarray.char n);
+      free_host = Transfer.free_pinned;
+      upload =
+        (fun src ->
+          Transfer.copy_bytes_to_device
+            src
+            ~dst:device_buffer
+            ~dst_byte_offset:0);
+      round_trip =
+        (fun src ~into ->
+          Transfer.copy_bytes_to_device
+            src
+            ~dst:device_buffer
+            ~dst_byte_offset:0 ;
+          Transfer.copy_bytes_to_host ~src:device_buffer ~src_byte_offset:0 into);
+    }
+  in
+  match f ops with
+  | v ->
+      free () ;
+      v
+  | exception e ->
+      free () ;
+      raise e
 
 let probe ?log ?min_relative_speed (dev : Device.t) ~(map : host)
     ~(reference : host) =
