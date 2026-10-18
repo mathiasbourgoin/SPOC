@@ -116,6 +116,35 @@ let test_each_reference_follows_its_binder () =
         (contains src "] = t;"))
     c_family
 
+(* An array reference carries a name and no identity: it reaches the array of
+   that name, never a scalar [let] of the same name that was renamed. *)
+let test_array_reference_ignores_scalar () =
+  let scalar = var "a" 1 TFloat32 in
+  let k =
+    {
+      default_kernel with
+      kern_name = "array_vs_scalar";
+      kern_params = [vec_param "a" 0];
+      kern_body = SSeq [SSeq [SLet (scalar, f 2.0, SEmpty)]; out_zero (f 1.0)];
+    }
+  in
+  List.iter
+    (fun (name, gen) ->
+      let src = gen k in
+      Alcotest.(check bool)
+        (name ^ ": the scalar is renamed")
+        true
+        (contains src "a_1 = 2.0f") ;
+      Alcotest.(check bool)
+        (name ^ ": the store reaches the array")
+        true
+        (contains src "a[0] = ") ;
+      Alcotest.(check bool)
+        (name ^ ": the store does not reach the scalar")
+        false
+        (contains src "a_1[0]"))
+    c_family
+
 (* A helper that rebinds its own parameter: a redeclaration on every target. *)
 let helper_rebinds_parameter =
   let x_param = var "x" 30 TFloat32 and x_local = var "x" 31 TFloat32 in
@@ -183,6 +212,10 @@ let () =
             "each reference follows its binder"
             `Quick
             test_each_reference_follows_its_binder;
+          Alcotest.test_case
+            "an array reference ignores a scalar of its name"
+            `Quick
+            test_array_reference_ignores_scalar;
           Alcotest.test_case
             "helper parameter rebound, every backend"
             `Quick

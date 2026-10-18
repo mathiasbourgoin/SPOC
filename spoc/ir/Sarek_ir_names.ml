@@ -7,22 +7,25 @@ open Sarek_ir_types
 module SM = Map.Make (String)
 module SS = Set.Make (String)
 
-module IM = Map.Make (struct
-  type t = string * int
+(* One binder of a name: the emitted name, the [var_id] it was bound with ([0]
+   when it has none: pattern variables, shared arrays, helpers, or an unset
+   id) and whether it is an array (a vector parameter, a local or shared
+   array). Arrays and scalars of one name are different binders: an array
+   reference by name never reaches a scalar, nor the reverse. *)
+type entry = {emitted : string; ident : int; array : bool}
 
-  let compare = compare
-end)
+(* [names]: source name -> the binders of that name in scope, innermost first.
+   A reference picks the innermost binder that can be its own: a variable
+   reference whose [var_id] and the binder's are both set and differ does not
+   reach that binder, so a later sibling that still reads an outer binder is
+   not captured by an inner one of the same name that was renamed (the
+   interpreter resolves by [var_id] too). [visible]: the emitted names a new
+   binder must not take. They differ for a parameter of a shader target, which
+   is looked up but left out of [visible] (see [rename_params] in the
+   interface). *)
+type env = {names : entry list SM.t; visible : SS.t}
 
-(* [map]: source name -> emitted name, for every binder in scope. [visible]: the
-   emitted names a new binder must not take. They differ for a parameter of a
-   shader target, which is looked up but left out of [visible] (see
-   [rename_params] in the interface). [by_id] maps a variable binder, by name
-   and [var_id], to its emitted name: a reference resolves by identity first,
-   as the interpreter does, so that a later sibling still reaching an outer
-   binder is not captured by an inner binder that has the same name and was
-   renamed. [map], by name, serves what has no identity (arrays, helpers,
-   pattern variables) and a reference whose identity matches no binder. *)
-type env = {map : string SM.t; by_id : string IM.t; visible : SS.t}
+let is_array_type = function TVec _ | TArray _ -> true | _ -> false
 
 type ctx = {
   reserved : string -> bool;
@@ -33,19 +36,41 @@ type ctx = {
   mutable changed : bool;
 }
 
-let empty_env = {map = SM.empty; by_id = IM.empty; visible = SS.empty}
+let empty_env = {names = SM.empty; visible = SS.empty}
 
 let note ctx name = Hashtbl.replace ctx.taken name ()
 
+let find_entry env name ~array ~ident =
+  match SM.find_opt name env.names with
+  | None -> None
+  | Some binders ->
+      List.find_opt
+        (fun e ->
+          e.array = array
+          && (array || ident = 0 || e.ident = 0 || e.ident = ident))
+        binders
+
+let emitted_or_same name = function Some e -> e.emitted | None -> name
+
+(* A scalar name with no identity: a helper, a callee. *)
 let look ctx env name =
   note ctx name ;
-  match SM.find_opt name env.map with Some emitted -> emitted | None -> name
+  emitted_or_same name (find_entry env name ~array:false ~ident:0)
+
+(* The name of an array, as the IR spells array references. *)
+let look_array ctx env name =
+  note ctx name ;
+  emitted_or_same name (find_entry env name ~array:true ~ident:0)
 
 let look_var ctx env (v : var) =
   note ctx v.var_name ;
-  match IM.find_opt (v.var_name, v.var_id) env.by_id with
-  | Some emitted -> emitted
-  | None -> look ctx env v.var_name
+  emitted_or_same
+    v.var_name
+    (find_entry
+       env
+       v.var_name
+       ~array:(is_array_type v.var_type)
+       ~ident:v.var_id)
 
 (* The C spelling of a name that is not an identifier: [x'] becomes [xp], any
    other stray character an underscore. *)
@@ -85,7 +110,7 @@ let fresh ctx env name =
 (* Bind [name]: renamed when reserved or when a binder of the same name is in
    scope (in C a declaration is in scope in its own initialiser, and a second
    declaration in one block is an error). *)
-let bind ?(is_param = false) ?id ctx env name =
+let bind ?(is_param = false) ?(ident = 0) ?(array = false) ctx env name =
   note ctx name ;
   let renamable = (not is_param) || ctx.rename_params in
   let emitted =
@@ -98,18 +123,23 @@ let bind ?(is_param = false) ?id ctx env name =
     if is_param && not ctx.rename_params then env.visible
     else SS.add emitted env.visible
   in
-  let by_id =
-    match id with
-    | Some id -> IM.add (name, id) emitted env.by_id
-    | None ->
-        (* A binder without identity (pattern variable, shared array) hides
-           every variable of its name: a reference to one of them reaches it. *)
-        IM.filter (fun (bound, _) _ -> bound <> name) env.by_id
-  in
-  (emitted, {map = SM.add name emitted env.map; by_id; visible})
+  let binders = Option.value ~default:[] (SM.find_opt name env.names) in
+  ( emitted,
+    {
+      names = SM.add name ({emitted; ident; array} :: binders) env.names;
+      visible;
+    } )
 
 let bind_var ?is_param ctx env (v : var) =
-  let name, env = bind ?is_param ~id:v.var_id ctx env v.var_name in
+  let name, env =
+    bind
+      ?is_param
+      ~ident:v.var_id
+      ~array:(is_array_type v.var_type)
+      ctx
+      env
+      v.var_name
+  in
   ({v with var_name = name}, env)
 
 let bind_pattern ctx env = function
@@ -132,7 +162,7 @@ let rec expr ctx env e =
   | EVar v -> EVar {v with var_name = look_var ctx env v}
   | EBinop (op, a, b) -> EBinop (op, go a, go b)
   | EUnop (op, a) -> EUnop (op, go a)
-  | EArrayRead (a, i) -> EArrayRead (look ctx env a, go i)
+  | EArrayRead (a, i) -> EArrayRead (look_array ctx env a, go i)
   | EArrayReadExpr (a, i) -> EArrayReadExpr (go a, go i)
   | ERecordField (a, f) -> ERecordField (go a, f)
   | EIntrinsic (path, name, args) -> EIntrinsic (path, name, List.map go args)
@@ -141,7 +171,7 @@ let rec expr ctx env e =
   | EApp (f, args) -> EApp (go f, List.map go args)
   | ERecord (t, fields) -> ERecord (t, List.map (fun (f, x) -> (f, go x)) fields)
   | EVariant (t, c, args) -> EVariant (t, c, List.map go args)
-  | EArrayLen a -> EArrayLen (look ctx env a)
+  | EArrayLen a -> EArrayLen (look_array ctx env a)
   | EArrayCreate (t, size, space) -> EArrayCreate (t, go size, space)
   | EIf (c, a, b) -> EIf (go c, go a, go b)
   | EMatch (scrutinee, cases) ->
@@ -155,7 +185,7 @@ and case_with :
 
 let rec lvalue ctx env = function
   | LVar v -> LVar {v with var_name = look_var ctx env v}
-  | LArrayElem (a, i) -> LArrayElem (look ctx env a, expr ctx env i)
+  | LArrayElem (a, i) -> LArrayElem (look_array ctx env a, expr ctx env i)
   | LArrayElemExpr (a, i) -> LArrayElemExpr (expr ctx env a, expr ctx env i)
   | LRecordField (lv, f) -> LRecordField (lvalue ctx env lv, f)
 
@@ -168,7 +198,7 @@ let coopmat ctx env = function
       CM_load
         {
           r with
-          src = look ctx env r.src;
+          src = look_array ctx env r.src;
           index = expr ctx env r.index;
           stride = expr ctx env r.stride;
         }
@@ -176,7 +206,7 @@ let coopmat ctx env = function
       CM_store
         {
           r with
-          dst = look ctx env r.dst;
+          dst = look_array ctx env r.dst;
           index = expr ctx env r.index;
           stride = expr ctx env r.stride;
         }
@@ -257,7 +287,7 @@ let bind_decl ctx env = function
       (env, DLocal (v, init))
   | DShared (name, t, size) ->
       let size = Option.map (expr ctx env) size in
-      let name, env = bind ctx env name in
+      let name, env = bind ~array:true ctx env name in
       (env, DShared (name, t, size))
 
 let helper ctx global (hf : helper_func) =
