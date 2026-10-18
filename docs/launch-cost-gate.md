@@ -11,7 +11,7 @@ path, whichever check the next regression hides in.
 
 N = 2000 launches of one kernel through `Execute.run_vectors` on a probe JIT backend that does
 nothing at the device (no GPU, no driver, no clock-dependent code), after a warming launch (which
-pays code generation). The figure kept is the minimum over 7 rounds: noise only ever adds time.
+pays code generation). The figure kept is the minimum over 7 rounds, which filters slow outliers (a preempted round) but can also pick an unusually fast one, so it can understate a cost; both assertions compare two figures taken the same way, which cancels the bias.
 Two kernels per case: 1 statement and 20000 statements, with and without a warp shuffle (the
 shuffle turns the launch rule on).
 

@@ -16,7 +16,8 @@
  * What is measured: [Execute.run_vectors] through a JIT probe backend that does
  * nothing at the device (no GPU, no clock-dependent driver), N launches of one
  * kernel after a warming launch, repeated; the minimum over the rounds is kept
- * (noise only ever adds time).
+ * (filters slow outliers; it may also pick a fast round, which both assertions
+ * absorb by comparing figures taken the same way).
  *
  * Two assertions, both machine independent by construction:
  *
