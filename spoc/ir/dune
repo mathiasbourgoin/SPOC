@@ -20,6 +20,8 @@
   Sarek_coopmat
   Sarek_f16_policy
   Sarek_ir_codegen
+  Sarek_reserved_words
+  Sarek_ir_names
   Sarek_ir_affine
   Sarek_matrix_pattern_types
   Sarek_matrix_roles

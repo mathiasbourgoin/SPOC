@@ -1628,6 +1628,10 @@ let generate_with_types ?block ?(log : string -> unit = fun _ -> ())
       (Codegen_error.unsupported_construct
          "f64 parameter"
          "WGSL: f64 unsupported — WebGPU has no float64 type") ;
+  (* A local that redeclares a local, or is not an identifier; reserved words
+     and parameter shadowing have the escapers of this backend. See
+     Sarek_ir_names. *)
+  let k = Sarek_ir_names.legalize_shader k in
   (* Inline vector-parameter helpers (buffers cannot be passed as WGSL function
      arguments — see Sarek_ir_inline_vec). *)
   let k = Sarek_ir_inline_vec.inline_vec_helpers ~backend:"WGSL" k in

@@ -326,15 +326,22 @@ let test_canary_makes_names_unique () =
       body
   in
   let plain = Ocl.generate_with_types ~types:[] k in
-  (* Pre-condition: as written, the same name really is declared twice — this is
-     what makes a dropped binder invisible. *)
+  (* Pre-condition: the generator itself now keeps the two binders apart
+     (Sarek_ir_names renames the inner one to [r_1]); before that, the same name
+     was declared twice, which is what made a dropped binder invisible. The
+     canary below is what still guards a dropped binder whose name happens to be
+     in scope. *)
   let count_decl s =
     List.length
       (List.filter
          (fun l -> contains l "float r = ")
          (String.split_on_char '\n' s))
   in
-  Alcotest.(check int) "as written, 'r' is declared twice" 2 (count_decl plain) ;
+  Alcotest.(check int) "as written, 'r' is declared once" 1 (count_decl plain) ;
+  Alcotest.(check bool)
+    "the inner binder is renamed"
+    true
+    (contains plain "float r_1 = ") ;
   let ku = Uniquify.uniquify_kernel k in
   let canary = Ocl.generate_with_types ~types:[] ku in
   Alcotest.(check int)

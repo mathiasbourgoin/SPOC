@@ -1224,6 +1224,15 @@ let generate_with_types ?block
   Option.iter (Sarek_ir_metal_coopmat.check_block k) block ;
   (* A [for] bound is evaluated once (Sarek_ir_for_bound), then unroll hints
      for small constant-trip loops (Sarek_ir_unroll). *)
+  (* Names the target cannot take as written (a shadowing [let], a reserved
+     word); see Sarek_ir_names. Before every other pass, so they see final
+     names. *)
+  let k =
+    Sarek_ir_names.legalize
+      ~reserved:Sarek_reserved_words.metal
+      ~rename_params:true
+      k
+  in
   let k = Sarek_ir_for_bound.hoist k in
   let k = Sarek_ir_unroll.annotate ~generator:"metal" k in
   let st = state k in

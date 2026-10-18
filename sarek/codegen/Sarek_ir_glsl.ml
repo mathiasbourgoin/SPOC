@@ -2162,6 +2162,10 @@ let gen_variant_def buf v =
 let generate_with_types ?block ?(log : string -> unit = fun _ -> ())
     ~(types : (string * (string * elttype) list) list) (k : kernel) : string =
   reject_float16_kernel k ;
+  (* A local that redeclares a local, or is not an identifier; reserved words
+     and parameter shadowing have the escapers of this backend. See
+     Sarek_ir_names. *)
+  let k = Sarek_ir_names.legalize_shader k in
   (* Inline vector-parameter helpers (buffers cannot be passed as GLSL function
      arguments — see Sarek_ir_inline_vec). *)
   let k = Sarek_ir_inline_vec.inline_vec_helpers ~backend:"Vulkan" k in

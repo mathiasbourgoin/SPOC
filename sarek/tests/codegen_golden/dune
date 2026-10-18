@@ -322,3 +322,11 @@
     warp_shuffle_ptx.actual
     (run %{dep:test_warp_shuffle_golden.exe} ptx))
    (diff warp_shuffle_ptx.expected warp_shuffle_ptx.actual))))
+
+; Names the target cannot take as written (Sarek_ir_names): shadowing, reserved
+; words, non-identifiers, on every source backend; real compilers when present.
+
+(test
+ (name test_name_legalization)
+ (modules test_name_legalization)
+ (libraries sarek_ir sarek_codegen opencl_gate metal_gate alcotest unix))
