@@ -83,13 +83,13 @@ type verdict =
           or a release failed once and succeeded on the retry. *)
   | Still_registered of string
       (** The probe could not release a window it registered (the driver's
-          unregister failed three times). The window stays in {!Transfer}'s
-          table (so [Transfer.is_pinned] stays true and the mapping stays
-          rooted) and may still be registered with the driver: the whole [map]
-          given to {!probe} must not be unmapped, registered again or probed
-          again in this process (either window may be the one left). Probe a
-          scratch mapping, not the one the weights are read from. Not cacheable.
-      *)
+          unregister failed on its retries: two, or three when the probe got as
+          far as the checked release). The window stays in {!Transfer}'s table
+          (so [Transfer.is_pinned] stays true and the mapping stays rooted) and
+          may still be registered with the driver: the whole [map] given to
+          {!probe} must not be unmapped, registered again or probed again in
+          this process (either window may be the one left). Probe a scratch
+          mapping, not the one the weights are read from. Not cacheable. *)
 
 (** Result of {!static_verdict}. *)
 type static = Decided of verdict | Self_test_required
