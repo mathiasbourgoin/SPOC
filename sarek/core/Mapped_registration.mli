@@ -125,12 +125,13 @@ val with_device_ops : Device.t -> bytes:int -> (ops -> 'a) -> 'a
 (** The self-test, without the static check: two disjoint halves of [map] are
     registered, copied to the device and back, compared with the same halves of
     [reference] (the bytes of the same file region read independently, by
-    [pread]), checked equal to [map] first (a reference that differs is the
-    caller's fault: [Inconclusive], nothing registered), timed against a staged
-    copy (memcpy into page-locked memory, then the same copy), and released.
-    [map] and [reference] have the same length, multiples of 64 KiB (the largest
-    page size in use, so that windows never share a page), at least two such
-    units. Everything registered or allocated is released whatever happens;
+    [pread]; [map] starts on a page boundary, as a mapping does), checked equal
+    to [map] first (a reference that differs is the caller's fault:
+    [Inconclusive], nothing registered), timed against a staged copy (memcpy
+    into page-locked memory, then the same copy), and released. [map] and
+    [reference] have the same length, multiples of 64 KiB (the largest page size
+    in use, so that windows never share a page), at least two such units.
+    Everything registered or allocated is released whatever happens;
     [Out_of_memory], [Stack_overflow] and [Sys.Break] are re-raised, every other
     exception is [Inconclusive].
 

@@ -295,6 +295,19 @@ let test_engine () =
     (M.probe_with ~min_relative_speed:any_speed d.ops ~map ~reference = M.Usable) ;
   check "two disjoint windows registered, released" (!(d.registered) = 2) ;
   check "everything released" (nothing_left d) ;
+  (* A file that holds the byte a fixed sentinel would have been. *)
+  let a5 = host (8 * page) in
+  Bigarray.Array1.fill a5 '\xA5' ;
+  let a5_ref = host (8 * page) in
+  Bigarray.Array1.fill a5_ref '\xA5' ;
+  check
+    "a copy that writes nothing is Wrong_bytes even on a file of 0xA5"
+    (M.probe_with
+       ~min_relative_speed:any_speed
+       (double ~round_trip:(Some (fun _ ~into:_ -> ())) ()).ops
+       ~map:a5
+       ~reference:a5_ref
+    = M.Refused M.Wrong_bytes) ;
   let wrong = double ~round_trip:(Some (fun _ ~into:_ -> ())) () in
   check
     "a copy that returns the sentinel is Wrong_bytes (false success)"
