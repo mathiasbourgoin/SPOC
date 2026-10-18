@@ -472,6 +472,15 @@ let test_failures () =
           ~map
           ~reference)
     && !(noisy.freed) = List.length !(noisy.allocated)) ;
+  check
+    "a logger that raises does not change a Usable verdict"
+    (M.probe_with
+       ~log:(fun _ -> failwith "log: broken pipe")
+       ~min_relative_speed:any_speed
+       (double ()).ops
+       ~map
+       ~reference
+    = M.Usable) ;
   let d =
     double ~round_trip:(Some (fun _ ~into:_ -> failwith "copy failed")) ()
   in
@@ -584,6 +593,26 @@ let test_native_plumbing () =
                   ops
                   ~map
                   ~reference:changed))) ;
+      let still = M.Still_registered "kept" in
+      check
+        "a device buffer that cannot be freed does not replace the verdict"
+        (M.with_device_ops
+           ~release:(fun _ -> failwith "free: driver lost")
+           dev
+           ~bytes:(len / 2)
+           (fun _ -> still)
+        = still) ;
+      check
+        "nor the exception of the body"
+        (match
+           M.with_device_ops
+             ~release:(fun _ -> failwith "free: driver lost")
+             dev
+             ~bytes:(len / 2)
+             (fun _ -> failwith "body")
+         with
+        | _ -> false
+        | exception Failure m -> m = "body") ;
       check
         "no window stays registered afterwards"
         ((not (Transfer.is_pinned (Bigarray.Array1.sub map 0 (len / 2))))

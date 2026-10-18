@@ -171,14 +171,12 @@ let release ops held =
       else if Option.is_none !failure then
         failure := Some (Printexc.to_string e)
   in
-  let unregister_twice w =
-    try ops.unregister w with e when not (is_fatal e) -> ops.unregister w
-  in
+  let twice f x = try f x with e when not (is_fatal e) -> f x in
   let windows = held.windows and buffers = held.buffers in
   held.windows <- [] ;
   held.buffers <- [] ;
-  List.iter (each unregister_failure unregister_twice) windows ;
-  List.iter (each free_failure ops.free_host) buffers ;
+  List.iter (each unregister_failure (twice ops.unregister)) windows ;
+  List.iter (each free_failure (twice ops.free_host)) buffers ;
   Option.iter raise !fatal ;
   {unregister_failure = !unregister_failure; free_failure = !free_failure}
 
@@ -312,6 +310,9 @@ let half_of len = len / 2 / page * page
 let probe_with ?(log = ignore)
     ?(min_relative_speed = default_min_relative_speed) ops ~(map : host)
     ~(reference : host) =
+  (* A logger is a diagnostic: what it raises (but for the fatal exceptions)
+     changes neither the verdict nor the release. *)
+  let log line = try log line with e when is_fatal e -> raise e | _ -> () in
   let len = Bigarray.Array1.dim map in
   let half = half_of len in
   if half < page || Bigarray.Array1.dim reference <> len then
@@ -340,15 +341,12 @@ let probe_with ?(log = ignore)
     in
     (* Cleanup first: a logger that raises must not skip it. *)
     let released = release ops held in
-    let log line = try log line with e when is_fatal e -> raise e | _ -> () in
     (match outcome with
     | Ok (Still_registered first) -> log ("release failed: " ^ first)
     | Ok _ | Error _ -> ()) ;
-    Option.iter
-      (fun why -> log ("release failed: " ^ why))
-      (match released.unregister_failure with
-      | Some _ as f -> f
-      | None -> released.free_failure) ;
+    List.iter
+      (Option.iter (fun why -> log ("release failed: " ^ why)))
+      [released.unregister_failure; released.free_failure] ;
     match (outcome, released) with
     | Error e, _ -> raise e
     | Ok _, {unregister_failure = Some why; _} -> (
@@ -365,14 +363,18 @@ let probe_with ?(log = ignore)
 
 (* ---- operations over a real device ---- *)
 
-let with_device_ops (dev : Device.t) ~bytes f =
+let with_device_ops ?(release = Transfer.free_all_buffers) (dev : Device.t)
+    ~bytes f =
   (match static_verdict dev with
   | Decided (Refused r) ->
       invalid_arg ("Mapped_registration.with_device_ops: " ^ refusal_to_string r)
   | Decided _ | Self_test_required -> ()) ;
   let device_buffer = Transfer.create_device_only dev Vector.char bytes in
   Fun.protect
-    ~finally:(fun () -> Transfer.free_all_buffers device_buffer)
+    ~finally:(fun () ->
+      (* A device buffer that cannot be freed must not replace the verdict
+         (Still_registered above all) by [Finally_raised]. *)
+      try release device_buffer with e when not (is_fatal e) -> ())
     (fun () ->
       f
         {
