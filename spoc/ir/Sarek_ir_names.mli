@@ -13,21 +13,28 @@
     the source, or, when the name hides a built-in function, a later call
     resolves to the variable.
 
-    {!legalize} is a semantics-preserving renaming that runs once at the entry
-    of a generator, before any other pass:
+    {!legalize} is a renaming that runs once at the entry of a generator, before
+    any other pass. A reference resolves to its binder by [var_id] first (a
+    binder of the same name that comes later in the same target block, and is
+    renamed, does not capture it), then by name for what carries no identity
+    (arrays, helpers, pattern variables):
 
     - a binder whose name is reserved for the target (per [reserved]) or already
       names a binder in scope becomes [<name>_<k>] (the smallest [k] that no
       name of the kernel uses), and every reference in its scope follows;
     - a binder that merely shadows nothing keeps its name, so a kernel without a
-      clash is returned physically unchanged and its generated source is
-      byte-identical to before.
+      clash and without a name of the reserved lists is returned physically
+      unchanged and its generated source is byte-identical to before. The lists
+      also hold names that compiled fine (a variable called [length], [step] or
+      [dot], the [get_], [half_] and [quad_] families): a kernel using one gets
+      a new source.
 
     Binders are [let]/[let mut] variables, [for] indices, pattern variables,
     parameters, locals, shared arrays and helper functions. Record fields,
-    constructors, intrinsics and cooperative-matrix fragment names are not
-    renamed. A kernel containing [SNative] (opaque source text) is returned
-    unchanged: this pass could not rename the identifiers inside it. *)
+    constructors, intrinsics, the names of record and variant types and
+    cooperative-matrix fragment names are neither renamed nor avoided. A kernel
+    containing [SNative] (opaque source text) is returned unchanged: this pass
+    could not rename the identifiers inside it. *)
 
 (** [legalize ~reserved ~rename_params k].
 

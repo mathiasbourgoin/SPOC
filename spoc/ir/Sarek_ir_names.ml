@@ -7,11 +7,22 @@ open Sarek_ir_types
 module SM = Map.Make (String)
 module SS = Set.Make (String)
 
+module IM = Map.Make (struct
+  type t = string * int
+
+  let compare = compare
+end)
+
 (* [map]: source name -> emitted name, for every binder in scope. [visible]: the
    emitted names a new binder must not take. They differ for a parameter of a
    shader target, which is looked up but left out of [visible] (see
-   [rename_params] in the interface). *)
-type env = {map : string SM.t; visible : SS.t}
+   [rename_params] in the interface). [by_id] maps a variable binder, by name
+   and [var_id], to its emitted name: a reference resolves by identity first,
+   as the interpreter does, so that a later sibling still reaching an outer
+   binder is not captured by an inner binder that has the same name and was
+   renamed. [map], by name, serves what has no identity (arrays, helpers,
+   pattern variables) and a reference whose identity matches no binder. *)
+type env = {map : string SM.t; by_id : string IM.t; visible : SS.t}
 
 type ctx = {
   reserved : string -> bool;
@@ -22,13 +33,19 @@ type ctx = {
   mutable changed : bool;
 }
 
-let empty_env = {map = SM.empty; visible = SS.empty}
+let empty_env = {map = SM.empty; by_id = IM.empty; visible = SS.empty}
 
 let note ctx name = Hashtbl.replace ctx.taken name ()
 
 let look ctx env name =
   note ctx name ;
   match SM.find_opt name env.map with Some emitted -> emitted | None -> name
+
+let look_var ctx env (v : var) =
+  note ctx v.var_name ;
+  match IM.find_opt (v.var_name, v.var_id) env.by_id with
+  | Some emitted -> emitted
+  | None -> look ctx env v.var_name
 
 (* The C spelling of a name that is not an identifier: [x'] becomes [xp], any
    other stray character an underscore. *)
@@ -68,7 +85,7 @@ let fresh ctx env name =
 (* Bind [name]: renamed when reserved or when a binder of the same name is in
    scope (in C a declaration is in scope in its own initialiser, and a second
    declaration in one block is an error). *)
-let bind ?(is_param = false) ctx env name =
+let bind ?(is_param = false) ?id ctx env name =
   note ctx name ;
   let renamable = (not is_param) || ctx.rename_params in
   let emitted =
@@ -81,10 +98,18 @@ let bind ?(is_param = false) ctx env name =
     if is_param && not ctx.rename_params then env.visible
     else SS.add emitted env.visible
   in
-  (emitted, {map = SM.add name emitted env.map; visible})
+  let by_id =
+    match id with
+    | Some id -> IM.add (name, id) emitted env.by_id
+    | None ->
+        (* A binder without identity (pattern variable, shared array) hides
+           every variable of its name: a reference to one of them reaches it. *)
+        IM.filter (fun (bound, _) _ -> bound <> name) env.by_id
+  in
+  (emitted, {map = SM.add name emitted env.map; by_id; visible})
 
 let bind_var ?is_param ctx env (v : var) =
-  let name, env = bind ?is_param ctx env v.var_name in
+  let name, env = bind ?is_param ~id:v.var_id ctx env v.var_name in
   ({v with var_name = name}, env)
 
 let bind_pattern ctx env = function
@@ -104,7 +129,7 @@ let rec expr ctx env e =
   let go = expr ctx env in
   match e with
   | EConst _ -> e
-  | EVar v -> EVar {v with var_name = look ctx env v.var_name}
+  | EVar v -> EVar {v with var_name = look_var ctx env v}
   | EBinop (op, a, b) -> EBinop (op, go a, go b)
   | EUnop (op, a) -> EUnop (op, go a)
   | EArrayRead (a, i) -> EArrayRead (look ctx env a, go i)
@@ -129,7 +154,7 @@ and case_with :
   (pattern, body ctx env arm)
 
 let rec lvalue ctx env = function
-  | LVar v -> LVar {v with var_name = look ctx env v.var_name}
+  | LVar v -> LVar {v with var_name = look_var ctx env v}
   | LArrayElem (a, i) -> LArrayElem (look ctx env a, expr ctx env i)
   | LArrayElemExpr (a, i) -> LArrayElemExpr (expr ctx env a, expr ctx env i)
   | LRecordField (lv, f) -> LRecordField (lvalue ctx env lv, f)
@@ -211,10 +236,13 @@ and stmt ctx env s =
 
 (* {2 Kernel level} *)
 
-let bind_params ctx env params =
+(* A helper's parameters are real function parameters on every target (shaders
+   included), so a local of the helper must avoid them and they may be
+   renamed: only the kernel's own parameters are exposed by name. *)
+let bind_helper_params ctx env params =
   List.fold_left_map
     (fun env v ->
-      let v, env = bind_var ~is_param:true ctx env v in
+      let v, env = bind_var ctx env v in
       (env, v))
     env
     params
@@ -233,7 +261,7 @@ let bind_decl ctx env = function
       (env, DShared (name, t, size))
 
 let helper ctx global (hf : helper_func) =
-  let env, params = bind_params ctx global hf.hf_params in
+  let env, params = bind_helper_params ctx global hf.hf_params in
   {
     hf with
     hf_name = look ctx global hf.hf_name;
@@ -277,7 +305,9 @@ let rec has_native = function
       has_native b
   | SMatch (_, cases) -> List.exists (fun (_, b) -> has_native b) cases
   | SLet (_, _, b) | SLetMut (_, _, b) -> has_native b
-  | _ -> false
+  | SAssign _ | SReturn _ | SBarrier | SWarpBarrier | SExpr _ | SMemFence
+  | SEmpty | SCoopmat _ ->
+      false
 
 let kernel_has_native (k : kernel) =
   has_native k.kern_body

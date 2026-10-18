@@ -1222,8 +1222,6 @@ let generate_with_types ?block
      would name whichever node the emitter reached first. *)
   Sarek_ir_metal_coopmat.check_kernel k ;
   Option.iter (Sarek_ir_metal_coopmat.check_block k) block ;
-  (* A [for] bound is evaluated once (Sarek_ir_for_bound), then unroll hints
-     for small constant-trip loops (Sarek_ir_unroll). *)
   (* Names the target cannot take as written (a shadowing [let], a reserved
      word); see Sarek_ir_names. Before every other pass, so they see final
      names. *)
@@ -1233,6 +1231,8 @@ let generate_with_types ?block
       ~rename_params:true
       k
   in
+  (* A [for] bound is evaluated once (Sarek_ir_for_bound), then unroll hints
+     for small constant-trip loops (Sarek_ir_unroll). *)
   let k = Sarek_ir_for_bound.hoist k in
   let k = Sarek_ir_unroll.annotate ~generator:"metal" k in
   let st = state k in
