@@ -151,25 +151,36 @@ let alloc ops held n =
 
 (* Best effort, after the verdict. What is held is taken out of [held] before
    it is released, so that nothing is released twice; everything is tried and
-   the first fatal exception is raised at the end. Returns the first non-fatal
-   failure, which makes the verdict [Inconclusive]: pages may still be
-   registered. *)
+   the first fatal exception is raised at the end. A window is unregistered
+   with a second try when the first fails. Returns the first non-fatal failure
+   of each kind: an unregister that failed twice means pages may still be
+   registered, a buffer that could not be freed does not. *)
+type release_outcome = {
+  unregister_failure : string option;
+  free_failure : string option;
+}
+
 let release ops held =
-  let fatal = ref None and failure = ref None in
-  let each release_one x =
+  let fatal = ref None
+  and unregister_failure = ref None
+  and free_failure = ref None in
+  let each failure release_one x =
     try release_one x
     with e ->
       if is_fatal e then (if Option.is_none !fatal then fatal := Some e)
       else if Option.is_none !failure then
         failure := Some (Printexc.to_string e)
   in
+  let unregister_twice w =
+    try ops.unregister w with e when not (is_fatal e) -> ops.unregister w
+  in
   let windows = held.windows and buffers = held.buffers in
   held.windows <- [] ;
   held.buffers <- [] ;
-  List.iter (each ops.unregister) windows ;
-  List.iter (each ops.free_host) buffers ;
+  List.iter (each unregister_failure unregister_twice) windows ;
+  List.iter (each free_failure ops.free_host) buffers ;
   Option.iter raise !fatal ;
-  !failure
+  {unregister_failure = !unregister_failure; free_failure = !free_failure}
 
 let ( let* ) = Result.bind
 
@@ -327,20 +338,29 @@ let probe_with ?(log = ignore)
                | Ok v | Error v -> v))
       with e -> Error e
     in
+    (* Cleanup first: a logger that raises must not skip it. *)
+    let released = release ops held in
+    let log line = try log line with e when is_fatal e -> raise e | _ -> () in
     (match outcome with
     | Ok (Still_registered first) -> log ("release failed: " ^ first)
     | Ok _ | Error _ -> ()) ;
-    let release_failure = release ops held in
-    Option.iter (fun why -> log ("release failed: " ^ why)) release_failure ;
-    match (outcome, release_failure) with
+    Option.iter
+      (fun why -> log ("release failed: " ^ why))
+      (match released.unregister_failure with
+      | Some _ as f -> f
+      | None -> released.free_failure) ;
+    match (outcome, released) with
     | Error e, _ -> raise e
-    | Ok (Still_registered first), None ->
-        (* The second try released it: transient, nothing stays registered. *)
+    | Ok _, {unregister_failure = Some why; _} -> (
+        match outcome with
+        | Ok (Still_registered _ as v) -> v
+        | _ -> Still_registered ("release after the probe failed: " ^ why))
+    | Ok (Still_registered first), {free_failure = None; _} ->
+        (* The retry released it: transient, nothing stays registered. *)
         Inconclusive ("a release failed once, then succeeded: " ^ first)
-    | Ok (Still_registered _ as v), Some _ -> v
-    | Ok _, Some why ->
-        Still_registered ("release after the probe failed: " ^ why)
-    | Ok v, None -> v
+    | Ok _, {free_failure = Some why; _} ->
+        Inconclusive ("a buffer could not be freed: " ^ why)
+    | Ok v, _ -> v
   end
 
 (* ---- operations over a real device ---- *)

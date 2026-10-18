@@ -234,6 +234,7 @@ type double = {
   freed : int ref;
   mutable failing_unregister : bool;
   mutable unregister_failures : int;
+  mutable failing_free : bool;
 }
 
 (* A device that copies faithfully; the registered path is [registered_delay]
@@ -263,7 +264,11 @@ let double ?(register = fun _ -> ()) ?(round_trip = None)
           let b = host n in
           allocated := b :: !allocated ;
           b);
-      free_host = (fun _ -> incr freed);
+      free_host =
+        (fun _ ->
+          match !d with
+          | Some x when x.failing_free -> failwith "free: busy"
+          | _ -> incr freed);
       round_trip = (match round_trip with Some f -> f | None -> faithful);
       upload =
         (fun src ->
@@ -283,6 +288,7 @@ let double ?(register = fun _ -> ()) ?(round_trip = None)
       freed;
       failing_unregister = false;
       unregister_failures = 0;
+      failing_free = false;
     }
   in
   d := Some x ;
@@ -439,6 +445,33 @@ let test_failures () =
          (fun l -> String.starts_with ~prefix:"release failed" l)
          !logged
     && nothing_left once) ;
+  (* A transient failure on a path that never reached unregister_checked. *)
+  let wrong_once = double ~round_trip:(Some (fun _ ~into:_ -> ())) () in
+  wrong_once.unregister_failures <- 1 ;
+  check
+    "Wrong_bytes then a release that succeeds on retry stays Refused"
+    (M.probe_with ~min_relative_speed:any_speed wrong_once.ops ~map ~reference
+     = M.Refused M.Wrong_bytes
+    && nothing_left wrong_once) ;
+  let busy = double () in
+  busy.failing_free <- true ;
+  check
+    "a buffer that cannot be freed is Inconclusive, not Still_registered"
+    (is_inconclusive
+       (M.probe_with ~min_relative_speed:any_speed busy.ops ~map ~reference)
+    && balanced busy) ;
+  let noisy = double () in
+  noisy.failing_unregister <- true ;
+  check
+    "a logger that raises does not skip the release or change the verdict"
+    (is_still_registered
+       (M.probe_with
+          ~log:(fun _ -> failwith "log: broken pipe")
+          ~min_relative_speed:any_speed
+          noisy.ops
+          ~map
+          ~reference)
+    && !(noisy.freed) = List.length !(noisy.allocated)) ;
   let d =
     double ~round_trip:(Some (fun _ ~into:_ -> failwith "copy failed")) ()
   in
