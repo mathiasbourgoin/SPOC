@@ -300,6 +300,23 @@ let test_engine () =
   Bigarray.Array1.fill a5 '\xA5' ;
   let a5_ref = host (8 * page) in
   Bigarray.Array1.fill a5_ref '\xA5' ;
+  (* the windows differ in their last byte only *)
+  Bigarray.Array1.set a5 ((8 * page) - 1) '\x01' ;
+  Bigarray.Array1.set a5_ref ((8 * page) - 1) '\x01' ;
+  check
+    "identical windows give no verdict (Inconclusive)"
+    (is_inconclusive
+       (M.probe_with
+          ~min_relative_speed:any_speed
+          (double ()).ops
+          ~map:
+            ( host (8 * page) |> fun h ->
+              Bigarray.Array1.fill h 'x' ;
+              h )
+          ~reference:
+            ( host (8 * page) |> fun h ->
+              Bigarray.Array1.fill h 'x' ;
+              h ))) ;
   check
     "a copy that writes nothing is Wrong_bytes even on a file of 0xA5"
     (M.probe_with

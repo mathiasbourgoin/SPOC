@@ -238,8 +238,17 @@ let check_inputs ~window ~ref_window =
   then Ok ()
   else Error (Inconclusive "reference differs from the mapping (file changed?)")
 
+(* Two windows with the same bytes cannot tell a copy of the right window from
+   a copy of the other one (a device that always reads the first would pass):
+   the caller picks another region (not an all-zero or repeated one). *)
+let check_windows_differ ~ref_window =
+  if equal_bytes (ref_window 0) (ref_window 1) then
+    Error (Inconclusive "the two probe windows hold the same bytes")
+  else Ok ()
+
 let run ops held ~log ~min_relative_speed ~window ~ref_window ~half =
   let* () = check_inputs ~window ~ref_window in
+  let* () = check_windows_differ ~ref_window in
   let into = alloc ops held half in
   let* () = register_all ops held [window 0; window 1] in
   (* A mismatch is the device's only if the file still holds what the caller

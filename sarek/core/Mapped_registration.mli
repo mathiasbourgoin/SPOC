@@ -127,13 +127,14 @@ val with_device_ops : Device.t -> bytes:int -> (ops -> 'a) -> 'a
     [reference] (the bytes of the same file region read independently, by
     [pread]; [map] starts on a page boundary, as a mapping does), checked equal
     to [map] first (a reference that differs is the caller's fault:
-    [Inconclusive], nothing registered), timed against a staged copy (memcpy
-    into page-locked memory, then the same copy), and released. [map] and
-    [reference] have the same length, multiples of 64 KiB (the largest page size
-    in use, so that windows never share a page), at least two such units.
-    Everything registered or allocated is released whatever happens;
-    [Out_of_memory], [Stack_overflow] and [Sys.Break] are re-raised, every other
-    exception is [Inconclusive].
+    [Inconclusive], nothing registered; likewise when the two windows hold the
+    same bytes, which could not tell a stale copy from a good one: pick another
+    region), timed against a staged copy (memcpy into page-locked memory, then
+    the same copy), and released. [map] and [reference] have the same length,
+    multiples of 64 KiB (the largest page size in use, so that windows never
+    share a page), at least two such units. Everything registered or allocated
+    is released whatever happens; [Out_of_memory], [Stack_overflow] and
+    [Sys.Break] are re-raised, every other exception is [Inconclusive].
 
     [min_relative_speed] (default 0.8) is the fraction of the staged copy's
     speed that the registered copy must reach, best of 7 against best of 7. It
